@@ -87,7 +87,7 @@ Mac の Python は python.org の pkg を 1 回入れるだけで、演出家チ
 
 ### 3.6 配布物
 
-- `E-paper_H_WALL_BRICKS_Raspi-designer-YYYYMMDD.zip`: リポジトリ一式(conductor/、docs/、`Start Simulator.command`、`Start Simulator.bat`、`README_DESIGNER.md`)。GitHub の Code → Download ZIP でも同じ。
+- `epaper-conductor-designer-YYYYMMDD.zip`: リポジトリ一式(conductor/、docs/、`Start Simulator.command`、`Start Simulator.bat`、`README_DESIGNER.md`)。GitHub の Code → Download ZIP でも同じ。
 - `README_DESIGNER.md`(日本語、1 ページ): Python の入れ方(Win: python.org、Mac: python.org の pkg。「Add to PATH」)、起動、CSV の入れ方、演出の作り方、bundle の出し方、困ったとき。
 - 演出家側の showdata は空で始める(サンプル演出 `docs/samples/az27ss_sample_show.json` と、配線ナビから落とした CSV を入れれば本番と同じ 6 ルックが出る)。
 

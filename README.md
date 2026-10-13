@@ -1,4 +1,6 @@
-# E-paper H_WALL_BRICKS — Raspberry Pi Zero 2 W 版
+# epaper-conductor — 電子ペーパー壁面の制御ソフトと同期システム
+
+(旧リポジトリ名: `E-paper_H_WALL_BRICKS_Raspi`。機体上の配置先 `~/E-paper_H_WALL_BRICKS_Raspi` は当面そのまま)
 
 六角形カラー電子ペーパーパネル(H_WALL_BRICKS / MCB03、DeviceType `0x01`)を
 **Raspberry Pi Zero 2 W からスタンドアロン制御**するためのリポジトリ。
@@ -68,7 +70,7 @@ Pi Zero 2 W ──USB OTG(micro-B "USB"ポート)── 基板 ID:1 ──4芯�
 
    ```bash
    sudo apt update && sudo apt install -y git
-   git clone https://github.com/Yoshi-Hirata/E-paper_H_WALL_BRICKS_Raspi.git
+   git clone https://github.com/Yoshi-Hirata/epaper-conductor.git E-paper_H_WALL_BRICKS_Raspi
    cd E-paper_H_WALL_BRICKS_Raspi
    ```
 

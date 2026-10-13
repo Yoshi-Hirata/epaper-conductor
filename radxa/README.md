@@ -332,7 +332,7 @@ sudo visudo -c        # 全ファイルが parsed OK になること
 ### 4. リポジトリを取得してセットアップ
 
 ```bash
-git clone https://github.com/Yoshi-Hirata/E-paper_H_WALL_BRICKS_Raspi.git
+git clone https://github.com/Yoshi-Hirata/epaper-conductor.git E-paper_H_WALL_BRICKS_Raspi
 cd E-paper_H_WALL_BRICKS_Raspi
 ./radxa/setup.sh
 ```

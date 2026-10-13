@@ -276,7 +276,7 @@ Units タブのタイルにも、その機体の USB の基板(マスタ)が小�
 2. **Git** を入れて(https://git-scm.com/)、置きたい場所で:
 
    ```bash
-   git clone https://github.com/Yoshi-Hirata/E-paper_H_WALL_BRICKS_Raspi.git
+   git clone https://github.com/Yoshi-Hirata/epaper-conductor.git
    ```
 
    Git を入れたくないときは GitHub のページの **Code → Download ZIP** を展開してもよい
