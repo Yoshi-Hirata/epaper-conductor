@@ -1728,6 +1728,7 @@ function renderTimeline() {
         <a class="filebtn" href="/api/show/export" download title="Download the whole show (timeline, transitions, labels, unit assignments) as a JSON file">Save show…</a>
         <label class="filebtn" tabindex="0" role="button" title="Restore the timeline, transitions, labels and unit assignments from a saved JSON file (the music file is uploaded separately; Undo restores the current show)">Load show…<input type="file" id="tl-load-show" accept=".json,application/json"></label>
         <label class="filebtn" tabindex="0" role="button" title="Load a project sent by the designers: their CSVs are added to the workspace (existing designs with the same name are replaced and Undo does not restore them) and their timeline replaces the current one. The unit assignments and the wiring files (*_map.csv) here are kept - replace a map by hand instead (Delete, then Add CSV).">Load bundle…<input type="file" id="tl-load-bundle" accept=".json,application/json"></label>
+        <a class="filebtn" id="tl-export3d" href="/api/show/export3d" download title="Download every scale's colour over the whole show, the refresh flicker included, keyed by its map label (017-01 = board 17, socket 1) - for the 3D simulator. Results only: the transition rules stay on this PC. Takes a few seconds on a full show">Export for 3D simulator…</a>
         <a class="filebtn" id="tl-simulator" href="/api/simulator?music=1" download title="Downloads the single-file simulator with the show's current music embedded - hand this file to the director's team; rebuild it here whenever the music changes">Simulator for designers…</a>
       </div>
       <div class="meta">Click an empty spot on a track to add a cue, or press <b>+</b> at the end of its row ·
@@ -2859,6 +2860,38 @@ async function downloadSimulator() {
     // Revoked on a timer, not straight away: the download has to have
     // started reading the blob first, and ~23 MB held for half a minute
     // is cheaper than a download that dies on click.
+    if (url) setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+}
+
+// Export for 3D simulator: fetched, not a bare <a download>, so the
+// EXHIBITION Conductor's passcode goes with it (a plain link would save the
+// 401's JSON), and one export at a time - a full show takes ~13 s.
+let export3dBusy = false;
+async function downloadExport3d() {
+  if (export3dBusy) return;
+  export3dBusy = true;
+  toast("Building the 3D timeline - every scale of the show, this takes a few seconds");
+  let url = null;
+  try {
+    const response = await fetchWithPasscode("/api/show/export3d");
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try { detail = (await response.json()).error || detail; } catch {}
+      toast("Could not export for 3D: " + detail);
+      return;
+    }
+    const named_as = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") || "");
+    const name = named_as ? named_as[1] : "show-3d.json";
+    url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url; link.download = name;
+    document.body.appendChild(link); link.click(); link.remove();
+    toast(`Downloaded ${name}`);
+  } catch (err) {
+    toast("Could not export for 3D: " + (err?.message || err));
+  } finally {
+    export3dBusy = false;
     if (url) setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
 }
@@ -6157,6 +6190,7 @@ document.addEventListener("click", async e => {
   if (e.target.id === "spk-connect") { await speakerConnect(); return; }
   if (e.target.id === "spk-pair") { await speakerPair(); return; }
   if (e.target.id === "tl-simulator") { e.preventDefault(); downloadSimulator(); return; }
+  if (e.target.id === "tl-export3d") { e.preventDefault(); downloadExport3d(); return; }
   if (e.target.id === "refresh-hint-hide") { dismissRefreshHint(); renderTimeline(); return; }
   if (e.target.id === "tl-simview") { ui.simView = !ui.simView; renderTimeline(); return; }
   if (e.target.id === "tl-dock-toggle") { ui.dock = ui.dock === "collapsed" ? "compact" : "collapsed"; saveDockPref(); renderTimeline(); return; }

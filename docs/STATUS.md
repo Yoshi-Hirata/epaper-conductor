@@ -18,6 +18,15 @@
 
 ## 2. 直近で完成したもの
 
+**Export for 3D simulator(2026-10-14、Conductor だけ)**
+
+- Timeline の **Export for 3D simulator…** → `/api/show/export3d`。全鱗の色の変化を、書き換え中の
+  ちらつきも含めて constant キーで書き出す(`conductor/export3d.py`、形式は
+  [EXPORT_3D_FORMAT.md](EXPORT_3D_FORMAT.md))。鱗は map の label(`017-01`)で識別
+- **結果だけを出す**(運用者の判断): 遷移の種類・span・refresh・送信/完了時刻は出さない。
+  ちらつきは flicker.js の Python 移植で、`tests/test_export3d.py` が Node で flicker.js と全鱗を照合
+- 実機の Conductor はサーバー再起動後に有効(ボタンだけ先に出る)
+
 **③ START のカウントダウン(2026-09-29、Conductor だけ・機体の再配布なし)**
 
 - THE SHOW の ③ START の隣に `Countdown before START [11] s`(3〜60 秒、既定 11)。

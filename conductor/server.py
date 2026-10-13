@@ -58,7 +58,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import durable, sequence, showfile, timeline
+from . import durable, export3d, sequence, showfile, timeline
 from .backups import (BACKUPS_OFF, RESTORE_WAIT_S, backup_listing,
                       content_revision, restore_note, start_backups)
 from .fleet import (DEFAULT_HOTSPOT_UNIT, DEFAULT_LEAD_S, STAGING_BUSY,
@@ -3011,6 +3011,7 @@ PASSCODE_COOKIE = "passcode"
 # hosts refuses to start with it, or with no passcode at all (serve()).
 PASSCODE_EXAMPLE = "CHANGE-ME-2026"
 _PASSCODE_GETS = {"/api/workspace/export", "/api/music/file", "/api/show/export",
+                  "/api/show/export3d",
                   "/api/simulator", "/api/backups"}
 _PASSCODE_COOKIE_PATHS = {"/api/music/file"}      # the <audio> element's route
 _LOCAL_HOSTS = ("127.0.0.1", "::1", "::ffff:127.0.0.1")
@@ -3274,6 +3275,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._music_file(head=False)
         if path == "/api/show/export":
             return self._export_show()
+        if path == "/api/show/export3d":
+            return self._export_3d()
         if path == "/api/workspace/export":
             return self._export_workspace()
         try:
@@ -3405,6 +3408,23 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(payload, indent=1).encode("utf-8")
         stamp = time.strftime("%Y%m%d-%H%M")
         filename = f"{payload['workspace']}-show-{stamp}.json"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Disposition",
+                         f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _export_3d(self) -> None:
+        """GET /api/show/export3d - every scale's colour over the show,
+        flicker included, for the other team's 3D simulator
+        (conductor/export3d.py). Results only: no ranks or delay tables."""
+        payload = export3d.resolve(self.workspace.state())
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        stamp = time.strftime("%Y%m%d-%H%M")
+        filename = f"{self.workspace.root.name}-3d-{stamp}.json"
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Disposition",
