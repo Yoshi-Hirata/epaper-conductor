@@ -1611,7 +1611,17 @@ function renderCueEditor(cue, item) {
 }
 function renderTimeline() {
   const root = $("#content"), show = state.show, D = show.duration, items = trackItems();
-  if (!items.length) { root.innerHTML = `<div class="empty">Add the map and design CSV files on the Designs tab first.</div>`; syncDockSpacing(); return; }
+  // An empty workspace still offers the two loaders: a bundle brings its own
+  // CSVs, so it is the way back into a show saved from another workspace.
+  if (!items.length) {
+    root.innerHTML = `<div class="empty">Add the map and design CSV files on the Designs tab first,
+      or load a saved project (bundle) that carries them.
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:center">
+        <label class="filebtn" tabindex="0" role="button" title="Load a project saved from the simulator or another Conductor: its CSVs are added to the workspace and its timeline becomes the show">Load bundle…<input type="file" id="tl-load-bundle" accept=".json,application/json"></label>
+        <label class="filebtn" tabindex="0" role="button" title="Restore the timeline from a saved show file (Save show…). It names designs by CSV, so add those CSVs first or its cues read as not loaded">Load show…<input type="file" id="tl-load-show" accept=".json,application/json"></label>
+      </div></div>`;
+    syncDockSpacing(); return;
+  }
   // Simulator view fills the window (view.fill, as before); the bottom dock
   // instead gets a computed cell height - as large as the space left under
   // the tracks allows, or a manual override - see updateDockThumbHeight().
