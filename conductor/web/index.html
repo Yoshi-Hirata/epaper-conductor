@@ -43,8 +43,6 @@ header .app-label { background: var(--warn); color: var(--warn-ink); font-weight
    START here - the note says so until it is gone. */
 header .other-conductor { flex-basis: 100%; color: var(--err); font-weight: 600;
   font-size: 13px; margin: -4px 0 0; }
-header .ws { color: var(--dim); font-size: 12px; margin-left: auto;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
 button, select, input[type=text], .filebtn { font: inherit; color: var(--ink); background: var(--panel);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
 button, select, .filebtn { cursor: pointer; }
@@ -621,7 +619,7 @@ button.primarybtn:disabled { filter: none; }
 </head>
 <body>
 <header>
-  <h1>E-PAPER SHOW CONDUCTOR</h1>
+  <h1 id="app-title">E-PAPER SHOW CONDUCTOR</h1>
   <div class="tabs">
     <button data-tab="items">Designs</button><button data-tab="timeline">Timeline</button><button data-tab="fleet">Units</button>
   </div>
@@ -630,7 +628,6 @@ button.primarybtn:disabled { filter: none; }
   </div>
   <label class="filebtn" tabindex="0" role="button">Add CSV<input id="pick" type="file" accept=".csv" multiple></label>
   <span class="meta">or drop CSV files anywhere on the page</span>
-  <span class="ws" id="ws"></span>
 </header>
 <main id="main">
   <aside>
@@ -952,7 +949,9 @@ setTimeout(pollOtherConductor, OTHER_CONDUCTOR_POLL_MS);
 
 async function refresh() {
   state = await api("/api/state");
-  $("#ws").textContent = "workspace: " + state.workspace;
+  // The folder behind this Conductor, on hover only: the header is the
+  // show's, and the path is for whoever has to find the files (2026-10-14).
+  $("#app-title").title = "Workspace: " + state.workspace;
   applyLabel(state.label);
   paintOtherConductor(state.other_conductor);
   if (!state.items.some(i => i.item === ui.item)) ui.item = state.items[0]?.item ?? null;
