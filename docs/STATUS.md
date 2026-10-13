@@ -1,6 +1,6 @@
 # 現在地と再開手順
 
-最終更新: 2026-09-28
+最終更新: 2026-10-14
 
 **この文書は「次に何をするか」だけを書く。** 経緯は
 [DEVELOPMENT.md](DEVELOPMENT.md)、20 枚構成の検討は [SCALING.md](SCALING.md)、
@@ -3244,6 +3244,16 @@ ID:1 と ID:20 は **0.5 秒以内の同時リフレッシュ**(deaf 窓 0.7-17.
 - **電源投入時のデモ自動開始は実装しない**(明示的な非採用)
 - セクター数の食い違い: 本機は 1 枚 **54** セクター。1200 を満たすには
   1 枚 60 セクターの別品番が要る(要確認)
+
+- **リポジトリ名を `epaper-conductor` に変更(2026-10-14)、Radxa 側の移行は未実施(後回し)**
+  - GitHub: `Yoshi-Hirata/E-paper_H_WALL_BRICKS_Raspi` → `Yoshi-Hirata/epaper-conductor`。
+    旧 URL は GitHub がリダイレクトするので、未更新の clone でも pull / push は動く。
+    各 PC では `git remote set-url origin https://github.com/Yoshi-Hirata/epaper-conductor.git` を一度実行する
+  - **機体上のフォルダは `~/E-paper_H_WALL_BRICKS_Raspi` のまま。勝手に新名へ書き換えないこと。**
+    `radxa/epaper-conductor.service`・`radxa/epaper-exhibition-net.service`・`radxa/EXHIBITION.md`・
+    本書 5 章がこのパスを参照している。機体向けの clone 手順も旧フォルダ名へ clone する形にしてある
+  - 移行時にやること: 10 台のフォルダ名変更 → 上記 service と文書のパス修正 → service の再インストール →
+    各台の `git remote set-url`。PC 側のローカルフォルダ名の変更も同時に行う
 
 ## 5. 再開手順
 
