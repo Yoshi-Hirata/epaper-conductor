@@ -20,7 +20,14 @@ to the menu leaves a run running. What it calls:
                               uploaded), plus `loop` {"on", "wait_s",
                               "next_in_s"} and `speaker` {"available",
                               "error"} (an older Conductor has neither:
-                              the screen then reads `loop ?` / `speaker ?`)
+                              the screen then reads `loop ?` / `speaker ?`),
+                              and `presence` {"present": [...], "missing":
+                              {unit: reason}} + the run's `left_out`
+                              {unit: reason} (2026-10-19): the units line
+                              `units 1/7 · missing 01 02 03` / `left out
+                              01 02`, other reasons than `not answering`
+                              under it (`03 needs Upload`); without them
+                              `units n/m online` as before
     GET  /api/show/export     once per opening of the screen: the
                               timeline's name (the workspace folder), its
                               cue count and duration - the Conductor has
@@ -86,6 +93,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import threading
 import time
 import urllib.error
@@ -159,6 +167,8 @@ def speaker_lost(speaker) -> bool:
             and speaker.get("bluetooth") is not False)
 
 NO_CONDUCTOR = "no conductor"
+# presence.missing's plain reason: listed by number only, no detail line.
+NOT_ANSWERING = "not answering"
 MENU_LABEL = "EXHIBITION"
 MENU_LABEL_NONE = "EXHIBITION  (no conductor)"
 
@@ -215,6 +225,26 @@ def _percent(value) -> "int | None":
     if not math.isfinite(value):
         return None
     return max(0, min(100, int(value)))
+
+
+def _unit_order(name: str):
+    match = re.search(r"(\d+)$", name)
+    return (int(match.group(1)) if match else 1 << 30, name)
+
+
+def _short_names(names, everyone) -> "list[str]":
+    """Units as the EXHIBITION line lists them: the number at the end of
+    the name (`radxa-03` -> `03`), sorted by it - or the whole names when
+    a name has none or two would read the same."""
+    names = sorted(names, key=_unit_order)
+
+    def tail(name):
+        match = re.search(r"(\d+)$", name)
+        return match.group(1) if match else None
+    tails = [tail(name) for name in everyone]
+    if any(t is None for t in tails) or len(set(tails)) != len(tails):
+        return list(names)
+    return [tail(name) for name in names]
 
 
 def format_clock(seconds: float) -> str:
@@ -463,14 +493,97 @@ class Exhibition:
             return f"ended {format_clock(duration)}{total}"
         return f"{format_clock(now)}{total} running"
 
+    def _absent(self) -> "tuple[list[str], dict, dict] | None":
+        """(the timeline's units, missing {unit: reason}, left out {unit:
+        reason}) from the Conductor's `presence` and the run's
+        `left_out` - or None from an older Conductor with neither. A unit
+        left out of the run is listed there only, not as missing too."""
+        fleet = self.fleet
+        if not fleet:
+            return None
+        presence = fleet.get("presence")
+        run = fleet.get("run")
+        left = run.get("left_out") if isinstance(run, dict) else None
+        if not isinstance(presence, dict) and not isinstance(left, dict):
+            return None
+        present = presence.get("present") if isinstance(presence, dict) else None
+        missing = presence.get("missing") if isinstance(presence, dict) else None
+        present = [str(u) for u in present] if isinstance(present, list) else []
+        missing = ({str(u): r for u, r in missing.items()}
+                   if isinstance(missing, dict) else {})
+        left = {str(u): r for u, r in left.items()} if isinstance(left, dict) else {}
+        missing = {u: r for u, r in missing.items() if u not in left}
+        units = sorted(set(present) | set(missing) | set(left))
+        return units, missing, left
+
+    def absent_units(self) -> "frozenset | None":
+        """Who is missing or left out right now (None: not known - no
+        Conductor answer, or an older Conductor). The App wakes the
+        screen when this gains a unit."""
+        absent = self._absent()
+        if absent is None:
+            return None
+        _, missing, left = absent
+        return frozenset(missing) | frozenset(left)
+
     def fleet_text(self) -> str:
+        """`units 1/7 · missing 01 02 03 04 07 09` from `presence` (during
+        a run `left out 01 02` for whom START went without), `units 7/7 ·
+        all present` when nobody is; an older Conductor without presence
+        keeps `units n/m online`."""
         fleet = self.fleet
         if not fleet:
             return ""
-        units = fleet.get("units") or []
-        online = sum(1 for unit in units if isinstance(unit, dict)
-                     and unit.get("online"))
-        return f"units {online}/{len(units)} online"
+        absent = self._absent()
+        if absent is None:
+            units = fleet.get("units") or []
+            online = sum(1 for unit in units if isinstance(unit, dict)
+                         and unit.get("online"))
+            return f"units {online}/{len(units)} online"
+        units, missing, left = absent
+        here = len(units) - len(missing) - len(left)
+        text = f"units {here}/{len(units)}"
+        if left:
+            text += " · left out " + " ".join(_short_names(left, units))
+        if missing:
+            text += " · missing " + " ".join(_short_names(missing, units))
+        if not left and not missing:
+            text += " · all present"
+        return text
+
+    def fleet_detail(self) -> str:
+        """The reasons other than `not answering`, grouped: `03 04 needs
+        Upload · 05 busy` ("" when there are none)."""
+        absent = self._absent()
+        if absent is None:
+            return ""
+        units, missing, left = absent
+        reasons = dict(missing)
+        reasons.update(left)
+        order = sorted(reasons, key=_unit_order)
+        short = dict(zip(order, _short_names(reasons, units)))
+        groups: "dict[str, list[str]]" = {}
+        for unit in order:
+            reason = _first_line(reasons[unit] or "")
+            if reason.lower().startswith("left out:"):
+                reason = reason[len("left out:"):].strip()
+            if not reason or reason == NOT_ANSWERING:
+                continue
+            groups.setdefault(reason, []).append(short[unit])
+        return " · ".join(f"{' '.join(names)} {reason}"
+                          for reason, names in groups.items())
+
+    def fleet_tone(self) -> str:
+        """How the fleet line is tinted: `err` nobody here, `warn` someone
+        missing or left out, `ok` all present, "" an older Conductor (the
+        renderer reads the `n/m online` itself)."""
+        absent = self._absent()
+        if absent is None:
+            return ""
+        units, missing, left = absent
+        if units and len(missing) + len(left) >= len(units):
+            return "err"
+        return "warn" if missing or left else "ok"
 
     def loop_text(self) -> str:
         loop = (self.fleet or {}).get("loop")
@@ -585,8 +698,21 @@ class Exhibition:
                     self.command, tuple(self.backup_rows()), self.backup_choice,
                     self.backup_detail(), self.backups_text(), self.armed_text())
         return (self.available, self.phase, self.note, self.run_text(),
-                self.fleet_text(), self.loop_text(), self.speaker_text(),
-                self.show_lines(), self.active)
+                self.fleet_text(), self.fleet_detail(), self.loop_text(),
+                self.speaker_text(), self.show_lines(), self.active)
+
+    def alerts(self) -> "tuple[bool | None, frozenset | None, tuple | None]":
+        """What wakes a blanked screen (App._watch_alerts): the speaker
+        link lost, who is absent, and the verdict on the screen
+        ((command, phase, note); None while there is none). The first two
+        are None while the Conductor did not answer (unknown)."""
+        with self._lock:
+            phase, command, note = self.phase, self.command, self.note
+            fleet = self.fleet if self.available else None
+        verdict = (command, phase, note) if phase in (DONE, FAILED) else None
+        if not fleet:
+            return None, None, verdict
+        return speaker_lost(fleet.get("speaker")), self.absent_units(), verdict
 
     def open_backups(self) -> None:
         """DOWN on the EXHIBITION page: the list, read now (on the

@@ -118,6 +118,17 @@ def _wrap(text: str, font, max_width: int) -> list[str]:
     return lines or [""]
 
 
+def _fit_lines(text: str, font, max_width: int, count: int) -> list[str]:
+    """_wrap() cut to `count` lines, the last ellipsized when more was
+    left - nothing silently clipped at the edge."""
+    lines = _wrap(text, font, max_width)
+    if len(lines) <= count:
+        return lines
+    lines = lines[:count]
+    lines[-1] = _ellipsize(lines[-1] + "…", font, max_width)
+    return lines
+
+
 def menu_screen(patterns, selected: int, port: str | None = None,
                 locked: bool = False, status: str = "",
                 host: str | None = None) -> Image.Image:
@@ -732,10 +743,15 @@ def exhibition_screen(available: "bool | None", show: "tuple[str, str]",
                       phase: str, status: str = "", active: bool = False,
                       locked: bool = False, host: str | None = None,
                       volume_keys: bool = False,
-                      backups_key: bool = False) -> Image.Image:
+                      backups_key: bool = False, fleet_detail: str = "",
+                      fleet_tone: str = "") -> Image.Image:
     """EXHIBITION: the Conductor on this unit, run from the HAT
     (ui/exhibition.py). `backups_key` adds `DOWN backups` to the key line
-    (the second page, backups_screen()).
+    (the second page, backups_screen()). `fleet` may wrap to two lines
+    (`units 1/7 · missing 01 02 03 04 07 09`); `fleet_detail` is the
+    reasons under it (`03 needs Upload`, amber) and `fleet_tone`
+    (ok/warn/err, Exhibition.fleet_tone()) its tint - "" reads the
+    older `units n/m online` count instead.
 
     `available` is whether a Conductor answers on 127.0.0.1 (None: not
     asked yet); `show` is Exhibition.show_lines() - the timeline's name
@@ -798,26 +814,48 @@ def exhibition_screen(available: "bool | None", show: "tuple[str, str]",
     draw.text((8, 76), _ellipsize(run or "…", FONT_L, WIDTH - 16),
               font=FONT_L, fill=tint)
 
-    online = fleet.split()[1] if fleet.startswith("units ") else ""
-    seen, _, total = online.partition("/")
-    if seen and total and seen == total and seen != "0":
-        fleet_tint = DIM
-    elif seen == "0":
-        fleet_tint = ERR
+    if fleet_tone:
+        fleet_tint = {"ok": OK, "warn": WARN, "err": ERR}.get(fleet_tone, DIM)
     else:
-        fleet_tint = WARN
-    draw.text((8, 104), _ellipsize(fleet, FONT_S, WIDTH - 16), font=FONT_S,
-              fill=fleet_tint)
-    draw.text((8, 120), _ellipsize(loop, FONT_S, WIDTH - 16), font=FONT_S,
+        # An older Conductor: `units n/m online`, tinted by the count.
+        online = fleet.split()[1] if fleet.startswith("units ") else ""
+        seen, _, total = online.partition("/")
+        if seen and total and seen == total and seen != "0":
+            fleet_tint = DIM
+        elif seen == "0":
+            fleet_tint = ERR
+        else:
+            fleet_tint = WARN
+    # The fleet line wraps (the missing list is never clipped) to two
+    # lines, the reasons under it; the status below keeps what is left of
+    # its three lines, at least two when it has that much to say.
+    width = WIDTH - 16
+    fleet_lines = _fit_lines(fleet, FONT_S, width, 2)
+    status_need = min(len(_wrap(status, FONT_S, width)), 3) if status else 0
+    detail_room = min(2, 4 - len(fleet_lines) - min(status_need, 2))
+    detail_lines = (_fit_lines(fleet_detail, FONT_S, width, detail_room)
+                    if fleet_detail and detail_room > 0 else [])
+    y = 104
+    for line in fleet_lines:
+        draw.text((8, y), line, font=FONT_S, fill=fleet_tint)
+        y += 14
+    for line in detail_lines:
+        draw.text((8, y), line, font=FONT_S, fill=WARN)
+        y += 14
+    y += 2
+    block = len(fleet_lines) + len(detail_lines)
+    draw.text((8, y), _ellipsize(loop, FONT_S, WIDTH - 16), font=FONT_S,
               fill=OK if loop == "LOOP on" else DIM)
+    y += 16
     if speaker.startswith("speaker LOST"):
         speaker_tint = ERR          # the Bluetooth link is down (SPEAKER row)
     elif speaker.startswith("no speaker"):
         speaker_tint = WARN
     else:
         speaker_tint = DIM
-    draw.text((8, 136), _ellipsize(speaker, FONT_S, WIDTH - 16), font=FONT_S,
+    draw.text((8, y), _ellipsize(speaker, FONT_S, WIDTH - 16), font=FONT_S,
               fill=speaker_tint)
+    y += 22
 
     if status:
         if status.startswith("ERROR"):
@@ -826,8 +864,7 @@ def exhibition_screen(available: "bool | None", show: "tuple[str, str]",
             tint = OK
         else:
             tint = DIM
-        y = 158
-        for line in _wrap(status, FONT_S, WIDTH - 16)[:3]:
+        for line in _fit_lines(status, FONT_S, width, max(1, 4 - block)):
             draw.text((8, y), line, font=FONT_S, fill=tint)
             y += 14
 

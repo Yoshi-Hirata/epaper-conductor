@@ -80,6 +80,11 @@ class FakeConductor:
         self.release.set()
         self.hold_paths = None          # None: `release` holds every path
         self.preset = None              # the top-level preset object, if any
+        # Coder AG's Conductor: `presence` {"present": [...], "missing":
+        # {unit: reason}} and the run's `left_out` {unit: reason}. None:
+        # an older Conductor without them.
+        self.presence = None
+        self.left_out = None
 
     def wait(self, next_in_s=25.0):
         """LOOP between runs: the run ended, the next one is pending."""
@@ -122,6 +127,11 @@ class FakeConductor:
                 "prepared": {}, "timeline": {}}
         if self.preset is not None:
             snap["preset"] = dict(self.preset)
+        if self.presence is not None:
+            snap["presence"] = {"present": list(self.presence["present"]),
+                                "missing": dict(self.presence["missing"])}
+        if self.left_out is not None and snap["run"] is not None:
+            snap["run"]["left_out"] = dict(self.left_out)
         if not self.old:
             snap["loop"] = dict(self.loop)
             snap["speaker"] = dict(self.speaker)
@@ -1290,3 +1300,306 @@ def test_the_app_draws_exhibition_and_repaints_only_on_change():
     app.tick(wait=0.0)
     assert app.display.frames == frames + 1
     assert app._display_key() != key
+
+
+# ---- who is missing (presence / run.left_out, 2026-10-19) ----
+
+def present(fake, here, missing):
+    fake.presence = {"present": list(here), "missing": dict(missing)}
+
+
+def test_nobody_missing_reads_all_present():
+    ex, fake = make_exhibition()
+    present(fake, UNITS, {})
+    ex.poll()
+    assert ex.fleet_text() == "units 7/7 · all present"
+    assert ex.fleet_detail() == "" and ex.fleet_tone() == "ok"
+
+
+def test_missing_units_are_listed_by_number_with_reasons_on_the_detail_line():
+    ex, fake = make_exhibition()
+    present(fake, ["radxa-05"], {"radxa-01": "not answering",
+                                 "radxa-02": "not answering",
+                                 "radxa-03": "needs Upload",
+                                 "radxa-04": "not answering",
+                                 "radxa-06": "needs Upload",
+                                 "radxa-07": "busy"})
+    ex.poll()
+    # Counted over the timeline's units (present + missing), not the
+    # fleet's `units` list.
+    assert ex.fleet_text() == "units 1/7 · missing 01 02 03 04 06 07"
+    assert ex.fleet_detail() == "03 06 needs Upload · 07 busy"
+    assert ex.fleet_tone() == "warn"
+    assert ex.absent_units() == {"radxa-01", "radxa-02", "radxa-03",
+                                 "radxa-04", "radxa-06", "radxa-07"}
+
+
+def test_a_timeline_smaller_than_the_fleet_counts_its_own_units():
+    ex, fake = make_exhibition()
+    present(fake, ["radxa-10"], {f"radxa-0{n}": "not answering"
+                                 for n in (1, 2, 3, 4, 7, 9)})
+    ex.poll()
+    assert ex.fleet_text() == "units 1/7 · missing 01 02 03 04 07 09"
+    assert ex.fleet_detail() == ""
+
+
+def test_nobody_present_is_red_and_names_without_numbers_are_kept_whole():
+    ex, fake = make_exhibition()
+    present(fake, [], {"tops": "not answering", "skirt": "not answering"})
+    ex.poll()
+    assert ex.fleet_text() == "units 0/2 · missing skirt tops"
+    assert ex.fleet_tone() == "err"
+
+
+def test_an_older_conductor_without_presence_keeps_units_online():
+    ex, fake = make_exhibition(offline=("radxa-03",))
+    ex.poll()
+    assert ex.fleet_text() == "units 6/7 online"
+    assert ex.fleet_detail() == "" and ex.fleet_tone() == ""
+    assert ex.absent_units() is None
+
+
+def test_units_left_out_of_the_run_are_shown_during_it():
+    ex, fake = make_exhibition()
+    fake.run = {"t0": 0.0, "state": "running", "now": 30.0}
+    fake.left_out = {"radxa-01": "not answering", "radxa-02": "needs Upload"}
+    # radxa-01 is also still missing: listed once, as left out.
+    present(fake, UNITS[2:], {"radxa-01": "not answering"})
+    ex.poll()
+    assert ex.fleet_text() == "units 5/7 · left out 01 02"
+    assert ex.fleet_detail() == "02 needs Upload"
+    assert ex.fleet_tone() == "warn"
+    # ...and one that dropped out mid-run is missing on top.
+    present(fake, UNITS[2:6], {"radxa-01": "not answering",
+                               "radxa-07": "not answering"})
+    ex.poll()
+    assert ex.fleet_text() == "units 4/7 · left out 01 02 · missing 07"
+
+
+def test_the_missing_line_renders_wrapped_and_the_app_passes_it():
+    from ui.render import FONT_S, _fit_lines
+
+    ex, fake = make_exhibition()
+    names = [f"radxa-{n:02d}" for n in range(1, 11)]
+    present(fake, ["radxa-05"], {n: ("needs Upload" if n == "radxa-03"
+                                     else "not answering")
+                                 for n in names if n != "radxa-05"})
+    ex.poll()
+    text = ex.fleet_text()
+    assert text == "units 1/10 · missing 01 02 03 04 06 07 08 09 10"
+    lines = _fit_lines(text, FONT_S, WIDTH - 16, 2)
+    assert " ".join(lines) == text            # wrapped, never clipped
+    assert len(lines) == 2
+    app, _ = make_app(ex)
+    enter(app)
+    app.draw()
+    assert app.display.last.size == (WIDTH, HEIGHT)
+    # The detail changes the frame (it is drawn) and the key.
+    assert ex.fleet_detail() in str(app._display_key())
+    plain = render.exhibition_screen(True, ("show", "18 cues"), "idle", text,
+                                     "LOOP off", "speaker ok", IDLE,
+                                     fleet_tone="warn")
+    detailed = render.exhibition_screen(True, ("show", "18 cues"), "idle",
+                                        text, "LOOP off", "speaker ok", IDLE,
+                                        fleet_tone="warn",
+                                        fleet_detail="03 needs Upload",
+                                        status="ERROR nothing to start - "
+                                               "every unit is missing")
+    assert plain.tobytes() != detailed.tobytes()
+
+
+# ---- blanking on the Conductor's own unit (2026-10-19) ----
+
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
+def clocked_app(ex, **kwargs):
+    clock = Clock()
+    app = App(NullDisplay(), ScriptedInput(()), FakeRunner(),
+              port_label="/dev/fake", exhibition=ex, host="radxa-05",
+              clock=clock, **kwargs)
+    return app, clock
+
+
+def test_the_conductor_unit_blanks_after_30_s_on_any_screen():
+    from ui.config import BLANK_AFTER_CONDUCTOR_S
+
+    assert BLANK_AFTER_CONDUCTOR_S == 30.0
+    ex, fake = make_exhibition()
+    ex.poll()
+    for screen_up in (False, True):
+        app, clock = clocked_app(ex)
+        if screen_up:
+            enter(app)
+        assert app.blank_timeout() == 30.0
+        app.tick(wait=0)
+        clock.advance(29.9)
+        app.tick(wait=0)
+        assert not app.blanked
+        clock.advance(0.2)
+        app.tick(wait=0)
+        assert app.blanked and app.display.asleep
+
+
+def test_a_garment_unit_never_blanks():
+    ex, fake = make_exhibition()
+    fake.down = True                    # nothing answers on 127.0.0.1
+    ex.poll()
+    app, clock = clocked_app(ex)
+    assert app.blank_timeout() == 0
+    clock.advance(3600)
+    app.tick(wait=0)
+    assert not app.blanked
+    # ...nor a unit without the EXHIBITION row at all.
+    bare = App(NullDisplay(), ScriptedInput(()), FakeRunner(), clock=clock)
+    assert bare.blank_timeout() == 0
+
+
+def test_blank_after_on_the_command_line_overrides_the_automatic_30_s():
+    ex, fake = make_exhibition()
+    ex.poll()
+    app, clock = clocked_app(ex, blank_after=0)
+    clock.advance(3600)
+    app.tick(wait=0)
+    assert not app.blanked
+    app, clock = clocked_app(ex, blank_after=10.0)
+    clock.advance(10.1)
+    app.tick(wait=0)
+    assert app.blanked
+
+
+def test_the_first_press_after_blanking_only_wakes():
+    ex, fake = make_exhibition()
+    ex.poll()
+    app, clock = clocked_app(ex)
+    enter(app)
+    clock.advance(31)
+    app.tick(wait=0)
+    assert app.blanked
+    app.handle("key1_hold")             # blind: would be START
+    assert not app.blanked
+    assert fake.posts() == []
+    assert app.screen is Screen.EXHIBITION
+
+
+def blanked_conductor_app():
+    ex, fake = make_exhibition()
+    present(fake, UNITS, {})
+    ex.poll()
+    app, clock = clocked_app(ex)
+    enter(app)
+    app.tick(wait=0)                    # the alerts' baseline
+    clock.advance(31)
+    app.tick(wait=0)
+    assert app.blanked
+    return app, clock, ex, fake
+
+
+def test_speaker_lost_wakes_the_screen_for_another_30_s():
+    app, clock, ex, fake = blanked_conductor_app()
+    fake.connection = "disconnected"
+    ex.poll()
+    app.tick(wait=0)
+    assert not app.blanked and not app.display.asleep
+    # A press right on the wake was made in the dark: wake only.
+    clock.advance(0.5)
+    app.handle("key1_hold")
+    assert fake.posts() == []
+    clock.advance(29.9)                 # just under 30 s after that press
+    app.tick(wait=0)
+    assert not app.blanked
+    clock.advance(0.2)
+    app.tick(wait=0)
+    assert app.blanked
+    # Still lost: not news, stays dark.
+    ex.poll()
+    app.tick(wait=0)
+    assert app.blanked
+
+
+def test_a_press_after_the_alert_wake_acts_normally():
+    app, clock, ex, fake = blanked_conductor_app()
+    fake.connection = "disconnected"
+    ex.poll()
+    app.tick(wait=0)
+    clock.advance(2.0)
+    app.handle("key3_hold")             # LOOP on, seen and meant
+    ex.join(2.0)
+    assert fake.posts() == [("/api/loop", {"on": True})]
+
+
+def test_a_newly_missing_unit_wakes_the_screen_and_the_same_list_does_not():
+    app, clock, ex, fake = blanked_conductor_app()
+    ex.poll()                           # nothing changed
+    app.tick(wait=0)
+    assert app.blanked
+    present(fake, UNITS[1:], {"radxa-01": "not answering"})
+    ex.poll()
+    app.tick(wait=0)
+    assert not app.blanked
+    clock.advance(31)
+    app.tick(wait=0)
+    assert app.blanked
+    ex.poll()                           # radxa-01 still missing
+    app.tick(wait=0)
+    assert app.blanked
+    # The Conductor missing a probe, then back with the same list: no.
+    fake.down = True
+    ex.poll()
+    app.tick(wait=0)
+    fake.down = False
+    ex.poll()
+    app.tick(wait=0)
+    assert app.blanked
+
+
+def test_a_refusal_verdict_wakes_and_gets_its_full_30_s():
+    ex, fake = make_exhibition()
+    ex.poll()
+    app, clock = clocked_app(ex)
+    enter(app)
+    app.tick(wait=0)
+    clock.advance(25)
+    fake.refuse = "No unit is ready - Upload first."
+    app.handle("key1_hold")             # START, refused
+    ex.join(2.0)
+    clock.advance(28)                   # the press was 28 s ago
+    app.tick(wait=0)                    # the verdict lands now
+    assert ex.phase == FAILED
+    clock.advance(29)                   # 57 s after the press...
+    app.tick(wait=0)
+    assert not app.blanked              # ...but 29 s after the verdict
+    clock.advance(1.5)
+    app.tick(wait=0)
+    assert app.blanked
+
+
+def test_never_dark_while_a_command_waits_for_its_verdict():
+    ex, fake = make_exhibition()
+    ex.poll()
+    app, clock = clocked_app(ex)
+    enter(app)
+    app.tick(wait=0)
+    fake.release.clear()                # the Conductor takes its time
+    app.handle("key1_hold")             # START
+    assert ex.busy
+    clock.advance(120)
+    app.tick(wait=0)
+    assert not app.blanked
+    fake.release.set()
+    ex.join(2.0)
+    app.tick(wait=0)                    # the verdict: lit another 30 s
+    clock.advance(29)
+    app.tick(wait=0)
+    assert not app.blanked
+    clock.advance(1.5)
+    app.tick(wait=0)
+    assert app.blanked

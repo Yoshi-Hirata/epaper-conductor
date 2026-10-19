@@ -222,6 +222,12 @@ def preview(directory: str) -> int:
                              "LOOP off", "speaker ok · vol 70% (bluez)", "idle",
                              host="radxa-05", volume_keys=True, backups_key=True
                              ).save(out / "exhibition_backups_key.png")
+    render.exhibition_screen(True, show, "idle",
+                             "units 1/7 · missing 01 02 03 04 07 09",
+                             "LOOP off", "speaker ok · vol 70% (bluez)", "idle",
+                             host="radxa-05", volume_keys=True, backups_key=True,
+                             fleet_detail="03 needs Upload", fleet_tone="warn"
+                             ).save(out / "exhibition_missing.png")
     backups = [("10-01 16:02 prerestore", False), ("10-01 15:20 upload *", True),
                ("10-01 14:00 edit", False), ("09-30 18:41 edit", False),
                ("09-30 09:00 import", False), ("09-29 17:12 start", False)]
@@ -524,7 +530,9 @@ def main() -> int:
                          "itself after a minute of no input)")
     ap.add_argument("--blank-after", type=float, default=None, metavar="SEC",
                     help="blank the backlight after this idle time "
-                         "(0 disables)")
+                         "(0 disables; default: never on a garment unit, "
+                         "30 s where the exhibition Conductor answers on "
+                         "127.0.0.1 - radxa-05)")
     ap.add_argument("--no-standby", action="store_true",
                     help="do not white out the panels at startup; leave "
                          "whatever they are showing (the factory autoplay "
