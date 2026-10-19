@@ -4457,3 +4457,327 @@ def test_an_inflight_preset_never_reported_is_sent_again_once():
     assert [n for n, _ in _posted(fleet, "/show/preset")].count("radxa-02") == 2
     _start_after_paint(fleet, clock, "radxa-02")
     assert fleet.run is not None and fleet.run["t0"] == clock.now + 11.0
+
+
+
+# ------------------------------------------------------------ START with the units that are connected
+# EXHIBITION mode (2026-10-19): only radxa-10 was powered, and START was
+# refused for the six garments that were not there. On the exhibition's
+# Conductor (start_present) START goes with the present units and names the
+# others; the show PC keeps the strict gate.
+
+SEVEN = ("radxa-01", "radxa-02", "radxa-03", "radxa-04", "radxa-06", "radxa-09", "radxa-10")
+
+
+def _seven(clock, start_present=True, online=("radxa-10",), **kw):
+    """Seven garment units offered the startup compile; only `online`
+    answer, holding it burned. radxa-05 (control only) has no show."""
+    compiled = {n: {"id": f"show-{n}", "cues": [], "duration": 100.0} for n in SEVEN}
+    fleet = Fleet({}, clock=clock, start_present=start_present, **kw)
+    fleet.links = {n: StubLink(n, "loaded") for n in SEVEN + ("radxa-05",)}
+    for name in SEVEN:
+        link = fleet.links[name]
+        link.status["show"].update(id=f"show-{name}", t0=None, synced=False,
+                                   burn={"state": "burned"})
+        link.online = name in online
+    fleet.links["radxa-05"].status = {"show": None}
+    fleet.offer_shows(compiled)
+    return fleet
+
+
+def test_exhibition_start_with_one_of_seven_starts_it_and_names_the_rest():
+    clock = Clock()
+    fleet = _seven(clock)
+    idle = fleet.snapshot()["presence"]
+    assert idle["present"] == ["radxa-10"]
+    assert idle["missing"] == {n: "not answering" for n in SEVEN if n != "radxa-10"}
+    assert idle["exhibition"] is True
+    # Offered, not adopted yet (no poll since the restart): START adopts it.
+    fleet.start_show(lead_s=1.0)
+    assert [n for n, _ in _posted(fleet, "/show/run")] == ["radxa-10"]
+    assert fleet.run["left_out"] == {n: "not answering" for n in SEVEN if n != "radxa-10"}
+    lines = [c for c in fleet.corrections if "START without" in c]
+    assert len(lines) == 1
+    assert ("START without radxa-01, radxa-02, radxa-03, radxa-04, radxa-06, "
+            "radxa-09 (not answering)") in lines[0]
+    snap = fleet.snapshot()
+    assert snap["run"]["left_out"] == fleet.run["left_out"]
+    assert snap["presence"]["present"] == ["radxa-10"]
+    assert "radxa-05" not in snap["presence"]["missing"]
+
+
+def test_a_unit_holding_another_show_is_left_out_as_holds_another_show():
+    clock = Clock()
+    fleet = _seven(clock, online=("radxa-10", "radxa-03"))
+    fleet.links["radxa-03"].status["show"]["id"] = "OLD"
+    assert fleet.snapshot()["presence"]["missing"]["radxa-03"] == "holds another show"
+    fleet.start_show(lead_s=1.0)
+    assert [n for n, _ in _posted(fleet, "/show/run")] == ["radxa-10"]
+    assert fleet.run["left_out"]["radxa-03"] == "holds another show"
+    assert any("radxa-03 (holds another show)" in c for c in fleet.corrections)
+
+
+def test_exhibition_start_with_no_garment_present_is_refused():
+    clock = Clock()
+    fleet = _seven(clock, online=())
+    with pytest.raises(ValueError, match="no garment is connected"):
+        fleet.start_show(lead_s=1.0)
+    assert fleet.run is None and _posted(fleet, "/show/run") == []
+    # One answers but holds another show: refused with what it says.
+    fleet.links["radxa-03"].online = True
+    fleet.links["radxa-03"].status["show"]["id"] = "OLD"
+    with pytest.raises(ValueError, match="radxa-03: has not taken this show yet"):
+        fleet.start_show(lead_s=1.0)
+    assert fleet.run is None
+
+
+def test_a_failed_board_garment_starts_forced_per_unit_and_stays_forced():
+    """Review of 71ac615 (3): on the exhibition a garment with failed boards
+    plays with the boards it has - a per-unit force, carried in `_waved`
+    through Loop restarts and rejoins, named once; never left out."""
+    clock = Clock()
+    fleet = _seven(clock, online=("radxa-10", "radxa-09"),
+                   loop_settings=lambda: (40.0, 2.0), loop_retry_s=5.0)
+    fleet.links["radxa-10"].status["show"]["burn"] = _failed_burn([[3, 1], [7, 2]], total=16)
+    snap = fleet.snapshot()["presence"]
+    assert "radxa-10" in snap["present"] and "radxa-10" not in snap["missing"]
+    fleet.start_show(lead_s=1.0)
+    runs = dict(_posted(fleet, "/show/run"))
+    assert runs["radxa-10"]["force"] is True and runs["radxa-09"]["force"] is False
+    assert "radxa-10" not in fleet.run["left_out"]
+    assert "radxa-10" in fleet.run["forced"] and "radxa-10" in fleet._waved
+    assert sum("START: radxa-10 with 2 boards failed" in c for c in fleet.corrections) == 1
+    # Supervision's rejoin of it carries the force.
+    assert fleet._rejoin_force(fleet.run, "radxa-10") is True
+    # The Loop's restart forces it again, without a second note.
+    clock.now = fleet.run["t0"] + 100.0
+    fleet._loop_tick()
+    clock.now += 40.0
+    for link in fleet.links.values():
+        link.posted.clear()
+    fleet._loop_tick()
+    assert fleet.run["loops"] == 1
+    runs = dict(_posted(fleet, "/show/run"))
+    assert runs["radxa-10"]["force"] is True
+    assert sum("START: radxa-10 with 2 boards failed" in c for c in fleet.corrections) == 1
+
+
+def test_a_lone_failed_board_garment_starts_on_the_exhibition_but_not_on_the_pc():
+    clock = Clock()
+    fleet = _seven(clock)
+    fleet.links["radxa-10"].status["show"]["burn"] = _failed_burn([[3, 1]], total=4)
+    fleet.start_show(lead_s=1.0)
+    assert [(n, b["force"]) for n, b in _posted(fleet, "/show/run")] == [("radxa-10", True)]
+    pc = _seven(clock, start_present=False, online=SEVEN)
+    for name in SEVEN:
+        pc.links[name].status["show"]["burn"] = {"state": "burned"}
+    pc.links["radxa-10"].status["show"]["burn"] = _failed_burn([[3, 1]], total=4)
+    for link in pc.links.values():
+        pc._supervise(link)
+    with pytest.raises(ValueError, match="radxa-10: 1 of 4 pictures not written"):
+        pc.start_show(lead_s=1.0)
+    assert pc.snapshot()["presence"]["missing"]["radxa-10"] == "pictures failed"
+
+
+def test_a_failed_board_garment_absent_at_start_rejoins_forced():
+    clock = Clock()
+    fleet = _seven(clock)
+    fleet.start_show(lead_s=1.0)
+    clock.now += 10.0
+    link = fleet.links["radxa-02"]
+    link.online = True
+    link.status["show"]["burn"] = _failed_burn([[5, 1]], total=8)
+    link.posted.clear()
+    fleet._supervise(link)
+    runs = [body for p, body in link.posted if p == "/show/run"]
+    assert runs and runs[0]["force"] is True
+    assert "radxa-02" in fleet._waved
+    assert any("START: radxa-02 with 1 board failed" in c for c in fleet.corrections)
+
+
+def test_one_timeline_checks_the_marks_of_a_forced_failed_board_garment(tmp_path):
+    """Review (3b): the forced failed-board garment is one of the units that
+    will start, so its upload mark is checked."""
+    import conductor.server as srv
+
+    ws = _two_look_workspace(tmp_path / "ws")
+    compiled, _ = ws.compile_show()
+    fleet = Fleet({})
+    fleet.links = {n: StubLink(n, "loaded") for n in ("radxa-01", "radxa-10")}
+    fleet.links["radxa-01"].online = False
+    fleet.links["radxa-10"].status["show"].update(
+        id=compiled["radxa-10"]["id"], burn=_failed_burn([[3, 1]], total=4))
+    server = make_server(ws.root, port=0, fleet=fleet, adopt=True)
+    port = _serve(server)
+    ws = server.RequestHandlerClass.workspace
+    try:
+        srv.offer_startup_shows(fleet, ws)
+        fleet._supervise(fleet.links["radxa-10"])
+        assert ws.unit_marks["upload"] == {"radxa-10": ws.revision()}
+        # Edited since: the forced garment holds an older upload - refused.
+        ws.set_timeline(120, [
+            {"id": "p", "item": "Look23", "at": 0, "design": "Look23_color_ivory_grid.csv"},
+            {"id": "q", "item": "Look24", "at": 30, "design": "Look24_color_ivory_grid.csv"},
+        ])
+        status, answer = _post(port, "/api/fleet/start", {})
+        assert status == 400 and "Upload again" in answer["error"], answer
+        assert fleet.run is None
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_left_out_unit_joins_mid_run_through_supervision():
+    clock = Clock()
+    fleet = _seven(clock)
+    fleet.start_show(lead_s=1.0)
+    clock.now += 10.0
+    link = fleet.links["radxa-01"]
+    link.online = True                       # powered up mid-run, holds the show
+    link.posted.clear()
+    fleet._supervise(link)
+    assert "radxa-01" in fleet.shows         # adopted from the offer...
+    runs = [body for p, body in link.posted if p == "/show/run"]
+    assert runs and runs[0]["show"] == "show-radxa-01"
+    assert any("radxa-01: started late" in c for c in fleet.corrections)
+    assert "radxa-01" in fleet.snapshot()["run"]["left_out"]
+    link.status["show"].update(state="running", t0=runs[0]["t0"], synced=True)
+    snap = fleet.snapshot()
+    assert "radxa-01" not in snap["run"]["left_out"]
+    assert "radxa-01" in snap["presence"]["present"]
+
+
+def test_the_pcs_default_start_is_still_strict():
+    clock = Clock()
+    fleet = _seven(clock, start_present=False)
+    for link in fleet.links.values():
+        fleet._supervise(link) if link.online else None
+    with pytest.raises(ValueError) as refused:
+        fleet.start_show(lead_s=1.0)
+    assert "radxa-01: not answering" in str(refused.value)
+    assert fleet.run is None and _posted(fleet, "/show/run") == []
+    assert fleet.snapshot()["presence"]["exhibition"] is False
+    with pytest.raises(ValueError):
+        _seven(clock, start_present=False, online=()).start_show(lead_s=1.0)
+
+
+def test_presence_and_left_out_shapes_idle_and_running():
+    clock = Clock()
+    fleet = _seven(clock, online=("radxa-10", "radxa-02", "radxa-04"))
+    fleet.links["radxa-02"].status["show"]["burn"] = {"state": "burning", "done": 3, "total": 9}
+    fleet.links["radxa-04"].status["show"]["burn"] = {"state": "cleared"}
+    snap = fleet.snapshot()
+    assert snap["run"] is None
+    assert snap["presence"]["missing"]["radxa-02"] == "still writing"
+    assert snap["presence"]["missing"]["radxa-04"] == "needs Upload"
+    fleet.start_show(lead_s=1.0)
+    snap = fleet.snapshot()
+    assert snap["run"]["left_out"]["radxa-02"] == "still writing"
+    assert snap["run"]["left_out"]["radxa-04"] == "needs Upload"
+    assert set(snap["presence"]) >= {"present", "missing"}
+    assert json.loads(json.dumps(snap["presence"])) == snap["presence"]
+
+
+def test_the_exhibition_loop_restart_leaves_out_at_once():
+    clock = Clock()
+    fleet = _fleet(clock, lambda: (40.0, 2.0), loop_retry_s=5.0, start_present=True)
+    fleet.start_show(lead_s=1.0)
+    fleet.links["radxa-02"].online = False
+    clock.now = fleet.run["t0"] + 100.0
+    fleet._loop_tick()
+    clock.now += 40.0
+    for link in fleet.links.values():
+        link.posted.clear()
+    fleet._loop_tick()                       # no 60 s grace
+    assert fleet.run["loops"] == 1
+    assert [n for n, _ in _posted(fleet, "/show/run")] == ["radxa-01"]
+    assert fleet.run["left_out"] == {"radxa-02": "not answering"}
+    assert "started without radxa-02" in fleet.loop_state()["problem"]
+
+
+def test_an_exhibition_staged_start_leaves_the_absent_out():
+    clock = Clock()
+    fleet = _preset_fleet(clock, start_present=True)
+    fleet.links["radxa-02"].online = False
+    results = fleet.start_show(lead_s=3.0, preset_first=True)
+    assert set(results) == {"radxa-01"}
+    assert fleet.snapshot()["run"]["left_out"] == {"radxa-02": "not answering"}
+    _start_after_paint(fleet, clock, "radxa-01")
+    assert fleet.run is not None
+    assert [n for n, _ in _posted(fleet, "/show/run")] == ["radxa-01"]
+    assert fleet.run["left_out"] == {"radxa-02": "not answering"}
+    assert sum("START without radxa-02" in c for c in fleet.corrections) == 1
+
+
+def _two_look_workspace(root):
+    ws = _workspace(root, music=False)
+    ws.save("Look24_map.csv", MAP)
+    ws.save("Look24_color_ivory_grid.csv", GRID)
+    ws.assign("Look24", "radxa-10")
+    ws.set_timeline(120, [
+        {"id": "p", "item": "Look23", "at": 0, "design": "Look23_color_ivory_grid.csv"},
+        {"id": "q", "item": "Look24", "at": 0, "design": "Look24_color_ivory_grid.csv"},
+    ])
+    return ws
+
+
+@pytest.mark.parametrize("adopt", [True, False])
+def test_start_over_http_on_the_exhibition_and_the_pc(tmp_path, adopt):
+    import conductor.server as srv
+
+    ws = _two_look_workspace(tmp_path / "ws")
+    compiled, problems = ws.compile_show()
+    assert set(compiled) == {"radxa-01", "radxa-10"} and not problems
+    fleet = Fleet({})
+    fleet.links = {n: StubLink(n, "loaded") for n in ("radxa-01", "radxa-10")}
+    fleet.links["radxa-01"].online = False
+    fleet.links["radxa-10"].status["show"].update(id=compiled["radxa-10"]["id"],
+                                                  burn={"state": "burned"})
+    server = make_server(ws.root, port=0, fleet=fleet, adopt=adopt)
+    port = _serve(server)
+    ws = server.RequestHandlerClass.workspace
+    try:
+        srv.offer_startup_shows(fleet, ws)
+        fleet._supervise(fleet.links["radxa-10"])
+        status, answer = _post(port, "/api/fleet/start", {})
+        if adopt:
+            assert status == 200 and answer.get("from_s") == 0.0, answer
+            assert list(answer["units"]) == ["radxa-10"]
+            status, raw, _ = _get(port, "/api/fleet")
+            snap = json.loads(raw)
+            assert snap["presence"]["present"] == ["radxa-10"]
+            assert snap["presence"]["missing"] == {"radxa-01": "not answering"}
+            assert snap["run"]["left_out"] == {"radxa-01": "not answering"}
+        else:
+            assert status == 400 and "radxa-01" in answer["error"], answer
+            assert fleet.run is None
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_exhibition_start_over_http_with_nothing_adopted_says_no_garment(tmp_path):
+    import conductor.server as srv
+
+    ws = _two_look_workspace(tmp_path / "ws")
+    fleet = Fleet({})
+    fleet.links = {n: StubLink(n, "loaded") for n in ("radxa-01", "radxa-10")}
+    for link in fleet.links.values():
+        link.online = False
+    server = make_server(ws.root, port=0, fleet=fleet, adopt=True)
+    port = _serve(server)
+    try:
+        srv.offer_startup_shows(fleet, server.RequestHandlerClass.workspace)
+        status, answer = _post(port, "/api/fleet/start", {})
+        assert status == 400 and answer["error"] == "no garment is connected", answer
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_the_page_names_the_missing_garments_under_start_on_the_exhibition_only():
+    assert 'id="show-presence"' in PAGE_TEXT
+    block = PAGE_TEXT[PAGE_TEXT.index("function presenceNote()"):]
+    block = block[:block.index("\n}\n")]
+    assert "p.exhibition" in block and "p.missing" in block
+    assert "START goes without" in block

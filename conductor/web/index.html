@@ -409,6 +409,8 @@ button.small { font-size: 11px; padding: 1px 6px; vertical-align: baseline; }
    own margin, and both panels are tight. */
 #show-degraded, #write-degraded { margin-top: 6px; }
 #show-degraded:empty, #write-degraded:empty { display: none; }
+#show-presence { margin-top: 6px; }
+#show-presence:empty { display: none; }
 .nn-vit { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nn-vit.amber { color: var(--warn); } .nn-vit.red { color: var(--err); font-weight: 600; }
 .nn-bags { margin-top: 4px; }
@@ -5249,6 +5251,10 @@ function renderFleet() {
            Its margin is in the stylesheet, behind :empty, so the line costs
            nothing on the evenings it has nothing to say. -->
       <div class="warn" id="show-degraded"></div>
+      <!-- EXHIBITION only (/api/fleet's presence.exhibition): START goes with
+           the garments that are connected; the others are named here, one
+           line, and do not block it (2026-10-19). -->
+      <div class="warn" id="show-presence"></div>
       <div class="meta" id="show-log" style="margin-top:8px;white-space:pre-wrap">${esc(ui.showLog || "")}</div>
       <div class="meta" id="show-fix"></div>
     </div>
@@ -5469,6 +5475,8 @@ function showClockText() {
     ? `${want - loaded} unit(s) do not hold this show yet - they are corrected automatically once they answer.` : "";
   const degraded = $("#show-degraded");
   if (degraded) degraded.textContent = degradedNote();
+  const presence = $("#show-presence");
+  if (presence) presence.textContent = presenceNote();
   // The LOOK row above is drawn from this workspace's own timeline (state.show),
   // not from whatever a unit actually holds - while some units are still behind
   // (the hint above already says so) that is worth spelling out, since the two
@@ -5936,6 +5944,18 @@ function degradedUnits() {
 // not cure a degraded master (radxa-07, 2026-09-28). Said once rather than
 // per unit, so three degraded garments do not wrap the panel in three
 // copies of the same sentence (L4).
+// EXHIBITION's "start with the units that are connected" (/api/fleet's
+// presence, conductor/fleet.py presence()): the garments a START would go
+// without, grouped by why - only on the exhibition's Conductor, where START
+// is not blocked by them. Empty otherwise.
+function presenceNote() {
+  const p = fleet?.presence;
+  if (!p || !p.exhibition || !p.missing) return "";
+  const groups = {};
+  for (const [name, why] of Object.entries(p.missing).sort()) (groups[why] = groups[why] || []).push(name);
+  const parts = Object.entries(groups).map(([why, names]) => `${names.join(", ")} (${why})`);
+  return parts.length ? `START goes without ${parts.join("; ")} - they join when they come back.` : "";
+}
 function degradedNote() {
   const who = degradedUnits();
   if (!who.length) return "";
