@@ -4531,17 +4531,100 @@ def test_exhibition_start_with_no_garment_present_is_refused():
     assert fleet.run is None
 
 
-def test_a_lone_unit_with_failed_boards_still_asks_for_the_force():
+def test_a_failed_board_garment_starts_forced_per_unit_and_stays_forced():
+    """Review of 71ac615 (3): on the exhibition a garment with failed boards
+    plays with the boards it has - a per-unit force, carried in `_waved`
+    through Loop restarts and rejoins, named once; never left out."""
+    clock = Clock()
+    fleet = _seven(clock, online=("radxa-10", "radxa-09"),
+                   loop_settings=lambda: (40.0, 2.0), loop_retry_s=5.0)
+    fleet.links["radxa-10"].status["show"]["burn"] = _failed_burn([[3, 1], [7, 2]], total=16)
+    snap = fleet.snapshot()["presence"]
+    assert "radxa-10" in snap["present"] and "radxa-10" not in snap["missing"]
+    fleet.start_show(lead_s=1.0)
+    runs = dict(_posted(fleet, "/show/run"))
+    assert runs["radxa-10"]["force"] is True and runs["radxa-09"]["force"] is False
+    assert "radxa-10" not in fleet.run["left_out"]
+    assert "radxa-10" in fleet.run["forced"] and "radxa-10" in fleet._waved
+    assert sum("START: radxa-10 with 2 boards failed" in c for c in fleet.corrections) == 1
+    # Supervision's rejoin of it carries the force.
+    assert fleet._rejoin_force(fleet.run, "radxa-10") is True
+    # The Loop's restart forces it again, without a second note.
+    clock.now = fleet.run["t0"] + 100.0
+    fleet._loop_tick()
+    clock.now += 40.0
+    for link in fleet.links.values():
+        link.posted.clear()
+    fleet._loop_tick()
+    assert fleet.run["loops"] == 1
+    runs = dict(_posted(fleet, "/show/run"))
+    assert runs["radxa-10"]["force"] is True
+    assert sum("START: radxa-10 with 2 boards failed" in c for c in fleet.corrections) == 1
+
+
+def test_a_lone_failed_board_garment_starts_on_the_exhibition_but_not_on_the_pc():
     clock = Clock()
     fleet = _seven(clock)
     fleet.links["radxa-10"].status["show"]["burn"] = _failed_burn([[3, 1]], total=4)
-    with pytest.raises(ValueError) as refused:
-        fleet.start_show(lead_s=1.0)
-    assert str(refused.value).startswith("radxa-10: 1 of 4 pictures not written")
-    assert "not answering" not in str(refused.value)    # the page's force question
-    fleet.start_show(lead_s=1.0, force=True)
-    assert [n for n, _ in _posted(fleet, "/show/run")] == ["radxa-10"]
-    assert fleet.snapshot()["presence"]["present"] == ["radxa-10"]
+    fleet.start_show(lead_s=1.0)
+    assert [(n, b["force"]) for n, b in _posted(fleet, "/show/run")] == [("radxa-10", True)]
+    pc = _seven(clock, start_present=False, online=SEVEN)
+    for name in SEVEN:
+        pc.links[name].status["show"]["burn"] = {"state": "burned"}
+    pc.links["radxa-10"].status["show"]["burn"] = _failed_burn([[3, 1]], total=4)
+    for link in pc.links.values():
+        pc._supervise(link)
+    with pytest.raises(ValueError, match="radxa-10: 1 of 4 pictures not written"):
+        pc.start_show(lead_s=1.0)
+    assert pc.snapshot()["presence"]["missing"]["radxa-10"] == "pictures failed"
+
+
+def test_a_failed_board_garment_absent_at_start_rejoins_forced():
+    clock = Clock()
+    fleet = _seven(clock)
+    fleet.start_show(lead_s=1.0)
+    clock.now += 10.0
+    link = fleet.links["radxa-02"]
+    link.online = True
+    link.status["show"]["burn"] = _failed_burn([[5, 1]], total=8)
+    link.posted.clear()
+    fleet._supervise(link)
+    runs = [body for p, body in link.posted if p == "/show/run"]
+    assert runs and runs[0]["force"] is True
+    assert "radxa-02" in fleet._waved
+    assert any("START: radxa-02 with 1 board failed" in c for c in fleet.corrections)
+
+
+def test_one_timeline_checks_the_marks_of_a_forced_failed_board_garment(tmp_path):
+    """Review (3b): the forced failed-board garment is one of the units that
+    will start, so its upload mark is checked."""
+    import conductor.server as srv
+
+    ws = _two_look_workspace(tmp_path / "ws")
+    compiled, _ = ws.compile_show()
+    fleet = Fleet({})
+    fleet.links = {n: StubLink(n, "loaded") for n in ("radxa-01", "radxa-10")}
+    fleet.links["radxa-01"].online = False
+    fleet.links["radxa-10"].status["show"].update(
+        id=compiled["radxa-10"]["id"], burn=_failed_burn([[3, 1]], total=4))
+    server = make_server(ws.root, port=0, fleet=fleet, adopt=True)
+    port = _serve(server)
+    ws = server.RequestHandlerClass.workspace
+    try:
+        srv.offer_startup_shows(fleet, ws)
+        fleet._supervise(fleet.links["radxa-10"])
+        assert ws.unit_marks["upload"] == {"radxa-10": ws.revision()}
+        # Edited since: the forced garment holds an older upload - refused.
+        ws.set_timeline(120, [
+            {"id": "p", "item": "Look23", "at": 0, "design": "Look23_color_ivory_grid.csv"},
+            {"id": "q", "item": "Look24", "at": 30, "design": "Look24_color_ivory_grid.csv"},
+        ])
+        status, answer = _post(port, "/api/fleet/start", {})
+        assert status == 400 and "Upload again" in answer["error"], answer
+        assert fleet.run is None
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_a_left_out_unit_joins_mid_run_through_supervision():

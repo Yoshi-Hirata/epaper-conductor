@@ -498,7 +498,10 @@ curl --data-binary @ws.tar -H "Content-Type: application/x-tar" -H "X-Passcode: 
   始める。外した衣装は corrections に `START without radxa-01, radxa-02 (not answering)` と 1 行、
   ページの ③ START の下に琥珀色で `START goes without …`、LCD にも出る。あとから電源を入れた
   衣装はショーを持っていれば走行中のランへ入る(`started late`)。Loop の再開も同じで、60 秒は
-  待たない。1 着もつながっていなければ `no garment is connected` で断られる
+  待たない。1 着もつながっていなければ `no garment is connected` で断られる。基板が一部
+  書けなかった衣装は外さず、書けた基板だけで始まる(`START: radxa-10 with 2 boards failed`)。
+  **欠けた衣装がある間は 1 LOOK だけの Upload をしない**(戻った衣装が古いショーで入りうる ―
+  Upload するなら All LOOKs)
 - **会場で停電したら**: 電気が戻るのを待つだけ。radxa-05 は約 2 分でホットスポットになり、子機は
   無限に再接続を試みるので自動で戻り(3 章 `autoconnect-retries 0`)、書き込み済みの絵は
   そのまま引き取られる(1 章)。全台が戻ったら LCD の EXHIBITION で **KEY1 長押し = ③ START**

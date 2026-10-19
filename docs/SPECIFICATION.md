@@ -1220,19 +1220,24 @@ SSID がスキャンに見えている間は最長 10 分待ってから ― `nm
   消去は STOP のとき(従来の 30 秒窓)。
   **つながっている機体だけで始める(2026-10-19、`--adopt` の Conductor だけ = `Fleet.start_present`)**:
   ③ START(LCD の `POST /api/fleet/start {}` も)と Loop の再開は、準備できていない機体
-  (応答なし、ショーを持っていない・別のショー、書き込み中、絵が無い、`force` なしの基板失敗)を
+  (応答なし、ショーを持っていない・別のショー、書き込み中、絵が無い)を
   **待たずにすぐ外して**、準備できた機体だけで始める(Loop の 60 秒猶予も展示では使わない)。
+  **基板が一部失敗した機体は外さず、機体ごとの force で始める**(Loop の `forced_units` と同じ仕組み。
+  `_waved` に記録され、失敗の内容が同じ間は Loop の再開と途中参加でも force。corrections に
+  `START: radxa-10 with 2 boards failed` と START ごとに 1 回。`presence` では present 扱い)。
   外した機体は `run.left_out` = `{unit: 理由}` と corrections の 1 行
   `START without radxa-01, radxa-02 (not answering); radxa-03 (holds another show)` で名指し、
   戻ってショーを持って答えたら supervision が `started late` で入れ、`left_out` から消える
   (起動時の引き取り待ちの機体は START 時点でその場で引き取る)。
   `_one_timeline`(「同じ Upload か」)は**始める機体だけ**で判断する ― 居ない機体は別の Upload を
-  持っているのではなく、居ないだけ。1 台も準備できていなければ断る: 答える機体があればその理由
-  (基板失敗ならページの「それでも始める?」がそのまま出る)、1 台も答えなければ
+  持っているのではなく、居ないだけ(force で始める基板失敗の機体も「始める機体」に入るので、その
+  Upload の印も確かめる)。**欠けた衣装がある間に 1 LOOK だけの Upload をしない** ― 戻った衣装が
+  古いコンパイルのまま途中参加しうる(全 LOOK の Upload なら戻った衣装は新しいショーを読み直す)。
+  1 台も準備できていなければ断る: 答える機体があればその理由、1 台も答えなければ
   `no garment is connected`。`/api/fleet` は常に `presence` = `{"present": [...], "missing":
   {unit: 理由}, "exhibition": bool}` を返す(タイムラインの機体だけ。radxa-05・未割り当ては
-  含まない。理由は `not answering` / `needs Upload` / `holds another show` / `still writing` /
-  `pictures failed`)。`preset_left_out`(0:00 の絵なしで始まった機体のトースト)はそのまま。
+  含まない。理由は `not answering` / `needs Upload` / `holds another show` / `still writing`。
+  `pictures failed` は PC の Conductor でだけ出る)。`preset_left_out`(0:00 の絵なしで始まった機体のトースト)はそのまま。
   ページは展示 Conductor でだけ ③ START の下に琥珀色の 1 行で欠けている機体を出す(START は止めない)。
   PC の Conductor の START は従来どおり厳格(1 台でも準備できていなければ断る)。
   終わったラン(位置 ≥ 長さ)への **③ START は `force` 無しで通る**(`fleet.run_is_over()`。

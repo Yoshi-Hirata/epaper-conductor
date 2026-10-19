@@ -530,6 +530,9 @@ class Fleet:
         # Loop's restarts may wave through again (see _still_waved).
         self._waved: "dict[str, tuple]" = {}
         self._waved_said: "set[str]" = set()        # the set the corrections last named
+        # EXHIBITION (start_present): {unit: failure signature} the corrections
+        # have named as "started with n boards failed" since the last START press.
+        self._failed_said: "dict[str, tuple]" = {}
         # A START in its PRESET stage (start_show(preset_first=True)): what
         # the start will be, who has painted the 0:00 look and when, and
         # the deadline past which it starts anyway. None otherwise.
@@ -761,6 +764,10 @@ class Fleet:
         # grace / "started without X" path. Every other unit: never forced.
         waved_signatures = dict(self._waved)        # a START landing meanwhile may clear it
         waved = self._still_waved()
+        if self.start_present:
+            # EXHIBITION: a garment with failed boards plays with the boards it
+            # has (per-unit force), never left out for them.
+            waved = waved | self._failed_units(self._targets())
         not_ready = self._not_ready(self._targets(), forced=waved)
         skip = {name for name, why in not_ready.items()
                 if overdue or self.start_present
@@ -866,6 +873,11 @@ class Fleet:
         Without it the rejoin posts force:False and is refused for the
         whole run (review of ef61d26, MED-1)."""
         if bool(run.get("force")) or name in (run.get("forced") or ()):
+            return True
+        if self.start_present and self._failure_signature(name) is not None:
+            # EXHIBITION: a garment back with failed boards plays with the
+            # boards it has, as it would have at the START.
+            self._wave_failed([name])
             return True
         return bool(run.get("loops", 0)) and name in self._still_waved()
 
@@ -1888,7 +1900,8 @@ class Fleet:
         if not 0 <= at <= duration:
             raise ValueError(f"The show is {timeline.format_clock(0)} to "
                              f"{timeline.format_clock(duration)}.")
-        targets, left = self._start_targets(skip, force, forced_units, left_why)
+        targets, left, forced_units = self._start_targets(skip, force, forced_units,
+                                                          left_why)
         # Every picture is meant to already be sitting in its slot: START
         # refuses while any unit is still writing them, offline, not yet
         # holding this show, or (unless `force`) failed to write some
@@ -1904,6 +1917,10 @@ class Fleet:
                             for sig in [self._failure_signature(name)]
                             if sig is not None} if force else {})
             self._waved_said = set()
+        if self.start_present:
+            if expect_gen is None:
+                self._failed_said = {}      # a START press names them again
+            self._wave_failed([name for name in targets if name in forced_units])
         with self._run_lock:
             if expect_gen is not None and (self._run_gen != expect_gen
                                            or self._stopped):
@@ -1962,7 +1979,7 @@ class Fleet:
                 self._adopt_show(link)
 
     def _start_targets(self, skip, force: bool, forced_units,
-                       left_why: "dict | None") -> "tuple[list[str], dict[str, str]]":
+                       left_why: "dict | None") -> "tuple[list[str], dict[str, str], set]":
         """(the units a START sends to, {unit: why} the ones it leaves out).
 
         Everywhere: `skip` is left out (the Loop's grace, the end of a
@@ -1973,6 +1990,11 @@ class Fleet:
         skip = set(skip)
         everyone = self._targets()
         targets = [name for name in everyone if name not in skip]
+        if self.start_present and not force:
+            # A garment with failed boards starts with the boards it has, by
+            # a per-unit force (the Loop's forced_units mechanism), and is
+            # carried through restarts and rejoins in `_waved`.
+            forced_units = set(forced_units) | self._failed_units(targets)
         why = dict(left_why or {})
         left = {name: why.get(name) or self._absence(name, forced_units, force)
                 or "not ready" for name in everyone if name in skip}
@@ -1992,7 +2014,28 @@ class Fleet:
             targets = ready
         if not targets:
             raise ValueError("no unit is ready")
-        return targets, left
+        return targets, left, set(forced_units)
+
+    def _failed_units(self, names) -> "set[str]":
+        """The units of `names` holding this show with some boards failed
+        (a failure signature) - what EXHIBITION forces per unit."""
+        return {name for name in names if self._failure_signature(name) is not None}
+
+    def _wave_failed(self, names) -> None:
+        """EXHIBITION: record these failed-board units in `_waved` (so Loop
+        restarts and rejoins force them while the failure stays the same)
+        and name each once: "START: radxa-10 with 2 boards failed"."""
+        for name in names:
+            sig = self._failure_signature(name)
+            if sig is None:
+                continue
+            self._waved[name] = sig
+            if self._failed_said.get(name) != sig:
+                self._failed_said[name] = sig
+                boards = len({pair[0] for pair in sig[0]})
+                self._note(f"START: {name} with {boards} board"
+                           f"{'' if boards == 1 else 's'} failed"
+                           if boards else f"START: {name} with its boards failed")
 
     def _absence(self, name: str, forced=(), force: bool = False) -> "str | None":
         """Why this unit would not take part in a START right now, in a few
@@ -2022,7 +2065,9 @@ class Fleet:
         if state == "burning":
             return "still writing"
         if state == "failed":
-            return None if (force or name in forced) else "pictures failed"
+            # EXHIBITION starts it anyway, per unit (start_present): present.
+            return (None if (force or name in forced or self.start_present)
+                    else "pictures failed")
         return "needs Upload"
 
     def timeline_units(self) -> "list[str]":
@@ -2101,7 +2146,12 @@ class Fleet:
         start. A unit whose /show/preset is REFUSED (the show is running
         there, the unit is busy, it does not answer) is not waited for: it
         is named in the corrections and still sent the start (MED-1)."""
-        targets, left = self._start_targets(skip, force, forced_units, left_why)
+        targets, left, forced_units = self._start_targets(skip, force, forced_units,
+                                                          left_why)
+        if self.start_present:
+            if expect_gen is None:
+                self._failed_said = {}
+            self._wave_failed([name for name in targets if name in forced_units])
         problems = self._burn_problems(targets, force=force, forced=forced_units)
         if problems:
             raise ValueError("; ".join(problems))
