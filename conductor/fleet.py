@@ -135,6 +135,9 @@ PRESET_RETRY_FOR_S = 10.0
 # What a second START during the PRESET stage is told (the server's own
 # check, and the check-and-set under the run lock behind it).
 STAGING_BUSY = "The show is starting (preset first) - wait for the countdown, or STOP."
+# EXHIBITION mode's START when not one garment of the timeline answers
+# (Fleet.start_present).
+NO_GARMENT = "no garment is connected"
 # The fleet-wide Wi-Fi switch (EXHIBITION mode): the side that must move
 # first gets the short lead, the other side the long one, so the hotspot is
 # up before its clients look for it and down only after they have left.
@@ -477,8 +480,16 @@ class Fleet:
                  clear_after_stop_s: float = CLEAR_AFTER_STOP_S,
                  clear_after_move_s: float = CLEAR_AFTER_MOVE_S,
                  loop_settings=None, loop_tick_s: float = LOOP_TICK_S,
-                 loop_retry_s: float = LOOP_RETRY_S):
+                 loop_retry_s: float = LOOP_RETRY_S,
+                 start_present: bool = False):
         self._clock = clock
+        # EXHIBITION mode (serve --adopt, 2026-10-19): START - and every Loop
+        # restart, at once, without the 60 s grace - goes with the garments
+        # that are connected and hold the show; the others are left out by
+        # name (run.left_out, the corrections) and join through supervision
+        # ("started late") when they come back. Off on the show PC: START
+        # there refuses on any unit not ready, exactly as before.
+        self.start_present = start_present
         self.poll_s = poll_s
         # EXHIBITION mode's Loop: `loop_settings()` answers (wait_s, lead_s)
         # while THE SHOW's Loop is on, None while it is off - the server
@@ -752,12 +763,16 @@ class Fleet:
         waved = self._still_waved()
         not_ready = self._not_ready(self._targets(), forced=waved)
         skip = {name for name, why in not_ready.items()
-                if overdue or self._loop_skipped.get(name) == why}
+                if overdue or self.start_present
+                or self._loop_skipped.get(name) == why}
+        left_why = {name: self._absence(name, forced=waved) or "not ready"
+                    for name in skip}
         try:
             results = self.start_show(float(lead_s), 0.0, loop=True,
                                       skip=skip, expect_gen=gen,
                                       forced_units=waved,
-                                      preset_first=preset_first)
+                                      preset_first=preset_first,
+                                      left_why=left_why)
         except ValueError as exc:
             self._loop_refused(gen, now, str(exc))
             return
@@ -1086,6 +1101,7 @@ class Fleet:
 
     def snapshot(self) -> dict:
         self._adopt()
+        self._forget_left_out()
         with self._run_lock:
             run = dict(self.run) if self.run else None
             # Meaningful only with no run: once one exists (live, or
@@ -1100,8 +1116,11 @@ class Fleet:
             # counting) - the countdown begins when the start goes out.
             run = {"t0": None, "state": "preset", "phase": "preset",
                    "held_at": None, "now": 0.0, "force": False,
-                   "preset": preset, "loops": self._loop_runs}
+                   "preset": preset, "loops": self._loop_runs,
+                   "left_out": dict(preset.get("left_out") or {})}
             start_at = 0.0
+        if run is not None:
+            run["left_out"] = dict(run.get("left_out") or {})
         if run and run["state"] != "preset":
             mark = run["held_at"] if run["state"] == "holding" else self._clock()
             run["now"] = round(mark - run["t0"], 2)
@@ -1144,6 +1163,10 @@ class Fleet:
                 "loop": self.loop_state(),
                 # The PRESET stage of a START, or null (preset_state()).
                 "preset": preset,
+                # EXHIBITION's "start with the units that are connected":
+                # who would take part in a START now and why the others
+                # would not (presence()) - idle, staging and running alike.
+                "presence": self.presence(),
                 "burn": {"burned": burned, "total": len(reporting)}}
 
     def _unit_snapshot(self, link, run: "dict | None" = None) -> dict:
@@ -1796,7 +1819,8 @@ class Fleet:
                    at: float = 0.0, force: bool = False,
                    loop: bool = False, skip=(),
                    expect_gen: "int | None" = None,
-                   forced_units=(), preset_first: bool = False) -> "dict[str, dict]":
+                   forced_units=(), preset_first: bool = False,
+                   left_why: "dict | None" = None) -> "dict[str, dict]":
         """Begin the show `lead_s` from now, `at` seconds into it (0.0 for
         the top). The caller resolves `at` itself - normally
         `fleet.start_at`, where a SEEK made before the show started (or
@@ -1823,12 +1847,24 @@ class Fleet:
         polling them. `expect_gen` is the run generation the caller
         decided on: a STOP or a move since (a different generation, or
         `_stopped`) refuses the START under the lock, so the Loop can
-        never start over the top of an operator's STOP."""
+        never start over the top of an operator's STOP.
+
+        With `start_present` (EXHIBITION mode) the units that are not
+        ready - not answering, not holding the show, still writing, pictures
+        failed without the force - are left out at once instead of refusing
+        the START, and named: `run["left_out"]` ({unit: short reason}, with
+        `left_why` the caller's own reasons for `skip`) and, for the
+        operator's START, one corrections line. Refused only when no unit
+        is ready: with the problems of the units that DO answer (so the
+        page's "start anyway?" still comes up for failed boards), or
+        NO_GARMENT when none answers."""
         # Before the gate: a STOP's clear that is still inside its window
         # has not deleted anything, so dropping it is what lets START run
         # the show again (the director's mid-show abort, taken back).
         if expect_gen is None:
             self._cancel_armed_clear()
+        if self.start_present:
+            self.adopt_offered()
         duration = self.show_duration()
         at = self._clamped(at, 0.0, duration)
         # A forced START over a show that is still running (or held) is
@@ -1844,7 +1880,7 @@ class Fleet:
             # Everything below - the gate, the generation, the run - is
             # that later start's; this returns the preset's own results.
             staged = self._stage_start(lead_s, force, loop, skip, expect_gen,
-                                       forced_units, duration)
+                                       forced_units, duration, left_why)
             if staged is not None:
                 return staged
             # None: every target already shows THIS Conductor's 0:00 look,
@@ -1852,9 +1888,7 @@ class Fleet:
         if not 0 <= at <= duration:
             raise ValueError(f"The show is {timeline.format_clock(0)} to "
                              f"{timeline.format_clock(duration)}.")
-        targets = [name for name in self._targets() if name not in set(skip)]
-        if not targets:
-            raise ValueError("no unit is ready")
+        targets, left = self._start_targets(skip, force, forced_units, left_why)
         # Every picture is meant to already be sitting in its slot: START
         # refuses while any unit is still writing them, offline, not yet
         # holding this show, or (unless `force`) failed to write some
@@ -1893,19 +1927,162 @@ class Fleet:
                         # ...and the units this run forces on their own
                         # (the Loop's carried 'start anyway'; a rescue
                         # Upload adds to it) - posted with every /show/run.
-                        "forced": sorted(forced_units)}
+                        "forced": sorted(forced_units),
+                        # {unit: why} left out of this start (EXHIBITION's
+                        # absent garments, the Loop's skipped ones); a unit
+                        # leaves it once it runs the show ("started late").
+                        "left_out": dict(left)}
             self.start_at = 0.0
             # A new run: nobody has been asked to clear anything yet, and
             # a unit that was too old last time may have been updated.
             self._clear_told, self._clear_too_old = set(), set()
             self._t0_moved()
+        if left and expect_gen is None:
+            self._say_left_out(left)
         return self._send_run(targets)
+
+    def _say_left_out(self, left: "dict[str, str]") -> None:
+        """The one corrections line of an operator's START that went without
+        some units: "START without radxa-01, radxa-02 (not answering);
+        radxa-03 (holds another show)"."""
+        groups: "dict[str, list[str]]" = {}
+        for name in sorted(left):
+            groups.setdefault(left[name], []).append(name)
+        self._note("START without " + "; ".join(
+            f"{', '.join(names)} ({why})" for why, names in groups.items()))
+
+    def adopt_offered(self) -> None:
+        """EXHIBITION's START: take an offered show from a unit that holds
+        it now rather than at its next poll - a garment that has just come
+        back starts with the others instead of a poll later (and the server
+        asks first, so the one-timeline gate sees its mark)."""
+        for name in list(self._offered):
+            link = self.links.get(name)
+            if link is not None and link.online and name not in self.shows:
+                self._adopt_show(link)
+
+    def _start_targets(self, skip, force: bool, forced_units,
+                       left_why: "dict | None") -> "tuple[list[str], dict[str, str]]":
+        """(the units a START sends to, {unit: why} the ones it leaves out).
+
+        Everywhere: `skip` is left out (the Loop's grace, the end of a
+        PRESET stage), and nothing left at all is "no unit is ready". With
+        `start_present` (EXHIBITION) every unit that is not ready is left
+        out too; refused only when none is ready - with the problems of the
+        units that answer, or NO_GARMENT when none does."""
+        skip = set(skip)
+        everyone = self._targets()
+        targets = [name for name in everyone if name not in skip]
+        why = dict(left_why or {})
+        left = {name: why.get(name) or self._absence(name, forced_units, force)
+                or "not ready" for name in everyone if name in skip}
+        if self.start_present:
+            not_ready = self._not_ready(targets, forced=forced_units, force=force)
+            ready = [name for name in targets if name not in not_ready]
+            if not ready:
+                answering = [name for name in everyone
+                             if name in self.links and self.links[name].online]
+                problems = self._burn_problems(answering, force=force,
+                                               forced=forced_units)
+                if problems:
+                    raise ValueError("; ".join(problems))
+                raise ValueError(NO_GARMENT if not answering else "no unit is ready")
+            for name in not_ready:
+                left[name] = self._absence(name, forced_units, force) or "not ready"
+            targets = ready
+        if not targets:
+            raise ValueError("no unit is ready")
+        return targets, left
+
+    def _absence(self, name: str, forced=(), force: bool = False) -> "str | None":
+        """Why this unit would not take part in a START right now, in a few
+        words (the LCD shows them) - or None when it would: "not answering",
+        "needs Upload" (no show, pictures not written / cleared), "holds
+        another show", "still writing", "pictures failed" (unless forced).
+        The show it should hold is the uploaded one, or the offered one
+        while the startup offer is open. The same states _burn_problems
+        tells apart, said shorter."""
+        link = self.links.get(name)
+        if link is None or not link.online:
+            return "not answering"
+        unit = (link.status or {}).get("show")
+        if not isinstance(unit, dict) or unit.get("id") is None:
+            return "needs Upload"
+        expected = (self.shows.get(name) or self._offered.get(name) or {}).get("id")
+        if expected is None or unit.get("id") != expected:
+            return "holds another show"
+        if "burn" not in unit:
+            return None                     # an older agent: not held up
+        burn = unit.get("burn")
+        if not isinstance(burn, dict):
+            return "needs Upload"
+        state = burn.get("state")
+        if state == "burned":
+            return None
+        if state == "burning":
+            return "still writing"
+        if state == "failed":
+            return None if (force or name in forced) else "pictures failed"
+        return "needs Upload"
+
+    def timeline_units(self) -> "list[str]":
+        """The units the compiled show targets: the uploaded ones and,
+        while the startup offer is open, the offered ones. A member with no
+        show of its own (radxa-05) is in neither."""
+        return list(self.shows) + [name for name in self._offered
+                                   if name not in self.shows]
+
+    def presence(self) -> dict:
+        """/api/fleet's `presence`, from the last polls: which units of the
+        timeline would take part in a START now (`present`) and why each of
+        the others would not (`missing`, {unit: short reason} - see
+        _absence). A unit the current run forces (the operator's 'start
+        anyway', a rescue Upload) counts as present with its failed boards.
+        `exhibition` is true on a Conductor whose START goes with the
+        present units (start_present)."""
+        with self._run_lock:
+            run = dict(self.run) if self.run else None
+        force = bool(run and run.get("force"))
+        forced = set((run or {}).get("forced") or ()) | (
+            self._still_waved() if run else set())
+        present, missing = [], {}
+        for name in self.timeline_units():
+            why = self._absence(name, forced, force)
+            if why is None:
+                present.append(name)
+            else:
+                missing[name] = why
+        return {"present": sorted(present), "missing": missing,
+                "exhibition": bool(self.start_present)}
+
+    def _forget_left_out(self) -> None:
+        """A unit left out of the run leaves `run["left_out"]` once it runs
+        this conductor's show (supervision put it in, "started late")."""
+        with self._run_lock:
+            if not self.run or not self.run.get("left_out"):
+                return
+            left = dict(self.run["left_out"])
+        joined = set()
+        for name in left:
+            link = self.links.get(name)
+            unit = ((link.status if link else None) or {}).get("show") or {}
+            show = self.shows.get(name)
+            if (link is not None and link.online and show
+                    and unit.get("id") == show["id"]
+                    and unit.get("state") in ("running", "ended", "holding")):
+                joined.add(name)
+        if joined:
+            with self._run_lock:
+                if self.run and self.run.get("left_out"):
+                    self.run["left_out"] = {name: why for name, why
+                                            in self.run["left_out"].items()
+                                            if name not in joined}
 
     # ---- PRESET -> countdown -> 0:00 (start_show(preset_first=True)) ----
 
     def _stage_start(self, lead_s: float, force: bool, loop: bool, skip,
-                     expect_gen, forced_units,
-                     duration: float) -> "dict[str, dict] | None":
+                     expect_gen, forced_units, duration: float,
+                     left_why: "dict | None" = None) -> "dict[str, dict] | None":
         """Send the 0:00 look to the start's targets and remember the start
         for _staging_tick(). The same gate as the start itself (a unit that
         would refuse the run refuses the preset), the same `force` and
@@ -1924,12 +2101,11 @@ class Fleet:
         start. A unit whose /show/preset is REFUSED (the show is running
         there, the unit is busy, it does not answer) is not waited for: it
         is named in the corrections and still sent the start (MED-1)."""
-        targets = [name for name in self._targets() if name not in set(skip)]
-        if not targets:
-            raise ValueError("no unit is ready")
+        targets, left = self._start_targets(skip, force, forced_units, left_why)
         problems = self._burn_problems(targets, force=force, forced=forced_units)
         if problems:
             raise ValueError("; ".join(problems))
+        skip = set(skip) | set(left)
         now = self._clock()
         standing = {name: found for name in targets
                     for found in [self._own_preset(name, now)] if found}
@@ -1982,6 +2158,8 @@ class Fleet:
                        # PRESET_RETRY_S, waited for meanwhile.
                        "retry": {},
                        "skip_why": {},      # the Loop's reasons for `skip`
+                       # {unit: short why} left out of this start (run.left_out)
+                       "left_why": dict(left),
                        "duration": float(duration)}
             self._staging = staging
         send = [name for name in targets if name not in standing]
@@ -2013,6 +2191,8 @@ class Fleet:
         if not current:
             return results                  # a STOP (or a move) beat the posts
         sent = [name for name in send if name not in failed]
+        if left and expect_gen is None:
+            self._say_left_out(left)
         self._note("START: preset first - the 0:00 look goes up on "
                    + (", ".join(sent) if sent else "no unit")
                    + (f" ({', '.join(sorted(standing))} already show"
@@ -2234,6 +2414,7 @@ class Fleet:
                 return
             self._staging = None            # the start takes it from here
             skip_why = dict(staging["skip_why"])
+            left_why = dict(staging.get("left_why") or {})
         if waiting:
             self._note(f"START: {', '.join(waiting)} had not painted the 0:00 look "
                        f"after {PRESET_WAIT_MAX_S:.0f} s - starting anyway")
@@ -2251,11 +2432,14 @@ class Fleet:
                                     force=staging["force"] and not loop)
         skip = set(staging["skip"]) | set(not_ready)
         why = dict(skip_why, **not_ready)
+        for name in not_ready:
+            left_why[name] = self._absence(
+                name, forced, staging["force"] and not loop) or "not ready"
         try:
             results = self.start_show(staging["lead_s"], 0.0, force=staging["force"],
                                       loop=loop, skip=skip,
                                       expect_gen=staging["gen"],
-                                      forced_units=forced)
+                                      forced_units=forced, left_why=left_why)
         except ValueError as exc:
             if loop:
                 self._loop_refused(staging["gen"], now, str(exc))
@@ -2313,7 +2497,8 @@ class Fleet:
                     "already": list(staging["already"]),
                     "elapsed_s": round(now - staging["since"], 1),
                     "cap_s": PRESET_WAIT_MAX_S, "lead_s": staging["lead_s"],
-                    "loop": staging["loop"]}
+                    "loop": staging["loop"],
+                    "left_out": dict(staging.get("left_why") or {})}
 
     def _t0_moved(self) -> None:
         """One call for "the run just changed" - START, SEEK, HOLD,

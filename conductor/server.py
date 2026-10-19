@@ -4021,6 +4021,16 @@ class Handler(BaseHTTPRequestHandler):
         # a fresh conductor leaves the others in the second group, where
         # fleet.shows does not even mention them.
         wanted = self.workspace.timeline_units()
+        if self.adopt and getattr(fleet, "start_present", False):
+            # EXHIBITION: START goes with the garments that are connected
+            # and hold the show (Fleet.start_present). A garment that is not
+            # there is not on another upload - it is simply absent, left out
+            # of the start and named (run.left_out); only the units that
+            # would actually start are held to "the same upload".
+            fleet.adopt_offered()           # marked now, not a poll later
+            present = set(fleet.presence()["present"])
+            wanted = {unit for unit in wanted if unit in present}
+            marks = {unit: mark for unit, mark in marks.items() if unit in present}
         missing = sorted(unit for unit in wanted if unit not in marks)
         known = {unit: mark for unit, mark in marks.items()
                  if unit in fleet.shows or unit in wanted}
@@ -4249,7 +4259,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not 0.5 <= lead <= 60:
                     raise ValueError("lead time is 0.5-60 s")
             if command == "start":
-                if not fleet.shows:
+                # The exhibition's Conductor with its startup offer open and
+                # nothing adopted yet goes on to start_show(), which adopts a
+                # garment that holds the show now or answers why not ("no
+                # garment is connected").
+                if not fleet.shows and not (self.adopt and fleet.timeline_units()):
                     return self._json({"units": {}, "note":
                                        "Nothing uploaded yet - Upload first."})
                 # A second click on START must not move a running show's
@@ -4395,6 +4409,10 @@ def make_server(workspace, port: int = 8765, host: str = "127.0.0.1",
                     "prepared": {}, "send_jobs": {}})
     server = _Server((host, port), handler)
     handler.port = server.server_address[1]     # the real one when port was 0
+    if fleet is not None and adopt:
+        # The exhibition's Conductor starts with the garments that are
+        # connected (Fleet.start_present); the show PC's never does.
+        fleet.start_present = True
     return server
 
 
@@ -4722,7 +4740,8 @@ def serve(workspace, port: int = 8765, open_browser: bool = False,
     ws = server.RequestHandlerClass.workspace
     # The Loop's settings come from THIS workspace's show.json, read when a
     # run reaches its end - never cached on the fleet.
-    fleet = Fleet(units, token, loop_settings=ws.loop_settings)
+    fleet = Fleet(units, token, loop_settings=ws.loop_settings,
+                  start_present=adopt)
     # EXHIBITION mode only (`--adopt`, or fleet.json "adopt": true): what
     # this workspace compiles to is offered to the units, so a restart of
     # the headless conductor does not cost an Upload of every picture

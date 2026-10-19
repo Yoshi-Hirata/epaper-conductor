@@ -493,6 +493,12 @@ curl --data-binary @ws.tar -H "Content-Type: application/x-tar" -H "X-Passcode: 
   基板で Loop が止まらない。再スタートのときに電源が落ちていた機体も、戻ったときに同じ失敗なら
   走行中のランへ押し切って入る。失敗が増えた機体は押し切らず上の 60 秒の扱いになる。再スタートが断られて再試行している間、画面は
   `Loop: waiting - radxa-10 not ready (retrying)` と出てカウントダウンはしない
+- **つながっている衣装だけで始まる**(2026-10-19): ③ START(LCD の KEY1 長押しも)は、電源が
+  入っていない・別のショーを持っている・絵が無い衣装を**待たずに外して**、そろっている衣装だけで
+  始める。外した衣装は corrections に `START without radxa-01, radxa-02 (not answering)` と 1 行、
+  ページの ③ START の下に琥珀色で `START goes without …`、LCD にも出る。あとから電源を入れた
+  衣装はショーを持っていれば走行中のランへ入る(`started late`)。Loop の再開も同じで、60 秒は
+  待たない。1 着もつながっていなければ `no garment is connected` で断られる
 - **会場で停電したら**: 電気が戻るのを待つだけ。radxa-05 は約 2 分でホットスポットになり、子機は
   無限に再接続を試みるので自動で戻り(3 章 `autoconnect-retries 0`)、書き込み済みの絵は
   そのまま引き取られる(1 章)。全台が戻ったら LCD の EXHIBITION で **KEY1 長押し = ③ START**
@@ -510,6 +516,7 @@ curl --data-binary @ws.tar -H "Content-Type: application/x-tar" -H "X-Passcode: 
 | Bluetooth スピーカーが鳴らない | MUSIC 行の **スピーカーの行**(radxa-05 の LCD の SPEAKER 行も同じ)。`· not connected … retry in N s`(赤)= 落ちている: Conductor が 5 秒後・以後 30 秒ごと(3 回拒まれたら 2 分ごと)につなぎ直す。**スピーカーの電源、距離、近くのスマホ・PC の Bluetooth を切る** → すぐ試すなら **Connect**。`Failed to connect` が何度も続く = スピーカーが別の音源についている / こちらのペアリングを忘れた → **Re-pair…**(ダイアログの手順どおり: スマホの Bluetooth を切り、スピーカーをペアリングモードに。ラン中は音が消えるので確認がもう 1 回)。`connected` なのに無音 → `(no PulseAudio sink yet)` が消えないなら 2.1b a、消えているなら `pactl list short sink-inputs` で mpg123 のストリームが bluez の sink(番号)にいるか ― いなければ `pactl move-sink-input <入力> bluez_sink.…a2dp_sink`(Conductor は再接続のたびに自動でやる)。行が出ない → `speaker_mac` を fleet.json に(2.3)。**Bose の自動オフ**(無音 20〜30 分で電源が切れる)は Bose アプリで切る、または充電器につないだまま(2.1b e)。詳しくは 2.1b f の表 |
 | 音が絵より遅れる / 早い | `--speaker-lead-ms`(既定 50 = 測ったパイプ往復 + 50 ms 早くアンパウズ。**50 は当て推量**、Bluetooth(A2DP)は 100〜200 ms 余計に遅れる: クリック音源で一度測って決める)を service の ExecStart で変えて `daemon-reload` + `restart` |
 | Loop が回らない | `Loop` のチェック、待ち時間が下限〜600 か(欄のツールチップ)。Units タブの `Corrected automatically:` の行に `Loop: …` の理由 |
+| START が `no garment is connected` で断られる | 1 着も答えていない(またはショーを持っていない)。衣装の 12 V と機体の電源、タイルが online か。答えている衣装が断られた理由(`has not taken this show yet` など)が出たら、その衣装に ① Upload。電源の入っていない衣装はもう START を止めない ― 外して始まり、戻れば途中から入る |
 | 再起動後に START が `Upload again` / `Upload first` | 機体が持っているショーが今のタイムラインと違う(送り直した・編集した)。① Upload |
 | ショーを差し替えたい | 会場でも PC を `AZ-Epaper` に入れれば 4 章の手順で送れる(先に STOP) |
 | ショーが壊れた・消えた・間違えて編集した(停電のあとなど) | PC なしで戻せる: 7 章(LCD の EXHIBITION → DOWN → BACKUPS で KEY1 長押しを 2 回、またはページの Units タブ → BACKUPS ON THIS CONDUCTOR → Restore…) |
