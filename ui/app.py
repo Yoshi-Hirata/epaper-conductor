@@ -125,9 +125,17 @@ only KEY2 is heard. Like EXHIBITION it is never left by the follow
 while the Conductor is local - and "local" survives a missed probe
 (Exhibition.present()) - and KEY2 leaves the session alone.
 
-The screen also blanks itself after BLANK_AFTER_S without input. Any
-press wakes it and does nothing else - waking must never move the state
-machine, or a blind press in a dark room could stop a running show.
+The screen also blanks itself after BLANK_AFTER_S without input (never,
+by default) - and on the unit whose Conductor is local (radxa-05) after
+BLANK_AFTER_CONDUCTOR_S (30 s) on any screen, chosen automatically;
+`--blank-after` overrides both. Any press wakes it and does nothing
+else - waking must never move the state machine, or a blind press in a
+dark room could stop a running show. On radxa-05 an alert also wakes it,
+without a press: the speaker LOST, a unit newly missing or left out, a
+new verdict on EXHIBITION; it then stays lit for another 30 s, a press
+within a hold's length of that wake still only counts as the wake, and
+the screen never goes dark while a command waits for its verdict
+(_watch_alerts, _keep_lit).
 
 No button quits. This runs as a service on a headless appliance, so a
 button that ended the process would leave the screen dark until someone
@@ -187,7 +195,8 @@ from dataclasses import dataclass
 from enum import Enum
 
 from . import notify, render
-from .config import (BLANK_AFTER_S, FRAME_INTERVAL_S, LOG_LINES,
+from .config import (BLANK_AFTER_CONDUCTOR_S, BLANK_AFTER_S,
+                     FRAME_INTERVAL_S, KEY1_HOLD_S, LOG_LINES,
                      RELOCK_AFTER_S, UNLOCK_SEQUENCE, UNLOCK_WINDOW_S,
                      WATCHDOG_PERIOD_S)
 from .exhibition import BACKUPS as EX_BACKUPS
@@ -241,7 +250,7 @@ class DemoRow:
 class App:
     def __init__(self, display, inputs, runner: DemoRunner | None = None,
                  patterns=None, port_label: str | None = None,
-                 locked: bool = False, blank_after: float = BLANK_AFTER_S,
+                 locked: bool = False, blank_after: "float | None" = None,
                  relock_after: float = RELOCK_AFTER_S,
                  clock=time.monotonic, updater=None, puller=None,
                  host: str | None = None, versions=None, rebooter=None,
@@ -338,8 +347,17 @@ class App:
         self.exit_message = ("stopped", "service ended")
         self.blanked = False
         self.locked = locked
+        # None: automatic - BLANK_AFTER_S (never) on a garment unit,
+        # BLANK_AFTER_CONDUCTOR_S where the Conductor is local (radxa-05);
+        # a number (--blank-after) is used on every unit as given.
         self.blank_after = blank_after
         self.relock_after = relock_after
+        # The alert wake (_watch_alerts): when the screen was last lit by
+        # an alert (it then stays lit like after a press), the alert state
+        # last seen, and whether a press since then may act yet.
+        self._lit_at = clock()
+        self._alert_woke_at: "float | None" = None
+        self._alert_seen: "tuple | None" = None
         self._clock = clock
         # Only a device that started locked re-locks itself; unlocking an
         # unlocked device would be a surprise.
@@ -391,7 +409,17 @@ class App:
             self.display.wake()
             self._dirty = True
             self._last_input = now
+            self._alert_woke_at = None
             return
+        if (self._alert_woke_at is not None
+                and now - self._alert_woke_at < KEY1_HOLD_S):
+            # An alert lit the screen just now: a press (or a hold begun
+            # in the dark) landing within a hold's length was made blind,
+            # so it only counts as the wake it would have been.
+            self._alert_woke_at = None
+            self._last_input = now
+            return
+        self._alert_woke_at = None
         self._last_input = now
 
         if self.locked:
@@ -1411,7 +1439,8 @@ class App:
                 status=ex.status_text(), active=ex.active,
                 locked=self.locked, host=self.host,
                 volume_keys=ex.available and ex.speaker_available()
-                and ex.volume_supported(), backups_key=True)
+                and ex.volume_supported(), backups_key=True,
+                fleet_detail=ex.fleet_detail(), fleet_tone=ex.fleet_tone())
         if self.screen is Screen.SPEAKER:
             sp = self.speaker
             return render.speaker_screen(
@@ -1628,6 +1657,57 @@ class App:
         where the same KEY1 hold is STOP; review of 73c8fdc, HIGH-1)."""
         return self.exhibition is not None and self.exhibition.present()
 
+    def blank_timeout(self) -> float:
+        """Seconds without a press before the backlight goes off (0:
+        never): `blank_after` as given, else automatic - 30 s on the unit
+        whose Conductor is local (radxa-05, on any screen), never on a
+        garment unit (BLANK_AFTER_S, today's behaviour)."""
+        if self.blank_after is not None:
+            return self.blank_after
+        if self._local_conductor():
+            return BLANK_AFTER_CONDUCTOR_S
+        return BLANK_AFTER_S
+
+    def _keep_lit(self) -> bool:
+        """A command to the local Conductor is on its way: its verdict is
+        what the operator waits for (a restore takes minutes), so the
+        screen does not go dark under it."""
+        return self._local_conductor() and self.exhibition.busy
+
+    def _watch_alerts(self, now: float) -> None:
+        """Where the Conductor is local, what the operator must see lights
+        the screen without a press and keeps it lit for another blank
+        timeout: the speaker link lost, a unit newly missing (or left
+        out of the run), a new verdict (a START refusal, an ERROR - and
+        any other, so none is blanked before it was shown its time). The
+        first look is only the baseline. A garment unit never gets here
+        (no local Conductor), so its blanking is exactly what it was."""
+        if not self._local_conductor():
+            self._alert_seen = None
+            return
+        lost, absent, verdict = self.exhibition.alerts()
+        seen = self._alert_seen
+        if seen is not None:
+            # No answer this time (lost/absent None): the last known
+            # state stands, so a Conductor that comes back is not news.
+            if lost is None:
+                lost = seen[0]
+            if absent is None:
+                absent = seen[1]
+        self._alert_seen = (lost, absent, verdict)
+        if seen is None:
+            return
+        if ((lost and not seen[0])
+                or (absent is not None and seen[1] is not None
+                    and absent - seen[1])
+                or (verdict is not None and verdict != seen[2])):
+            self._lit_at = now
+            if self.blanked:
+                self.blanked = False
+                self.display.wake()
+                self._dirty = True
+                self._alert_woke_at = now
+
     def _idle_tasks(self) -> None:
         self._follow_remote()
         self._track_demo()
@@ -1638,8 +1718,12 @@ class App:
                 and now - self._last_demo_poll >= DEMO_POLL_S):
             self._last_demo_poll = now
             self.refresh_demos()
+        self._watch_alerts(now)
         idle = now - self._last_input
-        if not self.blanked and 0 < self.blank_after <= idle:
+        if (not self.blanked
+                and 0 < self.blank_timeout() <= now - max(self._last_input,
+                                                          self._lit_at)
+                and not self._keep_lit()):
             self._blank()
         if (self._locks_itself and not self.locked
                 and 0 < self.relock_after <= idle):

@@ -61,6 +61,14 @@ LOG_HISTORY = 200        # lines kept in memory
 # (docs/POWER.md). The demo keeps running either way, and any press wakes
 # the screen without changing anything else.
 BLANK_AFTER_S = 0.0
+# ...except on the unit the exhibition Conductor runs on (radxa-05: a
+# Conductor answers on 127.0.0.1, Exhibition.present()), which blanks
+# after this long without a press on any screen - chosen automatically,
+# no service-file change; `--blank-after SEC` overrides it on every unit
+# (`--blank-after 0`: never). An alert there (speaker LOST, a unit newly
+# missing, a verdict) wakes the screen without a press and keeps it lit
+# for another BLANK_AFTER_CONDUCTOR_S (ui/app.py, _watch_alerts).
+BLANK_AFTER_CONDUCTOR_S = 30.0
 
 # Show lock. Locked, the buttons do nothing, so a knock during a show
 # cannot stop the demo. This sequence within UNLOCK_WINDOW_S unlocks;

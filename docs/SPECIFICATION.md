@@ -1734,7 +1734,17 @@ radxa-05(Debian 11、SD/eMMC 上の ext4 `rw,relatime`)は 2026-10-01 に 2 回�
   `ended …` の代わりに `loop waiting`(琥珀色、ヒントは `hold KEY1 = STOP (loop waiting)`)
   (`loop.next_in_s` は **`run` が何であれ先に見る** ―― Conductor は LOOP の待ち時間中も
   終わった run をそのまま置いておく。ポーリングの間は `now` と `next_in_s` を機体の
-  時計で進める)、`units 7/7 online`、
+  時計で進める)、未接続の機体(2026-10-19、Conductor の `presence` から): `units 1/7 ·
+  missing 01 02 03 04 07 09`(数えるのはタイムラインの機体 = present + missing、名前末尾の
+  番号で列挙、長ければ 2 行に折り返す。欠けがあれば琥珀色、全員なら `units 7/7 · all
+  present` で緑、誰もいなければ赤)、`not answering` 以外の理由はその下の行に
+  (`03 needs Upload`)。run 中は `run.left_out` を `left out 01 02` として同じ形で出す。
+  `presence` を返さない古い Conductor では従来の `units 7/7 online`
+  (消灯: Conductor が 127.0.0.1 で応答する機体 = radxa-05 は **どの画面でも 30 秒無操作で
+  バックライト消灯** ―― 自動判定で service 変更不要、`--blank-after` で上書き、0 = 消さない。
+  ガーメント機は従来どおり消えない。最初の 1 押しは点灯だけ。`speaker LOST`・新たな未接続・
+  新しい verdict(START 拒否 / ERROR など)は押さずに点灯させ、さらに 30 秒保つ ―― 点灯直後
+  1 秒以内の押下は点灯扱い。コマンドの返事待ちの間は消えない)、
   `LOOP on / off`(Conductor が `loop` を返さない古い版なら `loop ?`)、`speaker ok · vol
   70% (bluez)` / `no speaker - <理由>`(同じく `speaker ?`)。**ジョイスティック LEFT /
   RIGHT = 音量 −5 / +5**(短押し、何度でも。`POST /api/speaker/volume {"delta": ±5}`、
