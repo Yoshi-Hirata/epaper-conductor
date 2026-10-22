@@ -40,6 +40,9 @@ import math
 import time
 
 from . import timeline
+# flicker.js hash32(), bit for bit - one implementation, shared with the
+# sweep edge's noise (conductor/sequence.py, 2026-10-22).
+from .sequence import hash32  # noqa: F401  (export3d.hash32 stays importable)
 
 FORMAT = "epaper-3d-timeline"
 FORMAT_VERSION = 1
@@ -56,22 +59,9 @@ TINT_STEPS = 8
 BUCKET_S = 0.25                 # refreshPhaseColor's flicker step
 # The fractions of a scale's repaint where refreshPhaseColor changes phase.
 PHASE_FRACS = (0.13, 0.50, 0.72, 0.95)
-_MASK = 0xFFFFFFFF
 # Keys are taken just after each candidate instant, so a boundary that
 # floating point puts a hair early still lands on the new colour.
 _EPS = 1e-6
-
-
-def _imul(a: int, b: int) -> int:
-    return ((a & _MASK) * (b & _MASK)) & _MASK
-
-
-def hash32(a: int, b: int) -> int:
-    """flicker.js hash32(), bit for bit (Math.imul and >>> on uint32)."""
-    h = _imul(a ^ 0x9e3779b1, 0x85ebca6b) ^ _imul(b ^ 0x27d4eb2f, 0xc2b2ae35)
-    h = _imul(h ^ (h >> 15), 0x2c1b3c6d)
-    h = _imul(h ^ (h >> 12), 0x297a2d39)
-    return (h ^ (h >> 15)) & _MASK
 
 
 def _js_round(x: float) -> int:
@@ -137,7 +127,13 @@ class _Cue:
         self.partial = bool(cue.get("partial"))
         sweep = cue.get("sweep") or {"sequence": "natural", "span_s": 0}
         span = float(sweep.get("span_s") or 0)
-        ranks = (item.get("sequences") or {}).get(sweep.get("sequence"))
+        # A sweep with an edge (2026-10-22) has float ranks of its own,
+        # keyed by rank_set in item.sweep_ranks - the page's own lookup,
+        # so the 3D view's border is the Timeline's; a straight one keeps
+        # item.sequences, unchanged.
+        rank_key = sweep.get("rank_set") or ""
+        ranks = ((item.get("sweep_ranks") or {}).get(rank_key) if rank_key
+                 else (item.get("sequences") or {}).get(sweep.get("sequence")))
         max_rank = max(ranks, default=0) if ranks else 0
         swept = bool(ranks) and max_rank > 0 and span > 0
         cap = (min(JITTER_MAX, SWEEP_JITTER_FRAC * span / max_rank) if swept

@@ -145,6 +145,45 @@ def test_the_file_names_scales_by_their_map_label_and_lists_the_cues(workspace):
         assert word not in text, word
 
 
+def test_a_sweep_with_an_edge_is_exported_with_the_pages_own_ranks(workspace):
+    """2026-10-22: the 3D view's border is the Timeline's - each scale
+    starts at its edge rank (item.sweep_ranks[sweep.rank_set]) times span
+    over the highest, exactly as the page's refreshModelFor() reads it."""
+    state = workspace.state()
+    straight = export3d.resolve(state, now=0)
+    cues = state["show"]["cues"]
+    raw = [{k: c[k] for k in ("id", "item", "at", "design", "partial",
+                              "refresh_s", "transition", "sequence", "span_s")}
+           for c in cues]
+    edge = {"edge": "wave", "edge_rows": 4, "edge_seed": 11}
+    raw[1].update(edge)                         # "c", centre outward over 3 s
+    workspace.set_timeline(120, raw)
+    state = workspace.state()
+    item = next(i for i in state["items"] if i["item"] == ITEM)
+    cue = next(c for c in state["show"]["cues"] if c["id"] == "c")
+    ranks = item["sweep_ranks"][cue["sweep"]["rank_set"]]
+    model = export3d._Cue(cue, item, len(ranks))
+    top = max(ranks)
+    assert model.delay == [r * 3 / top for r in ranks]
+    assert max(model.delay) == pytest.approx(3.0) and min(model.delay) == 0
+    assert model.delay != export3d._Cue(
+        next(c for c in straight_cues(workspace, raw) if c["id"] == "c"),
+        item, len(ranks)).delay
+    edged = export3d.resolve(state, now=0)
+    assert edged["items"][ITEM]["keys"] != straight["items"][ITEM]["keys"]
+    # Still results only: no rank_set or edge field travels in the file.
+    text = json.dumps(edged)
+    for word in ("rank", "edge", "wave", "seed"):
+        assert word not in text, word
+
+
+def straight_cues(workspace, raw):
+    """The same cues with the edge taken off again, as state() resolves them."""
+    workspace.set_timeline(120, [{k: v for k, v in c.items()
+                                  if not k.startswith("edge")} for c in raw])
+    return workspace.state()["show"]["cues"]
+
+
 def test_the_route_downloads_the_file(tmp_path):
     server = make_server(tmp_path, port=0)
     threading.Thread(target=server.serve_forever, daemon=True).start()

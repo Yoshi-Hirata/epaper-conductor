@@ -40,7 +40,10 @@ one panel repaint after that, which only lengthens the cue when it runs
 past the modelled refresh (8 s covers the 1 s spans a production show
 uses). The resolved sweep and the seconds it actually adds (which needs
 the garment's map) come from the server, as cue["sweep"] and
-cue["span"].
+cue["span"]. A custom transition (and a design's, in show.json's
+`transitions`) may also carry the sweep's edge - `edge`, `edge_rows`,
+`edge_random`, `edge_min_rows`, `edge_seed` (conductor/sequence.py,
+2026-10-22) - stored only when one of them is not its default.
 
 What one unit can do bounds the timeline. Every cue's picture is
 written into its own on-board slot (1-18; slot 0 is the standby white,
@@ -73,7 +76,8 @@ from __future__ import annotations
 
 import re
 
-from .sequence import MAX_DELAY_S, clean_sequence, clean_span
+from .sequence import (MAX_DELAY_S, clean_edge, clean_sequence, clean_span,
+                       edge_stored, rank_set)
 
 # ONE BOARD's full repaint, command to finished image - the physical
 # number, which has moved with every firmware: 9.8 s (first boards), 16 s
@@ -503,6 +507,11 @@ def clean(cues) -> "list[dict]":
                          else "design",
             "sequence": clean_sequence(raw.get("sequence", "natural")),
             "span_s": clean_span(raw.get("span_s", 0.0)),
+            # The sweep's edge (conductor/sequence.py, 2026-10-22): kept
+            # like sequence/span whatever `transition` says, but only when
+            # one of the five differs from its default - a cue without an
+            # edge is exactly the cue it always was (show.json, revision).
+            **edge_stored(raw),
         })
     result.sort(key=lambda c: (c["at"], c["item"].lower()))
     return result
@@ -516,16 +525,24 @@ def resolve(cue: dict, transitions: dict) -> dict:
     `source` says where the values came from - "design" so the page can
     show "design default", "cue" so it shows the cue's own numbers -
     not whether they happen to differ.
+
+    The sweep always carries the five edge fields (defaults when none
+    were set) and `rank_set`, the key of its ranks in the page state's
+    item.sweep_ranks - "" for a sweep the edge does not change
+    (sequence.rank_set()).
     """
     if cue.get("transition", "design") == "custom":
-        return {"sequence": clean_sequence(cue.get("sequence", "natural")),
-                "span_s": clean_span(cue.get("span_s", 0.0)),
-                "source": "cue"}
-    entry = transitions.get(cue.get("design", ""))
-    entry = entry if isinstance(entry, dict) else {}
-    return {"sequence": clean_sequence(entry.get("sequence", "natural")),
-            "span_s": clean_span(entry.get("span_s", 0.0)),
-            "source": "design"}
+        entry, source = cue, "cue"
+    else:
+        entry = transitions.get(cue.get("design", ""))
+        entry = entry if isinstance(entry, dict) else {}
+        source = "design"
+    sweep = {"sequence": clean_sequence(entry.get("sequence", "natural")),
+             "span_s": clean_span(entry.get("span_s", 0.0)),
+             "source": source}
+    sweep.update(clean_edge(entry))
+    sweep["rank_set"] = rank_set(sweep)
+    return sweep
 
 
 def apply_transitions(cues: "list[dict]", transitions: dict) -> None:

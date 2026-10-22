@@ -167,9 +167,12 @@ def build_unit_show(unit: str, maps: "list[LookMap]",
             labels.append(design_label(look_map, design, cue["partial"]))
             span = max(span, timeline.span_of(cue))
             if timeline.sweeps(cue):
+                # With the sweep's edge (2026-10-22): the units take the
+                # randomised border as plain per-socket delays; a straight
+                # sweep's tables - and so the show id - are today's.
                 delays.update(compile_delays(
                     look_map, cue["sweep"]["sequence"],
-                    cue["sweep"]["span_s"], ids=ids))
+                    cue["sweep"]["span_s"], ids=ids, edge=cue["sweep"]))
         for address in addresses:
             lay_over(state[address], change[address])
         entry = {

@@ -262,6 +262,28 @@ def test_goldens_cover_every_sequence_and_rule(golden):
     assert "no preset at 0:00" in all_warnings
 
 
+def test_goldens_cover_every_edge_fixed_and_random_front_and_back(golden):
+    """The sweep's edge (2026-10-22): the simulator's port of
+    sequence.edge_ranks() is held to every edge style, a fixed and a
+    random width, a vertical and a horizontal sequence, on garments with
+    a back - and every case still matches the Python it came from."""
+    cases = [c for c in golden["cases"] if c["kind"] == "edge_ranks"]
+    covered = {(c["sweep"]["sequence"], c["sweep"]["edge"], c["sweep"]["edge_random"])
+               for c in cases}
+    for seq in ("top_down", "left_right"):
+        for edge in sequence.EDGES:
+            for random in (False, True):
+                assert (seq, edge, random) in covered
+    assert any(key.startswith("back|") for c in cases for key in c["expect"])
+    fixtures = ROOT / "tests" / "fixtures" / "sim"
+    for c in cases:
+        m = LookMap.parse(io.StringIO(fixtures.joinpath(c["map"]).read_text(
+            encoding="utf-8")), name=c["opts"]["name"], item=c["opts"]["item"])
+        got = sequence.edge_ranks(m, c["sweep"])
+        assert {f"{s}|{r}|{col}": v for (s, r, col), v in got.items()} == c["expect"]
+        assert sequence.rank_set(c["sweep"]) == c["rankSet"]
+
+
 def test_canonical_and_digest_match_a_recorded_table():
     """A pinned table (computed once, by hand-inspecting the output;
     mg.CANONICAL_TABLE is the same list make_goldens.py turns into the

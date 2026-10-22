@@ -540,11 +540,12 @@ def test_a_cue_inherits_its_designs_transition_and_may_override_it():
     transitions = {"g1.csv": {"sequence": "top_down", "span_s": 3.0}}
     inherited = cue("a", "Look22", 60, "g1.csv")
     assert resolve(inherited, transitions) == \
-        {"sequence": "top_down", "span_s": 3.0, "source": "design"}
+        {"sequence": "top_down", "span_s": 3.0, "source": "design",
+         **STRAIGHT}
     custom = cue("b", "Look22", 60, "g1.csv")
     custom.update(transition="custom", sequence="center", span_s=1.5)
     assert resolve(custom, transitions) == \
-        {"sequence": "center", "span_s": 1.5, "source": "cue"}
+        {"sequence": "center", "span_s": 1.5, "source": "cue", **STRAIGHT}
     # No entry for the design: natural, whatever the design's own default.
     plain = cue("c", "Look22", 60, "other.csv")
     assert resolve(plain, transitions)["sequence"] == "natural"
@@ -555,9 +556,77 @@ def test_a_cue_inherits_its_designs_transition_and_may_override_it():
     cues = [inherited, custom]
     apply_transitions(cues, transitions)
     assert cues[0]["sweep"] == {"sequence": "top_down", "span_s": 3.0,
-                               "source": "design"}
+                               "source": "design", **STRAIGHT}
     assert cues[1]["sweep"] == {"sequence": "center", "span_s": 1.5,
-                               "source": "cue"}
+                               "source": "cue", **STRAIGHT}
+
+
+# A sweep without an edge: the defaults, and no ranks of its own.
+STRAIGHT = {"edge": "straight", "edge_rows": 6.0, "edge_random": False,
+            "edge_min_rows": 1.0, "edge_seed": 1, "rank_set": ""}
+
+
+def test_clean_keeps_a_cues_edge_only_when_it_is_not_all_defaults():
+    """2026-10-22: a cue without an edge is the cue it always was, so a
+    show made before the edge keeps its show.json (and its revision)."""
+    plain = clean([{"id": "a", "item": "L", "at": 5, "design": "d",
+                    "transition": "custom", "sequence": "top_down",
+                    "span_s": 1, "edge": "straight", "edge_rows": 6,
+                    "edge_random": False, "edge_min_rows": 1,
+                    "edge_seed": 1}])[0]
+    assert not any(k.startswith("edge") for k in plain)
+    wavy = clean([{"id": "a", "item": "L", "at": 5, "design": "d",
+                   "transition": "custom", "sequence": "top_down",
+                   "span_s": 1, "edge": "wave"}])[0]
+    assert {k: wavy[k] for k in wavy if k.startswith("edge")} == {
+        "edge": "wave", "edge_rows": 6.0, "edge_random": False,
+        "edge_min_rows": 1.0, "edge_seed": 1}
+    # Back to straight with a width and seed of its own: all five stay,
+    # the way a cue keeps its sequence and span on a design transition.
+    kept = clean([dict(wavy, edge="straight", edge_seed=7)])[0]
+    assert kept["edge"] == "straight" and kept["edge_seed"] == 7
+
+
+def test_clean_tidies_bad_edge_values():
+    raw = {"id": "a", "item": "L", "at": 5, "design": "d",
+           "edge": "zigzag", "edge_rows": "99.97", "edge_random": "yes",
+           "edge_min_rows": -3, "edge_seed": 12345678}
+    got = clean([raw])[0]
+    assert (got["edge"], got["edge_rows"], got["edge_random"],
+            got["edge_min_rows"], got["edge_seed"]) == \
+        ("straight", 24.0, True, 0.0, 999999)
+    got = clean([dict(raw, edge="fray", edge_rows=3.04, edge_min_rows=5,
+                      edge_seed="2.9", edge_random=0)])[0]
+    assert (got["edge"], got["edge_rows"], got["edge_random"],
+            got["edge_min_rows"], got["edge_seed"]) == \
+        ("fray", 3.0, False, 3.0, 2)          # the minimum never over the max
+    got = clean([dict(raw, edge="wave_fray", edge_rows=float("nan"),
+                      edge_min_rows={"x": 1}, edge_seed=None)])[0]
+    assert (got["edge"], got["edge_rows"], got["edge_min_rows"],
+            got["edge_seed"]) == ("wave_fray", 6.0, 1.0, 1)
+
+
+def test_the_resolved_sweep_carries_its_edge_and_rank_set():
+    transitions = {"g1.csv": {"sequence": "top_down", "span_s": 2.0,
+                              "edge": "wave", "edge_rows": 4,
+                              "edge_seed": 9}}
+    inherited = cue("a", "Look22", 60, "g1.csv")
+    sweep = resolve(inherited, transitions)
+    assert (sweep["edge"], sweep["edge_rows"], sweep["edge_seed"],
+            sweep["source"]) == ("wave", 4.0, 9, "design")
+    assert sweep["rank_set"] == "top_down/wave/4/fixed/1/9"
+    custom = clean([{"id": "b", "item": "Look22", "at": 70,
+                     "design": "g1.csv", "transition": "custom",
+                     "sequence": "left_right", "span_s": 1,
+                     "edge": "fray", "edge_random": True,
+                     "edge_rows": 8, "edge_min_rows": 2.5,
+                     "edge_seed": 3}])[0]
+    sweep = resolve(custom, transitions)
+    assert sweep["source"] == "cue"
+    assert sweep["rank_set"] == "left_right/fray/8/random/2.5/3"
+    # A natural sequence or a span of 0 ignores the edge: no ranks of its own.
+    assert resolve(dict(custom, sequence="natural"), {})["rank_set"] == ""
+    assert resolve(dict(custom, span_s=0), {})["rank_set"] == ""
 
 
 def test_what_a_unit_is_told_keeps_its_guard_after_the_real_end():

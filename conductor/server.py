@@ -534,8 +534,13 @@ def _design_transition(entry) -> dict:
     a stray show.json entry cannot reach the page unclean)."""
     if not isinstance(entry, dict):
         entry = {}
-    return {"sequence": sequence.clean_sequence(entry.get("sequence", "natural")),
-            "span_s": sequence.clean_span(entry.get("span_s", 0.0))}
+    # With its edge (2026-10-22) and the key of its ranks in the item's
+    # sweep_ranks, so the Designs tab can show and preview it like a cue's.
+    result = {"sequence": sequence.clean_sequence(entry.get("sequence", "natural")),
+              "span_s": sequence.clean_span(entry.get("span_s", 0.0))}
+    result.update(sequence.clean_edge(entry))
+    result["rank_set"] = sequence.rank_set(result)
+    return result
 
 
 def _clean_transitions(raw) -> dict:
@@ -554,7 +559,10 @@ def _clean_transitions(raw) -> dict:
         seq = sequence.clean_sequence(entry.get("sequence", "natural"))
         span = min(sequence.MAX_DELAY_S, sequence.clean_span(entry.get("span_s", 0.0)))
         if seq != "natural" and span > 0:
-            result[str(design)] = {"sequence": seq, "span_s": span}
+            # The edge rides along only when it is not all defaults
+            # (sequence.edge_stored), as set_transition stores it.
+            result[str(design)] = {"sequence": seq, "span_s": span,
+                                   **sequence.edge_stored(entry)}
     return result
 
 
@@ -599,7 +607,7 @@ def _time_sweeps(cues: "list[dict]", maps: "dict[str, LookMap]") -> None:
             cue["span"] = 0.0
         elif look_map is not None:
             cue["span"] = sequence.span_s(look_map, sweep["sequence"],
-                                          sweep["span_s"])
+                                          sweep["span_s"], edge=sweep)
 
 
 class Workspace:
@@ -765,7 +773,7 @@ class Workspace:
                 look_map = maps.get(cleaned["item"].lower())
                 if look_map is not None:
                     span = sequence.span_s(look_map, sweep["sequence"],
-                                           sweep["span_s"])
+                                           sweep["span_s"], edge=sweep)
             # The same "send to picture complete" the timeline models
             # (timeline.complete_s over a cue carrying this span), so the
             # instant the old `align: done` meant is unchanged.
@@ -1214,10 +1222,13 @@ class Workspace:
                 "effective": None if stored is None else max(stored, floor),
                 "floor": floor, "tail": tail, "why": why}
 
-    def set_transition(self, design: str, sequence_id, span_s) -> None:
+    def set_transition(self, design: str, sequence_id, span_s,
+                       edge: "dict | None" = None) -> None:
         """A design's own transition (show.json, undoable): every cue that
         wears it and is not itself "custom" sweeps this way. Natural, or
-        a span of 0, removes the entry - the two are the same thing."""
+        a span of 0, removes the entry - the two are the same thing.
+        `edge` holds the sweep's edge fields (POST /api/transition's own
+        body will do); they are stored only when not all defaults."""
         design = Path(str(design or "")).name
         if self.kind(design) != "grid" or not (self.files / design).is_file():
             raise ValueError(f"{design}: not a design "
@@ -1236,7 +1247,8 @@ class Workspace:
                     return                       # nothing changed: not a step
                 transitions.pop(design, None)
             else:
-                transitions[design] = {"sequence": sequence_id, "span_s": span}
+                transitions[design] = {"sequence": sequence_id, "span_s": span,
+                                       **sequence.edge_stored(edge)}
             self._commit(before, dict(before, transitions=transitions))
 
     # ---- the show's music ----
@@ -2289,7 +2301,10 @@ class Workspace:
                 seq = sequence.clean_sequence(sweep.get("sequence"))
                 span = sequence.clean_span(sweep.get("span_s"))
                 if seq != "natural" and span > 0:
-                    tables = sequence.compile_delays(look_map, seq, span, ids=ids)
+                    # ...with its edge (2026-10-22): the same ranks the
+                    # timeline's own cues of this design would sweep with.
+                    tables = sequence.compile_delays(look_map, seq, span,
+                                                     ids=ids, edge=sweep)
                     payload.setdefault("delays", {}).update(
                         {str(address): table.hex()
                          for address, table in tables.items()})
@@ -2297,7 +2312,7 @@ class Workspace:
                     # only finished when the slowest sweep on it is.
                     payload["span_s"] = max(
                         payload["span_s"],
-                        sequence.span_s(look_map, seq, span))
+                        sequence.span_s(look_map, seq, span, edge=sweep))
         return payloads, problems
 
     def revision(self) -> str:
@@ -2674,6 +2689,26 @@ class Workspace:
         cues = timeline.clean(show.get("cues"))
         timeline.apply_transitions(cues, transitions)
         _time_sweeps(cues, maps)
+        # The ranks of every sweep with an edge (2026-10-22), once per
+        # distinct rank_set and item: the page's refreshModelFor() (and
+        # conductor/export3d.py) look them up by the cue's
+        # sweep.rank_set, in item.map.scales order, where a straight sweep
+        # keeps using item.sequences. A design's own transition is ranked
+        # too, so the Designs tab can preview it before any cue wears it.
+        for entry in ordered:
+            entry["sweep_ranks"] = {}
+        wanted = [(cue["item"].lower(), cue["sweep"]) for cue in cues]
+        wanted += [(key, record["transition"]) for key, entry in items.items()
+                   for record in entry["designs"]]
+        for key, sweep in wanted:
+            look_map = maps.get(key)
+            if look_map is None or not sweep.get("rank_set"):
+                continue
+            own = items[key]["sweep_ranks"]
+            if sweep["rank_set"] not in own:
+                ranked = sequence.edge_ranks(look_map, sweep)
+                own[sweep["rank_set"]] = [ranked[s.position]
+                                          for s in look_map.scales]
         cue_problems, warnings = timeline.validate(cues, facts, duration,
                                                    refresh)
         # A warning, never a problem: the garments' switches are already set
@@ -2698,6 +2733,12 @@ class Workspace:
             cue["refresh_source"] = ("cue" if isinstance(
                 cue.get("refresh_s"), (int, float)) else "show")
             cue["end"], cue["end_source"] = cue_ends[cue["id"]]
+            # The cue's own five edge fields, defaults included, next to its
+            # sequence/span_s - what the page's cue editor shows and posts
+            # back whole. show.json itself still stores them only when they
+            # are not all defaults (sequence.edge_stored).
+            for key, value in sequence.clean_edge(cue).items():
+                cue.setdefault(key, value)
             cue["problems"] = cue_problems[cue["id"]]
         unit_boards: "dict[str, int]" = {}
         unit_of_item: "dict[str, str]" = {}
@@ -3941,7 +3982,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/transition":
                 self.workspace.set_transition(body.get("design", ""),
                                               body.get("sequence", "natural"),
-                                              body.get("span_s", 0))
+                                              body.get("span_s", 0),
+                                              edge=body)
                 return self._json({"ok": True})
             if self.path == "/api/music/remove":
                 self.workspace.remove_music()
