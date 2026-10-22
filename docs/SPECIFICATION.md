@@ -209,11 +209,21 @@ pipeline = 1。
       **straight は従来とバイト単位で同じ**(delay table・ショー id・
       ゴールデン・3D 書き出し)。5 つが全部既定のときは show.json に何も
       書かない(既存のショーのファイルと「changed since」は動かない)
-    - ページの状態では、各キューの `sweep` が 5 つと `rank_set`(rank の組の
-      名前、straight なら `""`)を持ち、各アイテムの `sweep_ranks` が
-      `{rank_set: [item.map.scales 順の rank]}` を持つ(キューとデザインの
-      トランジションが使う縁ごとに 1 つ)。straight は従来どおり
-      `item.sequences[sequence]`
+    - ページの状態では、各キューの `sweep` と `designs[].transition` が 5 つを
+      持ち、`sweep` はさらに `rank_set`(rank の組の名前)を持つ。形式は
+      `sequence/edge/edge_rows/fixed|random/edge_min_rows/edge_seed`
+      (例: `top_down/fray/3/random/2/1`)。straight・natural・span 0 のときは
+      `""`(縁が何も変えない)。各アイテムの `sweep_ranks` が
+      `{rank_set: [item.map.scales 順の rank(小数)]}` を持つ(キューとデザインの
+      トランジションが使う縁ごとに 1 つ)。`rank_set` が `""` のときは従来どおり
+      `item.sequences[sequence]`。Conductor ページと設計者用シミュレータは
+      `rank_set` をプレビューのキャッシュキーにも使う
+    - **縁は Upload で機体に届く**: 縁は delay table(0x1F)の値として絵と一緒に
+      焼き込まれる。縁を変えるとその衣装は「needs Upload」になる(delay table が
+      変わるため)。機体側の変更・再デプロイは要らない
+      (2026-10-22 の実機確認は radxa-09 / LOOK 28、ほつれ + ランダム 2〜3 段、
+      span 20 秒、198 枚。基板あたり 60 通りの遅延をファームが処理した)
+    - 3D 書き出し(`/api/show/export3d`)も同じ rank を使う
 - **焼き込みの状態と force**(2026-09-25、`/status` の `show.burn`):
   - 新しいエージェントはロード済みのショーについて必ず `burn` を返し、その
     `state` は `burning`(書き込み中、`done`/`total`)| `burned`(完了)|

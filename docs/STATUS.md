@@ -1,6 +1,6 @@
 # 現在地と再開手順
 
-最終更新: 2026-10-14
+最終更新: 2026-10-23
 
 **この文書は「次に何をするか」だけを書く。** 経緯は
 [DEVELOPMENT.md](DEVELOPMENT.md)、20 枚構成の検討は [SCALING.md](SCALING.md)、
@@ -10,13 +10,77 @@
 
 | 機体 | 役割 | 状態 |
 |---|---|---|
-| **Radxa Cubie A7Z × 10** `radxa-01`〜`radxa-10` = `radxa@192.168.50.101`〜`.110` | **本番機 10 台**。01 がゴールデンイメージ元、02〜10 はそのクローン(2026-09-16 全台起動確認済み)。01 に本番制御基板 2 枚(ID:1, ID:20)を接続 | 全台 `epaper-ui` 有効・自動起動、同一コミット |
+| **Radxa Cubie A7Z × 10** `radxa-01`〜`radxa-10` = `radxa@192.168.51.101`〜`.110`(2026-09-22 からのルーター LAN。展示用 AZ-Epaper ホットスポット上は `10.42.0.1NN`) | **本番機 10 台**。01 がゴールデンイメージ元、02〜10 はそのクローン(2026-09-16 全台起動確認済み)。01 に本番制御基板 2 枚(ID:1, ID:20)を接続 | 全台 `epaper-ui` 有効・自動起動、同一コミット |
 | Raspberry Pi Zero 2 W `r2@192.168.50.25` | 予備機。パネル未接続 | `epaper-ui` active。ポート待ちのまま待機 |
 
 - 両機とも同じコードで、差分は `ui/boards.py` のプロファイルのみ
-- テスト 246 件(Windows で全通過、Radxa の Python 3.9 でも全通過 2026-09-20)
+- テスト約 1,910 件(2026-10-23 Windows で全通過。本番 Conductor を 8765 で起動したままだと
+  test_conductor_exhibition_pc の 2 件だけ環境要因で失敗する ―― §3.0)
 
 ## 2. 直近で完成したもの
+
+**日本展示の再実施(2026-10-19〜)**
+
+- radxa-05 に **新しい Bose Flex 2 SoundLink** をペアリング(古い Bose は BlueZ から削除)。
+  展示の START は**つながっている衣装だけで始まり**、足りない衣装は radxa-05 の LCD に
+  `units 1/7 · missing 01 02 …` と出る。radxa-05 の LCD は **30 秒で消灯**する
+  (マージ 6404875、1243d5d、2026-10-19 ― radxa-05 に配布済み)
+- 見えた障害: ① 輸送で radxa と親基板の間の **USB ケーブルが緩んだ**(radxa-04 が
+  「no serial port」。差し直せば直る、再起動は不要)。② **Bose がスタンバイに入ると、
+  ケーブル給電でも radxa-05 が再接続できない** ― Bose 本体の電源ボタンを押すと直る
+  (2026-10-19 と 10-22 の 2 回。運用者はキープアライブを入れない判断)
+- **AZ-Epaper ホットスポット上で PC の本番 Conductor が機体に届くのは、PC の
+  `showdata/fleet.json` に上書きを書いたときだけ**: `{"units": {"radxa-09": "10.42.0.109:8787"}}`。
+  git 管理外で PC ごとのファイル。ルーターに戻すときは**必ず消す**
+
+**掃引の境目のゆらぎ "sweep edge"(2026-10-22、main ba39c97 → 9550c15、push 済み)**
+
+- 掃引(top_down / bottom_up / left_right / right_left / center)の境目を、直線でなく
+  **うねり(wave)/ ほつれ(fray)/ その両方(wave_fray)** にできる。幅 `edge_rows`(グリッドの
+  段数、横の掃引は列数)、`edge_random` で幅そのものを `edge_min_rows`〜`edge_rows` で場所ごとに
+  変える、`edge_seed` で形を固定(画面の「New pattern」= 種 + 1)。キューごと(custom の
+  Transition)にも、デザインの Transition ごとにも持てる。既定のままなら show.json に何も書かない
+- **機体は変更なし**: Conductor が送る V1.4 のソケットごとの遅延表(10 ms 刻み)の rank が
+  小数になるだけ。straight は従来とバイト単位で同じ(遅延表・ショー id・Upload の印・3D 書き出し)。
+  **縁は Upload で機体に届く**(絵と一緒に遅延表を送る)ので、縁を設定した衣装は
+  「needs Upload」になる
+- ページの状態: 全キューと `designs[].transition` に 5 つのキー、`sweep.rank_set`
+  (`seq/edge/rows/fixed|random/min/seed`。straight・natural・span 0 は `""`)、
+  `item.sweep_ranks[rank_set]`(`map.scales` 順の小数 rank)。Python が基準
+  (`conductor/sequence.py` の `edge_ranks`)、JS は 576k 個の rank でビット単位に一致を確認、
+  ゴールデンは `tools/make_goldens.py` の `edge_ranks` 種別。3D 書き出し
+  (`/api/show/export3d`)も設計者用シミュレーターも同じ rank に従う。仕様は
+  [SPECIFICATION.md](SPECIFICATION.md) 3.3「スイープの縁」、設計者向けは
+  [SIMULATOR_FOR_DESIGNERS.md](SIMULATOR_FOR_DESIGNERS.md) 4.1.1
+- 操作: Conductor の Edit Cue カードと Designs タブ、設計者用シミュレーターに同じ
+  `Edge` / `Width Fixed・Random` / `New pattern`
+- **実機確認(2026-10-22)**: radxa-09 / LOOK 28(AZ271SD1307、22 枚)で fray + ランダム 2〜3 段、
+  span 20 秒、198 枚。ファームは基板あたり 60 通りの遅延を処理し、全スケールが完了、運用者の目で
+  良好。その後 09 は radxa-05 の展示ショーで Upload し直した
+- **決定: radxa-05(展示 Conductor)は 1243d5d(2026-10-19 配布、縁の機能なし)のまま・デプロイしない**。
+  縁は PC で回すショー用。展示のショーに縁を使うなら、先に main を radxa-05 に載せること
+  (PC を AZ-Epaper につなぎ、`git bundle create` → scp → radxa-05 で `git pull --ff-only /tmp/x.bundle main`
+  → `sudo systemctl restart epaper-conductor epaper-ui`。`radxa/EXHIBITION.md` §6 の更新の注意も参照)
+- 3 人の implementer が並行(core / Conductor ページ / シミュレーター)、各々レビュー済み。
+  レビューで直したもの: ページの縁の保存を直列化(幅を打った直後の「New pattern」で両方残る)、
+  `rank_set` の書式を Python と JS で揃えた、`tests/test_export3d` の Node スクリプトが
+  `flicker.js` より先に `model.js` を読む(`hash32` が `model.js` へ移ったため)
+- テスト: `tests/test_sequence_edge.py`、`tests/test_conductor_edge_page.py`、
+  `tests/test_designer_edge.py`
+
+**3D キット(3D シミュレーター担当への引き渡し、2026-10-22、72ee60b・6e6b3c8・8e16f95)**
+
+- `tools/blender/import_epaper_3d.py`(Blender 3.6〜5.x): `epaper-3d-timeline` の JSON から、全スケール
+  オブジェクトの `obj.color` を CONSTANT 補間でキー打ちする。slotted / legacy 両方のアクション、
+  共有マテリアル「EPaper Scale」(Object Info)、音楽ストリップ(任意)。**実際の Blender ではまだ
+  動かしていない**(`bpy` のモックでのテストだけ)
+- 解説は `docs/3d_kit/EPaper_3D_kit_manual.html`(12 節)。PDF と zip は `dist/EPaper_3D_kit_*`
+  に作る(`dist/` は git 管理外 ― **キットの引き渡しは手作業**)。`docs/EXPORT_3D_FORMAT.md` は
+  このスクリプトを指している
+- 2026-10-14 に 3D 担当へ渡した書き出しは、**配線が 2026-09-27 より前のまま**の名前の 34 スケール
+  (AZ271SD1307 の 32 → 基板 150、AZ271SG1036 の 143-36 → 143-37、AZ271SD1301 の 112-38 →
+  112-25 ― 運用者がこの名前で良いとした)。キットには `label_changes_since_20261014.csv` と、
+  今の配線での本番ショーのサンプルを入れた
 
 **Export for 3D simulator(2026-10-14、Conductor だけ)**
 
@@ -3211,7 +3275,53 @@ ID:1 と ID:20 は **0.5 秒以内の同時リフレッシュ**(deaf 窓 0.7-17.
   変化したら白を描き直す。60 秒ごとの停止指令が検知漏れの保険
 - 既知の割り切り: **一時停止中**の抜き差しは KEY1 で再開するまで復帰しない
 
-## 3. 次にやること — 20 枚構成の実現性確認
+## 3. 次にやること / 保留
+
+### 3.0 2026-10-23 時点の保留(別の PC で再開する人へ)
+
+1. **Conductor ページの縁(Edge)の小さな不具合**(`conductor/web/index.html`、ebc8888 のレビュー指摘):
+   Edit Cue カードの Edge の行が**とても狭い Conductor ウィンドウで崩れて折り返す**。
+   Designs タブは **span 0 でも Edge の操作を出す**(仕様では span 0 の縁は無視される)。
+   **幅の欄を空にして確定すると 0 段で保存される**。Min より小さい Max を打つと
+   **Min が黙って下がる**(toast が出ない。Min を Max より大きくしたときだけ toast が出る)
+2. **設計者用シミュレーターの小さな不具合**(`conductor/web/sim/designer-app.js`、`model.js`):
+   `setDesignTransition` が、触ったデザインに既定の縁のキーを書き出すことがある。
+   `addCue` がプロジェクトに `EDGE_DEFAULTS` を書く(実害なし)。`spanS` が再構築のたびに
+   縁の rank を計算し直す(速度だけの話)
+3. **縁のアルゴリズムの独立した検証が無い**: テストは、この実装が出した数値を固定している。
+   別実装との照合は、ブラウザの selftest(JS 移植 ↔ Python のゴールデン。通る)だけ。
+   `tests/test_export3d.py` の Node でのフレーム単位の照合は **Node の無い PC ではスキップ**され、
+   その fixture には縁つきのキューがまだ無い
+4. **設計者への再配布**: 縁の操作を入れた設計者用シミュレーター(`dist/*-with-music.html`、軽い版も)は
+   implementer が作り直し済み。**Conductor から「Simulator for designers…」を取り直して設計者に渡す**
+   こと(渡さないと設計者のプロジェクトに縁のキーが載らない)。あわせて、設計者のプロジェクトは
+   AZ271SD1307 / AZ271SG1036 / AZ271SD1301 について **2026-09-27 より前の配線**のまま
+   (bundle を取り込んでも Conductor 側の配線は残る ― 不具合ではなく、伝えておく注意)
+5. **Conductor の Bluetooth ペア手順の不具合**: BlueZ が既にそのデバイスを知っているとき、
+   「Re-pair」が `[NEW]`/`[CHG]` を待ってタイムアウトする(2026-10-19)。手で
+   `bluetoothctl` の pair / trust / connect を行えば通る
+6. **見送りにした対応(運用者の判断)**: AH MED の続き(Conductor を見失ったときの LCD 点灯)、
+   Bose のキープアライブ。Bose がスタンバイで再接続できないときは本体の電源ボタンを押す
+7. **本番 Conductor が 8765 で動いているときの既存の失敗 2 件**:
+   `tests/test_conductor_exhibition_pc.py::test_the_labelled_page_wears_the_badge_the_title_and_the_icon`
+   と `::test_the_plain_page_is_what_it_always_was`。8e16f95 でも落ちる(環境の問題で、縁とは無関係)。
+   Conductor を止めて回すか、別ポートで確認すること
+8. **パリの残件**([HANDOVER_2026-10_PARIS.md](HANDOVER_2026-10_PARIS.md) §5 が一覧):
+   LOOK 25 の仮マップ 112-38 → 112-25(3D モデルの名前にもなった)、radxa-05 の予備 SD、
+   radxa-08 の電源不良、radxa-06/08 の MAC を DHCP 予約へ、LOOK 24 の基板 119 の色、
+   BrokenPipe のログ雑音、`.claude/worktrees/` の古いエージェント worktree
+9. **3D キットの Blender 実機確認**: `import_epaper_3d.py` を実際の Blender 3.6〜5.x で一度回す
+   (今までは `bpy` のモックのみ)。キットの zip/PDF は `dist/` から手で渡す
+10. **別の PC で再開するときの環境**:
+    - テストは Python 3.13 以上(3.14 で確認)に pyserial が要る。`python -m pytest`、
+      `PYTHONUTF8=1`。ブラウザテストは `CONDUCTOR_BROWSER_TESTS=1` で Edge が要る
+    - Bluetooth と Wi-Fi のパスコードは**リポジトリに無い**(radxa-05 の `fleet.json`)
+    - `showdata/` と `exhibition-data/` は git 管理外 ― 元の PC からコピーするか、設計者の
+      `az27ss-*.json` を **Load bundle…** + **Load music** で取り込んでショーを作り直す
+    - 機体は触らない(ssh / OTA / ファーム操作は運用者の了解がある時だけ)。機体上のフォルダは
+      `~/E-paper_H_WALL_BRICKS_Raspi` のまま(§4)
+
+### 3.1〜3.3 20 枚構成の実現性確認(従来からの項目)
 
 [SCALING.md](SCALING.md) 9 章に詳細。**物理作業と問い合わせが先**で、
 ソフト改修はその後でよい。
@@ -3276,7 +3386,7 @@ python -m pytest tests/ -q            # 全件 passed を確認(2026-09-21 時�
 "Start Conductor.bat"                 # = python -m conductor serve --open
 
 # 本番機(パネル接続側)
-ssh radxa@192.168.50.101
+ssh radxa@192.168.51.101
 cd ~/E-paper_H_WALL_BRICKS_Raspi && git pull
 systemctl status epaper-ui
 journalctl -u epaper-ui -f            # 白待機なら "standby ready" で止まっている

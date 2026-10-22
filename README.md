@@ -398,6 +398,13 @@ map とデザインを結び付けるのは従来どおり CSV のファイル�
   遷移は無視されて P01→P60 で変わる(機体の `/status` の `no_sweep` にその基板が出る)
   Designs タブの **Prepare**(手動発火)でも同じ遷移で変わる。基板が遅延表を受け取ると機体の
   ログに「board N: sweep table saved, 60 sockets, last starts +3.00 s」のように出る
+- **遷移の縁(Edge、2026-10-22)**: 上→下・下→上・左→右・右→左・図心からの遷移は、境目を
+  直線ではなく **Wave**(うねり)/ **Fray**(ほつれ)/ **Wave + fray** にできる。**Width** は
+  `Fixed`(段数)か `Random`(Min〜Max の間で場所ごとに変わる)、**New pattern** で形だけ
+  替える。デザインごとの Transition(Designs タブ)とキューだけの Transition: custom
+  (EDIT CUE)の両方にあり、`show.json` には既定でないときだけ書く。機体は変更不要
+  (従来と同じ遅延表の値が変わるだけ)で、縁は **Upload** で機体に届く。仕様は
+  [SPECIFICATION.md](docs/SPECIFICATION.md) 3.3、設計者用シミュレーターにも同じ操作がある
 - **色味は実機見本色**: 画面の 16 色は制作サイトの色表 260921(実機を肉眼で見た色)に合わせてある。
   白も紙の上では薄い鋼青に見えるので、その色で描く。基板に送るのは色コードで、見た目の RGB は
   画面と PNG プレビューだけの話
