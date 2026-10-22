@@ -365,6 +365,11 @@
       cue.refresh_source = (typeof cue.refresh_s === "number" && !Number.isNaN(cue.refresh_s)) ? "cue" : "show";
       const end = cueEnds[cue.id];
       cue.end = end[0]; cue.end_source = end[1];
+      // The cue's own five edge fields, defaults included, as server.py's
+      // state() sends them (show.json still stores them only when not all
+      // defaults).
+      const edge = sequence.cleanEdgeFields(cue);
+      Object.keys(edge).forEach(k => { if (!(k in cue)) cue[k] = edge[k]; });
       cue.problems = cueProblems[cue.id];
     });
 

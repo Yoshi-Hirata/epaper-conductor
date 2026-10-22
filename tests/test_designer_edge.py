@@ -180,7 +180,7 @@ def test_the_edge_is_offered_only_for_a_sweep(sim):
 def test_a_wave_is_stored_and_ranked(sim):
     wave = sim["wave"]
     assert wave["stored"]["edge"] == "wave", wave
-    assert wave["rankSet"] == "top_down/wave/6/1", wave
+    assert wave["rankSet"] == "top_down/wave/6/fixed/1/1", wave
     assert wave["ranks"] == sim["scales"] and wave["fractional"] is True, wave
     assert wave["widthShown"] is True
     assert "Width" in wave["text"] and "Fixed" in wave["text"] and "Random" in wave["text"]
@@ -215,7 +215,7 @@ def test_the_bundle_carries_the_edge_and_opens_with_it(sim):
     want = {"edge": "wave", "edge_rows": 4, "edge_random": True, "edge_min_rows": 4, "edge_seed": 2}
     assert sim["exported"] == want
     assert sim["reopened"] == want
-    assert sim["reopenedSweep"] == "top_down/wave/4-4/2"
+    assert sim["reopenedSweep"] == "top_down/wave/4/random/4/2"
     # a cue without an edge exports exactly as it did before the edge
     assert sim["plainCueExported"] and not EDGE_KEYS & set(sim["plainCueExported"])
 
@@ -227,4 +227,4 @@ def test_a_design_transition_keeps_its_edge(sim):
     kept = sim["designKept"]
     assert kept["sequence"] == "bottom_up" and kept["edge"] == "fray" and kept["edge_seed"] == 2, kept
     assert sim["designRow"] == "Fray edge, 6 rows"
-    assert sim["designState"] == {"rankSet": "bottom_up/fray/6/2", "ranked": True}
+    assert sim["designState"] == {"rankSet": "bottom_up/fray/6/fixed/1/2", "ranked": True}

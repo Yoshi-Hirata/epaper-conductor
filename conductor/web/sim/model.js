@@ -1467,15 +1467,17 @@
   }
   // sequence.py's rank_set(): the key of a sweep's ranks in the page state's
   // item.sweep_ranks - "" when the edge changes nothing (straight, natural,
-  // or a span of 0), else everything the ranks depend on and nothing else.
+  // or a span of 0), else the sequence and all five fields - even the
+  // minimum of a fixed width, which moves no rank - and nothing else (not
+  // the span): "top_down/wave/6/fixed/1/1".
   function rankSet(sweep) {
     if (typeof sweep !== "object" || sweep === null || Array.isArray(sweep)) sweep = {};
     const seq = cleanSequence(sweep.sequence !== undefined ? sweep.sequence : "natural");
     const e = cleanEdgeFields(sweep);
     if (seq === "natural" || e.edge === "straight"
         || cleanSpan(sweep.span_s !== undefined ? sweep.span_s : 0.0) <= 0) return "";
-    const width = e.edge_random ? `${fmt.g(e.edge_min_rows)}-${fmt.g(e.edge_rows)}` : fmt.g(e.edge_rows);
-    return `${seq}/${e.edge}/${width}/${e.edge_seed}`;
+    return `${seq}/${e.edge}/${fmt.g(e.edge_rows)}/${e.edge_random ? "random" : "fixed"}/`
+      + `${fmt.g(e.edge_min_rows)}/${e.edge_seed}`;
   }
 
   // position key -> rank, rebased so the lowest is 0. `sweep` carries

@@ -29,7 +29,10 @@ DESIGN = f"{ITEM}_1_HW.csv"
 HALF = f"{ITEM}_2_HW.csv"           # the top half of DESIGN's rows only
 
 NODE_WORN_AT = r"""
-globalThis.SIM = { timeline: { PANEL_REPAINT_S: %(repaint)s } };
+// model.js first: flicker.js takes its hash32 from SIM.sequence (2026-10-22,
+// one implementation), then the stubbed timeline over model.js's own.
+require(%(model)s);
+globalThis.SIM.timeline = { PANEL_REPAINT_S: %(repaint)s };
 require(%(flicker)s);
 const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
 const hex = c => typeof c === "number"
@@ -88,6 +91,7 @@ def test_keys_match_the_timeline_preview_frame_for_frame(workspace, tmp_path):
     script = tmp_path / "worn.js"
     script.write_text(NODE_WORN_AT % {
         "repaint": json.dumps(export3d.timeline.PANEL_REPAINT_S),
+        "model": json.dumps(str(ROOT / "conductor" / "web" / "sim" / "model.js")),
         "flicker": json.dumps(str(ROOT / "conductor" / "web" / "sim" / "flicker.js"))},
         encoding="utf-8")
     run = subprocess.run([node, str(script)], capture_output=True, text=True,
