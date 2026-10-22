@@ -3292,8 +3292,8 @@ ID:1 と ID:20 は **0.5 秒以内の同時リフレッシュ**(deaf 窓 0.7-17.
    別実装との照合は、ブラウザの selftest(JS 移植 ↔ Python のゴールデン。通る)だけ。
    `tests/test_export3d.py` の Node でのフレーム単位の照合は **Node の無い PC ではスキップ**され、
    その fixture には縁つきのキューがまだ無い
-4. **設計者への再配布**: 縁の操作を入れた設計者用シミュレーター(`dist/*-with-music.html`、軽い版も)は
-   implementer が作り直し済み。**Conductor から「Simulator for designers…」を取り直して設計者に渡す**
+4. **設計者への再配布**: 縁の操作を入れた設計者用シミュレーターは、軽い版(`dist/az27ss-simulator.html`)だけ
+   作り直し済み。音楽入り(`dist/*-with-music.html`)は Conductor のボタンでその都度作る。**Conductor から「Simulator for designers…」を取り直して設計者に渡す**
    こと(渡さないと設計者のプロジェクトに縁のキーが載らない)。あわせて、設計者のプロジェクトは
    AZ271SD1307 / AZ271SG1036 / AZ271SD1301 について **2026-09-27 より前の配線**のまま
    (bundle を取り込んでも Conductor 側の配線は残る ― 不具合ではなく、伝えておく注意)
