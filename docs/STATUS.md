@@ -68,6 +68,26 @@
 - テスト: `tests/test_sequence_edge.py`、`tests/test_conductor_edge_page.py`、
   `tests/test_designer_edge.py`
 
+**縁(Edge)の小さな不具合の修正(2026-10-23)**
+
+- Conductor ページ(`conductor/web/index.html`): Edit Cue カードの Edge 行と Refresh 行は狭い窓で
+  `cue-row stacked` 配置(説明文が操作の下に回る)。Designs タブは span 0 で Edge 操作を出さない
+  (Edit Cue と同じ)。Width を空・負で確定すると既存の toast で拒否し、保存値に戻す。Max を Min より
+  小さく打つと Min が下がる(従来どおり)が、toast で告げる ― 保存される 0.1 丸めの値で、実際に
+  変わるときだけ、Fixed / Random どちらでも。テスト `tests/test_conductor_edge_page.py` 18 件(新規 5)
+- 設計者用シミュレーター(`conductor/web/sim/designer-app.js`、`model.js`、`state.js`): 既定の縁
+  (straight・既定幅・seed 1)はプロジェクトにも bundle にも書かない(`setDesignTransition` /
+  `updateCue` / `addCue` / 新 `exportTransitions`)。古いビルドが書いた全部既定のキーは次に触ったとき
+  落とす。縁の rank は map ごと・rank_set ごとにキャッシュ(WeakMap)、map の `[name, text, ownBoards]`
+  が同じ再構築で引き継ぎ、今回の構築が使った rank_set だけ残す(`pruneEdgeRankStore`)。
+  Max < Min の toast は Conductor と同文。テスト `tests/test_designer_edge.py` 11 件、
+  `tests/test_sim_goldens.py` 10 件(Node のキャッシュ試験に基板番号の付け替えと seed 戻しを追加、
+  Conductor への bundle 往復試験を追加)
+- `dist/az27ss-simulator.html` を作り直し済み(682,558 bytes)。音楽入り
+  `dist/az27ss-simulator-with-music.html`(18.1 MB、`27SS_10m25s_v3.mp3`)は git 外で設計者へ手渡す
+- 残した小さな点: span 0 を保存するとデザインの縁がエントリごと消える(server の `set_transition` の
+  従来挙動。仕様どおり span 0 の縁は無視なので据え置き)
+
 **3D キット(3D シミュレーター担当への引き渡し、2026-10-22、72ee60b・6e6b3c8・8e16f95)**
 
 - `tools/blender/import_epaper_3d.py`(Blender 3.6〜5.x): `epaper-3d-timeline` の JSON から、全スケール
@@ -514,10 +534,13 @@ NOW → NEXT の行には出ない)。トーストは
 - **本番のショー(`showdata/`)は触っていない。** 10:54 の曲に合わせるには、オペレーターが
   Timeline で **Fit to music**(→ 10:55)を押し、**Upload し直す**
 
-**この PC のブラウザテストについて**: Bash(Git Bash)から起動した headless Edge 154 は
-`--dump-dom` で何も返さずに終わる(`no #page-out in the dumped DOM`、main でも)。
-PowerShell から起動すれば通る。ブラウザテストは PowerShell で
-`$env:CONDUCTOR_BROWSER_TESTS = "1"` を付けて走らせること。
+**この PC のブラウザテストについて**: Edge が既に起動していると、headless Edge はそちらに処理を
+渡して `--dump-dom` で空の DOM を返す(setup エラー `no #…-out in the dumped DOM`、main でも)。
+環境変数 `CONDUCTOR_BROWSER` に Chrome
+(`C:\Program Files\Google\Chrome\Application\chrome.exe`)を指せば数秒で通る
+(2026-10-23、この PC: test_conductor_board は 61 件エラーが 91 件通過になった)。
+`CONDUCTOR_BROWSER_TESTS=1` はテストを有効にする印ではなく、ブラウザが見つからないときに
+skip でなく fail にするだけ。
 
 **詰まり続けるバスを「この機体を再起動」と言い切るようにした(2026-09-28
 リハーサル後)**
@@ -3279,21 +3302,16 @@ ID:1 と ID:20 は **0.5 秒以内の同時リフレッシュ**(deaf 窓 0.7-17.
 
 ### 3.0 2026-10-23 時点の保留(別の PC で再開する人へ)
 
-1. **Conductor ページの縁(Edge)の小さな不具合**(`conductor/web/index.html`、ebc8888 のレビュー指摘):
-   Edit Cue カードの Edge の行が**とても狭い Conductor ウィンドウで崩れて折り返す**。
-   Designs タブは **span 0 でも Edge の操作を出す**(仕様では span 0 の縁は無視される)。
-   **幅の欄を空にして確定すると 0 段で保存される**。Min より小さい Max を打つと
-   **Min が黙って下がる**(toast が出ない。Min を Max より大きくしたときだけ toast が出る)
-2. **設計者用シミュレーターの小さな不具合**(`conductor/web/sim/designer-app.js`、`model.js`):
-   `setDesignTransition` が、触ったデザインに既定の縁のキーを書き出すことがある。
-   `addCue` がプロジェクトに `EDGE_DEFAULTS` を書く(実害なし)。`spanS` が再構築のたびに
-   縁の rank を計算し直す(速度だけの話)
+1. **縁(Edge)の小さな不具合**: 2026-10-23 に Conductor ページ・設計者用シミュレーターとも修正済み
+   (§2)。残りは 1 点だけ ― span 0 を保存するとデザインの縁がエントリごと消える
+   (server の `set_transition` の従来挙動。仕様どおり span 0 の縁は無視なので据え置き)
 3. **縁のアルゴリズムの独立した検証が無い**: テストは、この実装が出した数値を固定している。
    別実装との照合は、ブラウザの selftest(JS 移植 ↔ Python のゴールデン。通る)だけ。
    `tests/test_export3d.py` の Node でのフレーム単位の照合は **Node の無い PC ではスキップ**され、
    その fixture には縁つきのキューがまだ無い
-4. **設計者への再配布**: 縁の操作を入れた設計者用シミュレーターは、軽い版(`dist/az27ss-simulator.html`)だけ
-   作り直し済み。音楽入り(`dist/*-with-music.html`)は Conductor のボタンでその都度作る。**Conductor から「Simulator for designers…」を取り直して設計者に渡す**
+4. **設計者への再配布**: 縁の操作を入れた設計者用シミュレーターは、軽い版(`dist/az27ss-simulator.html`)を
+   作り直し済み。音楽入り(`dist/az27ss-simulator-with-music.html`、18.1 MB)は 2026-10-23 に
+   この PC の `showdata`(`27SS_10m25s_v3.mp3`)から作り、縁の修正を含む。**これを設計者に渡す**
    こと(渡さないと設計者のプロジェクトに縁のキーが載らない)。あわせて、設計者のプロジェクトは
    AZ271SD1307 / AZ271SG1036 / AZ271SD1301 について **2026-09-27 より前の配線**のまま
    (bundle を取り込んでも Conductor 側の配線は残る ― 不具合ではなく、伝えておく注意)
@@ -3314,7 +3332,9 @@ ID:1 と ID:20 は **0.5 秒以内の同時リフレッシュ**(deaf 窓 0.7-17.
    (今までは `bpy` のモックのみ)。キットの zip/PDF は `dist/` から手で渡す
 10. **別の PC で再開するときの環境**:
     - テストは Python 3.13 以上(3.14 で確認)に pyserial が要る。`python -m pytest`、
-      `PYTHONUTF8=1`。ブラウザテストは `CONDUCTOR_BROWSER_TESTS=1` で Edge が要る
+      `PYTHONUTF8=1`。ブラウザテストは Edge か Chrome が要る。Edge が起動中だと空の DOM
+      になるので、`CONDUCTOR_BROWSER` に Chrome を指す(§2 の「この PC のブラウザテスト」)。
+      `CONDUCTOR_BROWSER_TESTS=1` は「ブラウザ無し」を skip でなく fail にするだけ
     - Bluetooth と Wi-Fi のパスコードは**リポジトリに無い**(radxa-05 の `fleet.json`)
     - `showdata/` と `exhibition-data/` は git 管理外 ― 元の PC からコピーするか、設計者の
       `az27ss-*.json` を **Load bundle…** + **Load music** で取り込んでショーを作り直す
