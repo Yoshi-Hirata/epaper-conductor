@@ -77,6 +77,11 @@ Conductor の Timeline にある **Export for 3D simulator…** が書き出す 
 4. 音源 `music.name` を時刻 0 に合わせて置く。プリセットの負の時刻を見せたい場合は、
    オフセットをその分ずらす。
 
+この手順をそのまま実装したスクリプトが **`tools/blender/import_epaper_3d.py`** にある
+(Blender 3.6〜5.x)。色はオブジェクトの色(`obj.color`)に Constant で打つので、
+ビューポートは Solid の Color: Object ですぐ見え、レンダーは同梱のマテリアル
+「EPaper Scale」(Object Info → Color)で出る。
+
 ## 大きさの目安
 
 フルのショー(52 指示・約 8,000 鱗)で約 16 MB、書き出しに 10 秒前後かかる。
