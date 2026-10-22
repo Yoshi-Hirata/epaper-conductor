@@ -68,7 +68,8 @@
   <tr><td><code>import_epaper_3d.py</code></td><td>Blender 用の取り込みスクリプト(Python、Blender の中で動く)</td></tr>
   <tr><td><code>EXPORT_3D_FORMAT.md</code></td><td>3D 用 JSON(形式名 <code>epaper-3d-timeline</code> v1)の詳しい仕様</td></tr>
   <tr><td><code>scales.csv</code></td><td>全鱗の一覧(品番・LOOK・鱗の名前・表裏・行・列)。モデルの名前付けに使う</td></tr>
-  <tr><td><code>sample/…json</code></td><td>動作確認用の書き出し例。今の演出データは <b>LOOK 28(AZ271SD1307)だけに色が付いている</b>途中段階のもの(ほかの品番はずっと色なし)</td></tr>
+  <tr><td><code>sample/az27ss-3d-20260929-1132.json</code></td><td><b>本番用の演出データ</b>(az27ss-20260929-1132、52 場面)を、<b>今の配線</b>で書き出したもの。衣装 7 着に色が付き、バッグ 3 点は演出の指示がないため色なし</td></tr>
+  <tr><td><code>label_changes_since_20261014.csv</code></td><td>10/14 に渡したデータから<b>名前が変わった 34 枚</b>の対応表(旧名 → 新名、位置つき)</td></tr>
 </table>
 
 <h2>2. 全体の流れ</h2>
@@ -98,6 +99,17 @@
       デザイン上の格子での位置です。名前付けの照合に使えます</li>
   <li>鱗は 1 枚 = 1 オブジェクトにしてください(色をオブジェクトごとに付けるため)。メッシュの共有(リンク複製)は問題ありません</li>
 </ul>
+<div class="box warn"><strong>10/14 に渡したデータから、34 枚の名前が変わっています。</strong>
+10/14 版は 9/27 より前の配線で書き出されていました。今の配線(このキットの <code>scales.csv</code> と sample)に合わせて、
+モデルのオブジェクト名を直してください。対応表は <code>label_changes_since_20261014.csv</code>。
+<table>
+  <tr><th>品番</th><th>枚数</th><th>10/14 版</th><th>今</th></tr>
+  <tr><td>AZ271SD1307(LOOK 28)</td><td>32</td><td><code>033-38</code> など(基板 033〜043)</td><td><code>150-01</code>〜<code>150-32</code>(基板 150)</td></tr>
+  <tr><td>AZ271SG1036(Bag 02)</td><td>1</td><td><code>143-36</code></td><td><code>143-37</code></td></tr>
+  <tr><td>AZ271SD1301(LOOK 25)</td><td>1</td><td><code>112-38</code></td><td><code>112-25</code></td></tr>
+</table>
+ほかの鱗の名前と、全品番の演出(場面・時刻・色)は 10/14 版と同じです。LOOK 28 だけは鱗の並び順が変わったため、
+書き換え中のチラつきの模様が少し違います(書き換えの始まり・終わりと、最終的な色は同じ)。</div>
 <table>
   <tr><th>品番</th><th>LOOK</th><th>鱗の数</th><th>品番</th><th>LOOK</th><th>鱗の数</th></tr>
   <tr><td>AZ271SD1305</td><td>23</td><td>862</td><td>AZ271SB2303(Skirt)</td><td>26</td><td>876</td></tr>
@@ -115,7 +127,7 @@
   <li>先頭の設定 <code>JSON_PATH = r"…"</code> に、書き出した JSON の場所を書く</li>
   <li><b>Run Script</b>(▶)を押す。結果はシステムコンソール(Window → Toggle System Console)に出る</li>
 </ol>
-<pre><code>[epaper-3d] {'scales keyed': 1217, 'keys': 270928, 'missing objects': 0,
+<pre><code>[epaper-3d] {'scales keyed': 7250, 'keys': 1325544, 'missing objects': 0,
              'show 0:00 at frame': 241.0, 'frames': (1, 19891), 'fps': 30.0}</code></pre>
 <h3>B. コマンドラインから</h3>
 <pre><code>blender model.blend --python import_epaper_3d.py -- show-3d.json</code></pre>
@@ -169,8 +181,7 @@
 <h2>10. 重さの目安</h2>
 <table>
   <tr><th>データ</th><th>キーの数</th><th>メモ</th></tr>
-  <tr><td>同梱の sample(LOOK 28 のみ)</td><td>約 27 万</td><td>1,217 枚、1 枚あたり約 230 キー</td></tr>
-  <tr><td>全品番に色が付いたフルのショー</td><td>約 180 万(見込み)</td><td>読み込みに数分。重いときは <code>ITEMS</code> で品番を絞るか、<code>SNAP_TO_FRAMES = True</code></td></tr>
+  <tr><td>同梱の sample(本番用、衣装 7 着)</td><td>約 133 万</td><td>7,250 枚、1 枚あたり約 175〜200 キー。読み込みに数分かかる見込み。重いときは <code>ITEMS</code> で品番を絞るか、<code>SNAP_TO_FRAMES = True</code></td></tr>
 </table>
 
 <h2>11. 困ったとき</h2>
@@ -182,7 +193,7 @@
   <tr><td>色がくすむ・明るすぎる</td><td>View Transform を Standard に。発光(<code>EMISSION</code>)やライトの強さも確認</td></tr>
   <tr><td>色がパッと切り替わるだけで、チラつきがない</td><td><code>SNAP_TO_FRAMES</code> が True、または fps が低いと細かい変化が見えにくい。fps を上げて確認</td></tr>
   <tr><td>色がなめらかに混ざる</td><td>補間が Constant 以外になっている。スクリプトを再実行する</td></tr>
-  <tr><td>ずっと灰色の品番がある</td><td>その品番に演出(色の指示)がまだない。同梱の sample は LOOK 28 だけ</td></tr>
+  <tr><td>ずっと灰色の品番がある</td><td>その品番に演出(色の指示)がない。本番用データではバッグ 3 点(AZ271SG1035・SG1036・SG3037)がこれにあたる</td></tr>
   <tr><td><code>is not an epaper-3d-timeline v1 file</code></td><td>別の JSON(デザイナー用のプロジェクトファイルなど)を読んでいる。<code>Export for 3D simulator…</code> の書き出しを使う</td></tr>
 </table>
 
