@@ -453,6 +453,18 @@ body.busy #write-back { pointer-events: none; }
 .dsg-tr { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; white-space: nowrap; }
 .dsg-tr select { width: 158px; font-size: 12px; }
 .dsg-tr input[type=text] { width: 44px; }
+/* The sweep's edge (2026-10-22): one set of controls, drawn under a design's
+   row, in the Designs toolbar and on the Edit Cue card - see edgeControls(). */
+.dsg-edge { flex: 1 1 100%; display: flex; gap: 6px; align-items: center; font-size: 12px; }
+.edge-ctl { display: inline-flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.group > span.edge-ctl { color: inherit; font-size: inherit; margin-right: 0; }
+.edge-ctl select { width: auto; flex: 0 0 auto; }
+.edge-ctl input[type=text] { width: 44px; }
+.edge-ctl .seg { display: inline-flex; align-items: center; gap: 0; }
+.edge-ctl .seg button { border-radius: 0; margin-left: -1px; padding: 3px 9px; }
+.edge-ctl .seg button:first-of-type { border-radius: 6px 0 0 6px; margin-left: 4px; }
+.edge-ctl .seg button:last-of-type { border-radius: 0 6px 6px 0; }
+.edge-ctl button.edge-new { border-radius: 6px; margin-left: 0; padding: 3px 9px; }
 
 /* ---- show seek bar (Units tab, manual gate: round 3 plan §1.2) ---- */
 .seek-wrap { border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; margin: 10px 0; }
@@ -1118,6 +1130,7 @@ function renderContent() {
           `<option value="${esc(s.id)}" ${s.id === selTr.sequence ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select>
         <span ${selTr.sequence === "natural" ? 'style="display:none"' : ""}><input type="text" data-tr-span="${esc(design.name)}" size="4" value="${selTr.span_s}" title="Seconds from the command to the first rank to the command to the last"> s</span>
       </div>` : ""}
+      ${design && selTr.sequence !== "natural" ? `<div class="group"><span>Edge</span>${edgeControls(edgeOf(selTr), `data-edge-design="${esc(design.name)}"`)}</div>` : ""}
     </div>
     <div id="stage">${renderGarment(item, { cell: 22, mode, labels: true, colors: design?.colors || {},
                                           undecided: design?.undecided,
@@ -1155,6 +1168,7 @@ function renderContent() {
                 <span ${tr.sequence === "natural" ? 'style="display:none"' : ""}><input type="text" data-tr-span="${esc(d.name)}" size="4" value="${tr.span_s}" title="Seconds from the command to the first rank to the command to the last"> s</span>
                 <button data-del="${esc(d.name)}" title="Delete from the workspace">×</button>
               </div>
+              ${tr.sequence !== "natural" ? `<div class="dsg-edge"><span class="meta">Edge</span>${edgeControls(edgeOf(tr), `data-edge-design="${esc(d.name)}"`)}</div>` : ""}
             </div>`; }).join("")
             || `<div class="meta">Add design CSV files (*_color_NAME_grid.csv)</div>`}</div>
           <div class="meta" style="margin-top:8px"><label class="filebtn" tabindex="0" role="button">Add CSV to this item<input id="pick-own" type="file" accept=".csv" multiple></label>
@@ -1273,6 +1287,84 @@ const seqLabel = id => state.sequences.find(s => s.id === id)?.label || id;
 // from the design's default or the cue's own override. Defensive against a
 // server that does not compile it yet.
 const sweepOf = cue => cue.sweep || { sequence: "natural", span_s: 0, source: "design" };
+// ---- the sweep's edge (operator's request, 2026-10-22) ----
+// A swept transition's border need not advance as a straight line: Wave /
+// Fray / Wave + fray, a width in grid steps (rows, for a vertical sweep) that
+// is either fixed or varies across the garment between a min and a max, and
+// a seed, so the shape is the same on the units, in this preview, in the 3D
+// export and every loop - "New pattern" only moves the seed on. The ranks
+// themselves are the server's (conductor/sequence.py) and reach this page as
+// item.sweep_ranks; the page only edits and posts the five fields. Absent
+// fields mean today's straight sweep, so a server that sends none of them
+// still draws and saves exactly as before.
+const EDGE_STYLES = [["straight", "Straight"], ["wave", "Wave"], ["fray", "Fray"], ["wave_fray", "Wave + fray"]];
+const EDGE_ROWS_MAX = 24;
+const EDGE_SEED_MAX = 999999;
+// The server's cleaning of the five fields, mirrored, so the controls show
+// what would be stored: an unknown style is Straight, the widths are rounded
+// to 0.1 and clamped (the min never above the max), the seed is a whole number.
+function edgeOf(src) {
+  src = src || {};
+  const num = (v, d) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v))) ? d : Number(v);
+  const r1 = x => Math.round(x * 10) / 10;
+  const rows = r1(Math.min(EDGE_ROWS_MAX, Math.max(0, num(src.edge_rows, 6))));
+  return {
+    edge: EDGE_STYLES.some(([id]) => id === src.edge) ? src.edge : "straight",
+    edge_rows: rows,
+    edge_random: !!src.edge_random,
+    edge_min_rows: r1(Math.min(rows, Math.max(0, num(src.edge_min_rows, 1)))),
+    edge_seed: Math.min(EDGE_SEED_MAX, Math.max(0, Math.trunc(num(src.edge_seed, 1)))),
+  };
+}
+// A cue's OWN edge (the one "this cue only" uses), stored beside its
+// sequence/span_s. Its resolved sweep stands in only when the cue's own
+// fields are not echoed and that sweep really came from the cue - a design
+// sweep's edge is the design's, not this cue's.
+function cueEdge(cue) {
+  const own = {}, sw = cue.sweep?.source === "cue" ? cue.sweep : null;
+  for (const f of ["edge", "edge_rows", "edge_random", "edge_min_rows", "edge_seed"]) own[f] = cue[f] !== undefined ? cue[f] : sw?.[f];
+  return edgeOf(own);
+}
+// A design's own transition, by file name, wherever on the page it is edited.
+function designTransition(name) {
+  for (const it of state.items) {
+    const d = it.designs.find(x => x.name === name);
+    if (d) return d.transition || { sequence: "natural", span_s: 0 };
+  }
+  return { sequence: "natural", span_s: 0 };
+}
+const edgeLabel = id => (EDGE_STYLES.find(([k]) => k === id) || EDGE_STYLES[0])[1];
+// The edge's controls: the style, then (for anything but Straight) Fixed /
+// Random, the width in rows, and New pattern. `scope` is the attribute that
+// says whose edge this is (data-edge-cue / data-edge-design) - the change and
+// click handlers read it, so the same markup serves every place it is drawn.
+function edgeControls(e, scope) {
+  const rows = (field, value, title) =>
+    `<input type="text" data-edge-field="${field}" size="3" value="${value}" title="${esc(title)}">`;
+  const curved = e.edge !== "straight";
+  return `<span class="edge-ctl" ${scope}>
+    <select data-edge-field="edge" title="The shape of the border as the sweep crosses the garment">${EDGE_STYLES.map(([id, label]) =>
+      `<option value="${id}" ${id === e.edge ? "selected" : ""}>${label}</option>`).join("")}</select>
+    ${curved ? `<span class="seg">Width
+        <button type="button" data-edge-field="edge_random" data-value="0" class="${e.edge_random ? "" : "on"}" title="One width everywhere">Fixed</button><button type="button" data-edge-field="edge_random" data-value="1" class="${e.edge_random ? "on" : ""}" title="The width itself varies from place to place, between a min and a max">Random</button></span>
+      ${e.edge_random
+        ? `<span>Min ${rows("edge_min_rows", e.edge_min_rows, "The narrowest the border gets, in rows (columns for a sideways sweep)")} Max ${rows("edge_rows", e.edge_rows, "The widest the border gets, in rows (columns for a sideways sweep)")} rows</span>`
+        : `<span>${rows("edge_rows", e.edge_rows, "How far the border reaches ahead of or behind the straight line, in rows (columns for a sideways sweep)")} rows</span>`}
+      <button type="button" class="edge-new" data-edge-field="edge_seed" title="Another shape of the same kind (pattern ${e.edge_seed} now)">New pattern</button>` : ""}
+  </span>`;
+}
+// The plain-English line beside the Edit Cue card's Edge controls.
+function edgeWhy(e) {
+  if (e.edge === "straight") return "Straight: the border moves as a clean line, rank by rank (as before)";
+  const style = { wave: "Wave: the border moves as a wavy line",
+                  fray: "Fray: the border is ragged, each scale a little ahead of or behind its neighbours",
+                  wave_fray: "Wave + fray: a wavy line with a ragged edge" }[e.edge];
+  const width = e.edge_random
+    ? `its width varies across the garment between ${e.edge_min_rows} and ${e.edge_rows} rows`
+    : `up to ${e.edge_rows} rows ahead of or behind the straight line`;
+  return `${style}, ${width}. New pattern draws another shape of the same kind (pattern ${e.edge_seed} now).`
+    + " The shape is the same on the units, in this preview and on every loop, and the sweep still ends at its span.";
+}
 // conductor/timeline.py's two refresh numbers, straight off the state so that
 // NO refresh time is ever typed into this page: REFRESH_S, the current default
 // MODELLED refresh of a cue (the sweep's effect included), and
@@ -1315,7 +1407,9 @@ function endOf(item, cue) {
   return next ? { value: next.at, source: "next" } : { value: state.show.duration, source: "show" };
 }
 // max(ranks) never changes for a given item+sequence within a session, so it
-// is computed once instead of on every animation frame.
+// is computed once instead of on every animation frame. `sequence` is the
+// cache key: an edged sweep's rank set passes "sequence#rank_set", and its
+// ranks may be fractional (Math.max does not care).
 function maxRankOf(item, sequence, ranks) {
   const key = item.item + "|" + sequence;
   let m = maxRankCache.get(key);
@@ -1376,13 +1470,20 @@ function tintedHex(targetCode, w) {
 // Per item+cue, each scale's sweep delay and jitter, in item.map.scales order -
 // computed once (typed arrays) and reused every frame; cleared alongside
 // maxRankCache whenever the show/maps might have changed under us.
-const refreshModelCache = new Map();        // "item|cueId" -> {delay: Float64Array, jitter: Float64Array}
+const refreshModelCache = new Map();        // "item|cueId|rankSet" -> {delay: Float64Array, jitter: Float64Array}
 function refreshModelFor(item, cue, sweep) {
-  const key = item.item + "|" + cue.id;
+  // A sweep with an edge (Wave / Fray, 2026-10-22) has ranks of its own,
+  // fractional ones, computed by the server per edge setting and named by
+  // sweep.rank_set; a straight one (rank_set "") or a server that sends no
+  // sweep_ranks uses the sequence's plain ranks, as before. The rank set is
+  // part of both cache keys, so an edited edge is never drawn from the old one.
+  const rankSet = typeof sweep.rank_set === "string" ? sweep.rank_set : "";
+  const edged = rankSet ? item.sweep_ranks?.[rankSet] : undefined;
+  const key = item.item + "|" + cue.id + "|" + rankSet;
   let m = refreshModelCache.get(key);
   if (m) return m;
-  const ranks = item.sequences?.[sweep.sequence];
-  const maxRank = ranks ? maxRankOf(item, sweep.sequence, ranks) : 0;
+  const ranks = edged || item.sequences?.[sweep.sequence];
+  const maxRank = ranks ? maxRankOf(item, edged ? sweep.sequence + "#" + rankSet : sweep.sequence, ranks) : 0;
   const n = item.map.scales.length;
   const delay = new Float64Array(n), jitter = new Float64Array(n);
   const swept = !!ranks && maxRank > 0 && sweep.span_s > 0;
@@ -1516,12 +1617,77 @@ async function saveShow(cues, duration, refreshS) {     // not "refresh": that i
   }
   const result = await api("/api/show", { duration: duration ?? state.show.duration,
     refresh_s: refreshS ?? state.show.refresh_s,
-    cues: cues.map(({ id, item, at, design, partial, transition, sequence, span_s, refresh_s }) =>
-      ({ id, item, at, design, partial, transition: transition || "design", sequence: sequence || "natural",
-         span_s: span_s ?? 0, refresh_s: refresh_s ?? null })) });
+    // The cue's own edge travels with its sequence/span_s on every save
+    // (2026-10-22) - left out, an unrelated edit would quietly straighten it.
+    cues: cues.map(cue => { const { id, item, at, design, partial, transition, sequence, span_s, refresh_s } = cue;
+      return { id, item, at, design, partial, transition: transition || "design", sequence: sequence || "natural",
+               span_s: span_s ?? 0, refresh_s: refresh_s ?? null, ...cueEdge(cue) }; }) });
   if (result.error) toast(result.error);
   await refresh();
   return result;
+}
+// One control of the edge (edgeControls()) was changed or pressed: what it
+// asks for, as a change to the current edge - or null, said in a toast, when
+// a width is not a number of rows the server would keep (refused, not
+// clamped, like the span).
+function edgeChange(el, current) {
+  const field = el.dataset.edgeField;
+  if (field === "edge") return { edge: el.value };
+  if (field === "edge_random") return { edge_random: el.dataset.value === "1" };
+  if (field === "edge_seed") return { edge_seed: (current.edge_seed + 1) % (EDGE_SEED_MAX + 1) };
+  const rows = Number(el.value.trim());
+  if (!(rows >= 0 && rows <= EDGE_ROWS_MAX)) {
+    toast(`Width: 0 to ${EDGE_ROWS_MAX} rows (use a period for decimals, e.g. 2.5)`);
+    return null;
+  }
+  if (field === "edge_min_rows" && rows > current.edge_rows) { toast("Min cannot be wider than Max"); return null; }
+  // A Max brought below the Min takes the Min down with it.
+  if (field === "edge_rows") return { edge_rows: rows, edge_min_rows: Math.min(current.edge_min_rows, rows) };
+  return { [field]: rows };
+}
+// Saves an edge change the way its sweep is saved already: a cue's own edge
+// with the show (saveShow, one Undo step), a design's with /api/transition
+// (the same call as its sequence/span, which it always sends alongside).
+//
+// Edge saves are SERIALISED (review of ebc8888): typing a Max and then
+// pressing New pattern beside it fires the field's change (on blur) and the
+// button's click back to back, and the second one used to read the state
+// from before the first had landed and post over the typed width. Each save
+// now waits for the one before it - which ends with its refresh() - before
+// it reads the state, and the control is read at once, so a re-render in
+// between cannot lose the press either.
+let edgeSaving = null;
+function applyEdge(el) {
+  const box = el.closest("[data-edge-cue], [data-edge-design]");
+  if (!box) return Promise.resolve();
+  const control = { dataset: { ...el.dataset }, value: el.value };
+  const scope = { edgeCue: box.dataset.edgeCue, edgeDesign: box.dataset.edgeDesign };
+  const before = edgeSaving;
+  const mine = (async () => {
+    if (before) { try { await before; } catch {} }
+    await saveEdge(control, scope);
+  })();
+  edgeSaving = mine;
+  return mine.finally(() => { if (edgeSaving === mine) edgeSaving = null; });
+}
+async function saveEdge(el, box) {
+  const redraw = () => ui.tab === "timeline" ? renderTimeline() : renderContent();
+  if (box.edgeCue !== undefined) {
+    const cues = state.show.cues.map(c => ({ ...c })), cue = cues.find(c => c.id === box.edgeCue);
+    if (!cue) return;
+    const current = cueEdge(cue), change = edgeChange(el, current);
+    if (!change) { redraw(); return; }
+    Object.assign(cue, edgeOf({ ...current, ...change }));
+    await saveShow(cues);
+    return;
+  }
+  const design = box.edgeDesign, tr = designTransition(design);
+  const current = edgeOf(tr), change = edgeChange(el, current);
+  if (!change) { redraw(); return; }
+  const result = await api("/api/transition", { design, sequence: tr.sequence, span_s: tr.span_s,
+                                                ...edgeOf({ ...current, ...change }) });
+  if (result?.error) toast(result.error);
+  await refresh();
 }
 // The Edit Cue card: Start / Refresh / Transition / (computed Complete) / End,
 // each with a plain-English explanation right beside the control - this is
@@ -1553,6 +1719,17 @@ function renderCueEditor(cue, item) {
   const refreshWhy = "Command to finished picture, the transition's sweep included"
     + ` (a sweep longer than this ends at ${panelRepaintS().toFixed(1)} s panel repaint + its span)`;
   const endWhy = isLast ? `until the end of the show (${clock(state.show.duration)})` : "Shown until the next cue of this item starts (= that cue's Start)";
+  // The Edge row (2026-10-22) edits whichever sweep this cue actually runs:
+  // the design's ("this design", same /api/transition as the Designs tab) or
+  // the cue's own ("this cue only", saved with the show). No row for a
+  // natural sequence - there is no border to shape.
+  // Nor at a span of 0: the spec ignores the edge then (review of ebc8888).
+  const edgeRow = transitionMode === "custom"
+    ? ((cue.sequence || "natural") !== "natural" && (cue.span_s ?? 0) > 0
+        ? { edge: cueEdge(cue), scope: `data-edge-cue="${esc(cue.id)}"`, whom: "Applies to this cue only." } : null)
+    : (design && designTr.sequence !== "natural" && designTr.span_s > 0
+        ? { edge: edgeOf(designTr), scope: `data-edge-design="${esc(cue.design)}"`,
+            whom: `Applies to ${designLabel(design)} everywhere it is used (${sameDesignCues} cue${sameDesignCues === 1 ? "" : "s"}).` } : null);
 
   return `<div class="cue-card">
     <div class="cue-head">
@@ -1594,6 +1771,11 @@ function renderCueEditor(cue, item) {
       </div>
       <div class="why"></div>
     </div>
+    ${edgeRow ? `<div class="cue-row">
+      <div class="lbl">Edge</div>
+      <div class="ctl">${edgeControls(edgeRow.edge, edgeRow.scope)}</div>
+      <div class="why">${esc(edgeWhy(edgeRow.edge))} ${esc(edgeRow.whom)}</div>
+    </div>` : ""}
     <div class="cue-computed">Picture complete at ${clock(cue.complete)} (Start + ${esc(completeWhy(cue, refr))})</div>
     <div class="cue-row">
       <div class="lbl">End</div>
@@ -1771,7 +1953,7 @@ function renderTimeline() {
             <td>${esc(itemFull(it) || c.item)}</td>
             <td>${esc(it?.unit || "-")}</td>
             <td>${esc(d ? designLabel(d) : c.design)}${c.partial ? " (partial)" : ""}</td>
-            <td>${sw.sequence !== "natural" && sw.span_s > 0 ? `${esc(seqLabel(sw.sequence))} ${sw.span_s.toFixed(1)} s${c.transition === "custom" ? " (custom)" : " (design)"}` : "—"}</td>
+            <td>${sw.sequence !== "natural" && sw.span_s > 0 ? `${esc(seqLabel(sw.sequence))} ${sw.span_s.toFixed(1)} s${sw.edge && sw.edge !== "straight" ? `, ${esc(edgeLabel(sw.edge).toLowerCase())} edge` : ""}${c.transition === "custom" ? " (custom)" : " (design)"}` : "—"}</td>
             <td>${c.problems.length ? `<span style="color:var(--err)">${esc(c.problems.join(" / "))}</span>` : `<span class="okline">OK</span>`}</td></tr>`; }).join("")
             // A brand-new show's biggest question is "where do I start?", and
             // the CUES card is the widest empty space on the screen to answer
@@ -6453,6 +6635,14 @@ document.addEventListener("click", async e => {
     else toast(made.error || "");
     refresh(); return;
   }
+  // The edge's Fixed / Random and New pattern buttons - ahead of the design
+  // row's own click below, which would otherwise take a press inside a
+  // design's row for "pick this design".
+  const edgeBtn = e.target.closest("button[data-edge-field]");
+  if (edgeBtn) {
+    if (!edgeBtn.classList.contains("on")) await applyEdge(edgeBtn);   // Fixed when already Fixed: nothing to save
+    return;
+  }
   const del = e.target.closest("[data-del]");
   if (del) {
     if (confirm("Delete " + del.dataset.del + " from the workspace?")) { await api("/api/delete", { name: del.dataset.del }); refresh(); }
@@ -6658,6 +6848,8 @@ document.addEventListener("change", async e => {
     ui.seekTimer = setTimeout(() => commitSeek(t), 350);
     return;
   }
+  // The edge's style select and its rows fields (edgeControls()), wherever drawn.
+  if (e.target.dataset.edgeField !== undefined) { await applyEdge(e.target); return; }
   if (e.target.dataset.trSeq !== undefined || e.target.dataset.trSpan !== undefined) {
     const design = e.target.dataset.trSeq ?? e.target.dataset.trSpan;
     // Reachable from either the per-design row (.dsg[data-design]) or the toolbar's
@@ -6682,7 +6874,10 @@ document.addEventListener("change", async e => {
       }
       span = Math.round(span * 10) / 10;
     }
-    const result = await api("/api/transition", { design, sequence: seq, span_s: span });
+    // The design's edge goes along unchanged (2026-10-22): the call sets the
+    // whole transition, and a new span must not straighten its border.
+    const result = await api("/api/transition", { design, sequence: seq, span_s: span,
+                                                  ...edgeOf(designTransition(design)) });
     if (result?.error) toast(result.error);
     await refresh();
     return;
