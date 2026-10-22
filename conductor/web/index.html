@@ -1648,12 +1648,32 @@ function edgeChange(el, current) {
 // Saves an edge change the way its sweep is saved already: a cue's own edge
 // with the show (saveShow, one Undo step), a design's with /api/transition
 // (the same call as its sequence/span, which it always sends alongside).
-async function applyEdge(el) {
+//
+// Edge saves are SERIALISED (review of ebc8888): typing a Max and then
+// pressing New pattern beside it fires the field's change (on blur) and the
+// button's click back to back, and the second one used to read the state
+// from before the first had landed and post over the typed width. Each save
+// now waits for the one before it - which ends with its refresh() - before
+// it reads the state, and the control is read at once, so a re-render in
+// between cannot lose the press either.
+let edgeSaving = null;
+function applyEdge(el) {
   const box = el.closest("[data-edge-cue], [data-edge-design]");
-  if (!box) return;
+  if (!box) return Promise.resolve();
+  const control = { dataset: { ...el.dataset }, value: el.value };
+  const scope = { edgeCue: box.dataset.edgeCue, edgeDesign: box.dataset.edgeDesign };
+  const before = edgeSaving;
+  const mine = (async () => {
+    if (before) { try { await before; } catch {} }
+    await saveEdge(control, scope);
+  })();
+  edgeSaving = mine;
+  return mine.finally(() => { if (edgeSaving === mine) edgeSaving = null; });
+}
+async function saveEdge(el, box) {
   const redraw = () => ui.tab === "timeline" ? renderTimeline() : renderContent();
-  if (box.dataset.edgeCue !== undefined) {
-    const cues = state.show.cues.map(c => ({ ...c })), cue = cues.find(c => c.id === box.dataset.edgeCue);
+  if (box.edgeCue !== undefined) {
+    const cues = state.show.cues.map(c => ({ ...c })), cue = cues.find(c => c.id === box.edgeCue);
     if (!cue) return;
     const current = cueEdge(cue), change = edgeChange(el, current);
     if (!change) { redraw(); return; }
@@ -1661,7 +1681,7 @@ async function applyEdge(el) {
     await saveShow(cues);
     return;
   }
-  const design = box.dataset.edgeDesign, tr = designTransition(design);
+  const design = box.edgeDesign, tr = designTransition(design);
   const current = edgeOf(tr), change = edgeChange(el, current);
   if (!change) { redraw(); return; }
   const result = await api("/api/transition", { design, sequence: tr.sequence, span_s: tr.span_s,
@@ -1703,10 +1723,11 @@ function renderCueEditor(cue, item) {
   // the design's ("this design", same /api/transition as the Designs tab) or
   // the cue's own ("this cue only", saved with the show). No row for a
   // natural sequence - there is no border to shape.
+  // Nor at a span of 0: the spec ignores the edge then (review of ebc8888).
   const edgeRow = transitionMode === "custom"
-    ? ((cue.sequence || "natural") !== "natural"
+    ? ((cue.sequence || "natural") !== "natural" && (cue.span_s ?? 0) > 0
         ? { edge: cueEdge(cue), scope: `data-edge-cue="${esc(cue.id)}"`, whom: "Applies to this cue only." } : null)
-    : (design && designTr.sequence !== "natural"
+    : (design && designTr.sequence !== "natural" && designTr.span_s > 0
         ? { edge: edgeOf(designTr), scope: `data-edge-design="${esc(cue.design)}"`,
             whom: `Applies to ${designLabel(design)} everywhere it is used (${sameDesignCues} cue${sameDesignCues === 1 ? "" : "s"}).` } : null);
 

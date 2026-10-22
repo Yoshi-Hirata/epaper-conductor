@@ -80,6 +80,13 @@ def test_the_preview_draws_from_the_rank_set_and_keys_its_cache_by_it():
     assert "edged || item.sequences?.[sweep.sequence]" in body
 
 
+def test_no_edge_row_at_a_span_of_zero():
+    # The spec ignores the edge when the span is 0: nothing to offer then.
+    body = _without_comments(_function("renderCueEditor"))
+    assert '(cue.sequence || "natural") !== "natural" && (cue.span_s ?? 0) > 0' in body
+    assert 'designTr.sequence !== "natural" && designTr.span_s > 0' in body
+
+
 def test_the_controls_use_the_agreed_words():
     for words in ('"Straight"', '"Wave"', '"Fray"', '"Wave + fray"', ">Fixed<", ">Random<",
                   ">New pattern<", " rows</span>", "Min ${", " Max ${"):
@@ -296,6 +303,16 @@ _PROBE = """
       before = posts.length;
       await press(box('data-edge-cue="c1"').querySelector('[data-edge-field="edge_random"][data-value="1"]'));
       out.pressLit = posts.length - before;
+      // A Max typed and New pattern pressed straight after it (the field's
+      // change on blur, then the click, back to back): the second save waits
+      // for the first, so neither the width nor the press is lost.
+      openCue("c1");
+      var maxField = field('data-edge-cue="c1"', "edge_rows"), seedBtn = field('data-edge-cue="c1"', "edge_seed");
+      maxField.value = "10";
+      maxField.dispatchEvent(new Event("change", { bubbles: true }));
+      seedBtn.click();
+      await wait(700);
+      out.typedThenPressed = edgeOfCue(sentCue("c1"));
 
       // 4. A Start moved: the cue's edge rides along untouched.
       openCue("c1");
@@ -321,10 +338,14 @@ _PROBE = """
 
       // 7. The Designs tab: the design row and the toolbar both offer it.
       ui.tab = "items"; ui.item = "Look22"; ui.design = "Look22_color_pattern02_grid.csv"; render();
-      out.designsTab = { boxes: document.querySelectorAll('[data-edge-design="Look22_color_pattern02_grid.csv"]').length,
+      var boxesWithToolbar = document.querySelectorAll('[data-edge-design="Look22_color_pattern02_grid.csv"]').length;
+      // pattern01 picked, pattern02's row pressed: the press must not pick it.
+      ui.design = "Look22_color_pattern01_grid.csv"; render();
+      out.designsTab = { boxes: boxesWithToolbar,
+                         rowOnly: document.querySelectorAll('[data-edge-design="Look22_color_pattern02_grid.csv"]').length,
                          rowSelect: (document.querySelector('.dsg-edge [data-edge-field="edge"]') || {}).value,
                          natural01: !!document.querySelector('.dsg[data-design="Look22_color_pattern01_grid.csv"] .dsg-edge') };
-      await press(document.querySelector('.dsg-edge [data-edge-field="edge_seed"]'));
+      await press(document.querySelector('.dsg[data-design="Look22_color_pattern02_grid.csv"] .dsg-edge [data-edge-field="edge_seed"]'));
       out.designsTab.seed = (lastPost("/api/transition") || {}).edge_seed;
       out.designsTab.stillThisDesign = ui.design;
 
@@ -402,9 +423,16 @@ def test_random_width_min_max_and_new_pattern(edge):
     assert edge["pressLit"] == 0
 
 
+def test_a_typed_width_then_new_pattern_keeps_both(edge):
+    # Review of ebc8888: the click used to post from the state before the
+    # typed Max had landed, and put the old width back.
+    assert edge["typedThenPressed"] == {"edge": "wave", "edge_rows": 10, "edge_random": True,
+                                        "edge_min_rows": 2, "edge_seed": 3}
+
+
 def test_an_unrelated_edit_keeps_the_cues_edge(edge):
-    assert edge["startMoved"] == {"edge": "wave", "edge_rows": 8.3, "edge_random": True,
-                                  "edge_min_rows": 2, "edge_seed": 2}
+    assert edge["startMoved"] == {"edge": "wave", "edge_rows": 10, "edge_random": True,
+                                  "edge_min_rows": 2, "edge_seed": 3}
 
 
 def test_a_design_cues_edge_row_edits_the_design(edge):
@@ -425,11 +453,13 @@ def test_a_natural_sequence_has_no_edge_row(edge):
 def test_the_designs_tab_offers_the_edge_on_the_row_and_the_toolbar(edge):
     tab = edge["designsTab"]
     assert tab["boxes"] == 2                    # the design's row + the toolbar
+    assert tab["rowOnly"] == 1                  # pattern01 picked: no toolbar edge (natural)
     assert tab["rowSelect"] == "fray"
     assert not tab["natural01"]                 # a natural design: nothing to shape
     assert tab["seed"] == 2
-    # A press inside the row is not taken for "pick this design" as well.
-    assert tab["stillThisDesign"] == "Look22_color_pattern02_grid.csv"
+    # A press inside pattern02's row is not taken for "pick this design" as
+    # well: pattern01 stays the one picked.
+    assert tab["stillThisDesign"] == "Look22_color_pattern01_grid.csv"
 
 
 def test_an_older_server_and_the_cache_key(edge):
