@@ -456,7 +456,14 @@ body.busy #write-back { pointer-events: none; }
 /* The sweep's edge (2026-10-22): one set of controls, drawn under a design's
    row, in the Designs toolbar and on the Edit Cue card - see edgeControls(). */
 .dsg-edge { flex: 1 1 100%; display: flex; gap: 6px; align-items: center; font-size: 12px; }
-.edge-ctl { display: inline-flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.edge-ctl { display: inline-flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-width: 0; max-width: 100%; }
+/* The Edit Cue card's Edge and Refresh rows put their explanation UNDER the
+   controls at every width (2026-10-23, STATUS 3.0): in the 76px / auto / 1fr
+   grid the controls took their whole one-line width and a narrow window
+   squeezed the long "why" into a one-word-per-line ribbon taller than the
+   card. Refresh too, so the card wraps the same way throughout. */
+.cue-row.stacked { grid-template-columns: 76px minmax(0, 1fr); }
+.cue-row.stacked .why { grid-column: 2; margin-top: -2px; }
 .group > span.edge-ctl { color: inherit; font-size: inherit; margin-right: 0; }
 .edge-ctl select { width: auto; flex: 0 0 auto; }
 .edge-ctl input[type=text] { width: 44px; }
@@ -1130,7 +1137,7 @@ function renderContent() {
           `<option value="${esc(s.id)}" ${s.id === selTr.sequence ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select>
         <span ${selTr.sequence === "natural" ? 'style="display:none"' : ""}><input type="text" data-tr-span="${esc(design.name)}" size="4" value="${selTr.span_s}" title="Seconds from the command to the first rank to the command to the last"> s</span>
       </div>` : ""}
-      ${design && selTr.sequence !== "natural" ? `<div class="group"><span>Edge</span>${edgeControls(edgeOf(selTr), `data-edge-design="${esc(design.name)}"`)}</div>` : ""}
+      ${design && selTr.sequence !== "natural" && selTr.span_s > 0 ? `<div class="group"><span>Edge</span>${edgeControls(edgeOf(selTr), `data-edge-design="${esc(design.name)}"`)}</div>` : ""}
     </div>
     <div id="stage">${renderGarment(item, { cell: 22, mode, labels: true, colors: design?.colors || {},
                                           undecided: design?.undecided,
@@ -1168,7 +1175,7 @@ function renderContent() {
                 <span ${tr.sequence === "natural" ? 'style="display:none"' : ""}><input type="text" data-tr-span="${esc(d.name)}" size="4" value="${tr.span_s}" title="Seconds from the command to the first rank to the command to the last"> s</span>
                 <button data-del="${esc(d.name)}" title="Delete from the workspace">×</button>
               </div>
-              ${tr.sequence !== "natural" ? `<div class="dsg-edge"><span class="meta">Edge</span>${edgeControls(edgeOf(tr), `data-edge-design="${esc(d.name)}"`)}</div>` : ""}
+              ${tr.sequence !== "natural" && tr.span_s > 0 ? `<div class="dsg-edge"><span class="meta">Edge</span>${edgeControls(edgeOf(tr), `data-edge-design="${esc(d.name)}"`)}</div>` : ""}
             </div>`; }).join("")
             || `<div class="meta">Add design CSV files (*_color_NAME_grid.csv)</div>`}</div>
           <div class="meta" style="margin-top:8px"><label class="filebtn" tabindex="0" role="button">Add CSV to this item<input id="pick-own" type="file" accept=".csv" multiple></label>
@@ -1635,14 +1642,28 @@ function edgeChange(el, current) {
   if (field === "edge") return { edge: el.value };
   if (field === "edge_random") return { edge_random: el.dataset.value === "1" };
   if (field === "edge_seed") return { edge_seed: (current.edge_seed + 1) % (EDGE_SEED_MAX + 1) };
-  const rows = Number(el.value.trim());
+  // An emptied field is junk, not 0 rows (2026-10-23): Number("") is 0, so
+  // clearing the width used to save it. The server's floor is 0
+  // (sequence.py _clean_rows), so 0 itself is still a width it keeps.
+  const text = el.value.trim();
+  const rows = text === "" ? NaN : Number(text);
   if (!(rows >= 0 && rows <= EDGE_ROWS_MAX)) {
     toast(`Width: 0 to ${EDGE_ROWS_MAX} rows (use a period for decimals, e.g. 2.5)`);
     return null;
   }
   if (field === "edge_min_rows" && rows > current.edge_rows) { toast("Min cannot be wider than Max"); return null; }
-  // A Max brought below the Min takes the Min down with it.
-  if (field === "edge_rows") return { edge_rows: rows, edge_min_rows: Math.min(current.edge_min_rows, rows) };
+  // A Max brought below the Min takes the Min down with it - said in a toast
+  // (2026-10-23), the mirror of the Min-over-Max refusal above: it used to
+  // change a stored field without a word. Under Fixed too, where Min is not
+  // on screen - the operator would only find it on switching to Random. The
+  // toast names the STORED Min (edgeOf rounds to 0.1) and stays quiet when
+  // the rounding leaves Min where it was (Min 2, Max typed 1.96 -> 2).
+  if (field === "edge_rows") {
+    const change = { edge_rows: rows, edge_min_rows: Math.min(current.edge_min_rows, rows) };
+    const stored = edgeOf({ ...current, ...change }).edge_min_rows;
+    if (stored !== current.edge_min_rows) toast(`Max is narrower than Min - Min lowered to ${stored} rows`, "warn");
+    return change;
+  }
   return { [field]: rows };
 }
 // Saves an edge change the way its sweep is saved already: a cue's own edge
@@ -1745,7 +1766,7 @@ function renderCueEditor(cue, item) {
       <div class="ctl" title="${esc(startWhy)}"><input type="text" id="cue-start" title="${esc(CLOCK_HINT)}" value="${clock(cue.at)}" ${isPreset ? "disabled" : ""}></div>
       <div class="why">${esc(startWhy)}</div>
     </div>
-    <div class="cue-row">
+    <div class="cue-row stacked">
       <div class="lbl">Refresh</div>
       <div class="ctl" title="${esc(refreshWhy)}">
         <label class="rad"><input type="radio" name="cue-refresh-mode" id="cue-refresh-show" value="show" ${refr.source === "show" ? "checked" : ""}> show default (${state.show.refresh_s.toFixed(1)} s)</label>
@@ -1771,7 +1792,7 @@ function renderCueEditor(cue, item) {
       </div>
       <div class="why"></div>
     </div>
-    ${edgeRow ? `<div class="cue-row">
+    ${edgeRow ? `<div class="cue-row stacked">
       <div class="lbl">Edge</div>
       <div class="ctl">${edgeControls(edgeRow.edge, edgeRow.scope)}</div>
       <div class="why">${esc(edgeWhy(edgeRow.edge))} ${esc(edgeRow.whom)}</div>

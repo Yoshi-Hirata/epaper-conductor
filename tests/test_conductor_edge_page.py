@@ -87,6 +87,14 @@ def test_no_edge_row_at_a_span_of_zero():
     assert 'designTr.sequence !== "natural" && designTr.span_s > 0' in body
 
 
+def test_the_designs_tab_has_no_edge_at_a_span_of_zero_either():
+    # STATUS 3.0 (2026-10-23): the toolbar and each design's row follow the
+    # Edit Cue card - no Edge controls while the span is 0.
+    body = _without_comments(_function("renderContent"))
+    assert 'selTr.sequence !== "natural" && selTr.span_s > 0' in body
+    assert 'tr.sequence !== "natural" && tr.span_s > 0' in body
+
+
 def test_the_controls_use_the_agreed_words():
     for words in ('"Straight"', '"Wave"', '"Fray"', '"Wave + fray"', ">Fixed<", ">Random<",
                   ">New pattern<", " rows</span>", "Min ${", " Max ${"):
@@ -359,6 +367,56 @@ _PROBE = """
       var b = refreshModelFor(fake, { id: "probe2" }, Object.assign({}, plain, { rank_set: "k" }));
       var missing = refreshModelFor(it, { id: "probe3" }, Object.assign({}, plain, { rank_set: "nowhere" }));
       out.cacheKey = { straight: Array.from(a.delay), edged: Array.from(b.delay), missing: Array.from(missing.delay) };
+
+      // 9. STATUS 3.0 (2026-10-23). c1 is now wave, Random, Min 2, Max 10.
+      //    An emptied width is refused, not saved as 0 rows; the field
+      //    repaints to the stored width.
+      openCue("c1");
+      before = posts.length;
+      await change(field('data-edge-cue="c1"', "edge_rows"), "  ");
+      out.emptied = { posted: posts.length - before, toast: toastNow(),
+                      shown: (field('data-edge-cue="c1"', "edge_rows") || {}).value };
+      before = posts.length;
+      await change(field('data-edge-cue="c1"', "edge_min_rows"), "-1");
+      out.negative = { posted: posts.length - before, toast: toastNow(),
+                       shown: (field('data-edge-cue="c1"', "edge_min_rows") || {}).value };
+      // A Max typed below the Min takes the Min down - and says so.
+      await change(field('data-edge-cue="c1"', "edge_rows"), "1.5");
+      out.maxUnderMin = { sent: edgeOfCue(sentCue("c1")), toast: toastNow(),
+                          min: (field('data-edge-cue="c1"', "edge_min_rows") || {}).value,
+                          max: (field('data-edge-cue="c1"', "edge_rows") || {}).value };
+      // The toast names the stored (0.1-rounded) Min and stays quiet when
+      // the rounding leaves Min where it was: Min 2, Max typed 1.96 -> 2.
+      function quiet() { var t = document.querySelector("#toast"); if (t) t.textContent = ""; }
+      await change(field('data-edge-cue="c1"', "edge_rows"), "8");
+      await change(field('data-edge-cue="c1"', "edge_min_rows"), "2");
+      quiet();
+      await change(field('data-edge-cue="c1"', "edge_rows"), "1.96");
+      out.rounded = { sent: edgeOfCue(sentCue("c1")), toast: toastNow() };
+      quiet();
+      await change(field('data-edge-cue="c1"', "edge_rows"), "1.94");
+      out.roundedDown = { sent: edgeOfCue(sentCue("c1")), toast: toastNow() };
+      // Under Fixed (Min not on screen) the stored Min still drops - said too.
+      await change(field('data-edge-cue="c1"', "edge_rows"), "8");
+      await change(field('data-edge-cue="c1"', "edge_min_rows"), "3");
+      await press(box('data-edge-cue="c1"').querySelector('[data-edge-field="edge_random"][data-value="0"]'));
+      quiet();
+      await change(field('data-edge-cue="c1"', "edge_rows"), "1");
+      out.fixedMaxUnderMin = { sent: edgeOfCue(sentCue("c1")), toast: toastNow() };
+
+      // 10. The Designs tab at a span of 0: no Edge on the row nor in the
+      //     toolbar; back again once the span is above 0. The server stores
+      //     a span of 0 as natural (Workspace.set_transition), so the state
+      //     is set here directly - a sweep sequence at 0 s is what an older
+      //     show or a bundle can still bring in.
+      var p02 = "Look22_color_pattern02_grid.csv";
+      var d02 = item().designs.find(d => d.name === p02);
+      ui.tab = "items"; ui.item = "Look22"; ui.design = p02;
+      d02.transition = Object.assign({}, d02.transition, { span_s: 0 }); render();
+      out.spanZero = { sequence: d02.transition.sequence,
+                       boxes: document.querySelectorAll('[data-edge-design="' + p02 + '"]').length };
+      d02.transition = Object.assign({}, d02.transition, { span_s: 2 }); render();
+      out.spanBack = document.querySelectorAll('[data-edge-design="' + p02 + '"]').length;
     } catch (e) { out.error = String((e && e.stack) || e); }
     publish();
   })();
@@ -469,3 +527,35 @@ def test_an_older_server_and_the_cache_key(edge):
     assert keys["edged"] == [0, 2 * 0.5 / 3, 2 * 1.5 / 3, 2.0]
     # A rank_set the server did not send ranks for: the plain ranks.
     assert keys["missing"] == [0, 0, 2, 2]
+
+
+def test_an_emptied_or_negative_width_is_refused(edge):
+    # STATUS 3.0 (2026-10-23): clearing the field used to save 0 rows.
+    assert edge["emptied"]["posted"] == 0
+    assert "Width: 0 to 24 rows" in edge["emptied"]["toast"]
+    assert edge["emptied"]["shown"] == "10"
+    assert edge["negative"]["posted"] == 0 and edge["negative"]["shown"] == "2"
+
+
+def test_a_max_below_the_min_lowers_the_min_and_says_so(edge):
+    m = edge["maxUnderMin"]
+    assert m["sent"] == {"edge": "wave", "edge_rows": 1.5, "edge_random": True,
+                         "edge_min_rows": 1.5, "edge_seed": 3}
+    assert "Min lowered to 1.5 rows" in m["toast"]
+    assert m["min"] == "1.5" and m["max"] == "1.5"
+    # Rounded to 0.1 as stored: 1.96 is 2, so Min 2 stays and nothing is said;
+    # 1.94 is 1.9, and the toast names 1.9, not what was typed.
+    assert edge["rounded"]["sent"]["edge_rows"] == 2 and edge["rounded"]["sent"]["edge_min_rows"] == 2
+    assert edge["rounded"]["toast"] == ""
+    assert edge["roundedDown"]["sent"]["edge_min_rows"] == 1.9
+    assert "Min lowered to 1.9 rows" in edge["roundedDown"]["toast"]
+    # Fixed: Min is off screen but still stored, so the change is still said.
+    f = edge["fixedMaxUnderMin"]
+    assert f["sent"]["edge_random"] is False
+    assert f["sent"]["edge_rows"] == 1 and f["sent"]["edge_min_rows"] == 1
+    assert "Min lowered to 1 rows" in f["toast"]
+
+
+def test_the_designs_tab_hides_the_edge_at_a_span_of_zero(edge):
+    assert edge["spanZero"] == {"sequence": "top_down", "boxes": 0}
+    assert edge["spanBack"] == 2                # the row and the toolbar again
