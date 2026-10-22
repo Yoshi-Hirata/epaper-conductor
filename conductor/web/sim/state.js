@@ -131,8 +131,13 @@
     return result;
   }
 
+  // map file signature -> its edge rank store, for the maps of the latest
+  // build only (replaced by keptRankStores at the end of each buildState).
+  let edgeRankStores = new Map();
+
   function buildState(project) {
     project = project || {};
+    const keptRankStores = new Map();
     const files = project.files && typeof project.files === "object" ? project.files : {};
     const show = project.show && typeof project.show === "object" ? project.show : {};
     const names = Object.keys(files).sort();
@@ -180,7 +185,16 @@
         return;
       }
       let map = result.map;
-      map = look.renumber(map, ownBoardsFor(show, map.item || ""));
+      const ownBoards = ownBoardsFor(show, map.item || "");
+      map = look.renumber(map, ownBoards);
+      // The edge ranks already computed for this very map file (2026-10-23):
+      // the same name, text and renumbering parse to the same scales, so the
+      // rebuilt map takes over its predecessor's store; any change to them
+      // starts an empty one (model.js's cachedEdgeRanksByKey()).
+      const signature = JSON.stringify([name, text, ownBoards]);
+      const store = edgeRankStores.get(signature);
+      if (store) sequence.adoptEdgeRankStore(map, store);
+      keptRankStores.set(signature, sequence.edgeRankStore(map));
       const entry = itemEntry(map.item || stem);
       maps[entry.item.toLowerCase()] = map;
       const rowKeys = new Set(map.scales.map(s => `${s.side}|${s.row}`));
@@ -394,6 +408,8 @@
     Object.keys(unitBoards).forEach(u => {
       minInterval[u] = timeline.minIntervalOf(unitCues[u], unitBoards[u], refresh);
     });
+    edgeRankStores = keptRankStores;      // a removed or edited map lets its ranks go
+    keptRankStores.forEach(store => sequence.pruneEdgeRankStore(store));    // and an unused rank set its own
 
     return {
       // refresh_default / panel_repaint_s: the model's two refresh numbers,

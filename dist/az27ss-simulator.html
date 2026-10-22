@@ -1688,7 +1688,7 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
   function spanS(map, sequence, span, edge) {
     if (sequence === "natural") return 0.0;
     const edged = edge !== undefined && edge !== null && cleanEdgeFields(edge).edge !== "straight";
-    const values = Object.values(edged ? edgeRanksByKey(map, Object.assign({}, edge, { sequence }))
+    const values = Object.values(edged ? cachedEdgeRanksByKey(map, Object.assign({}, edge, { sequence }))
                                        : ranksByKey(map, sequence));
     const maxRank = values.length ? Math.max(...values) : 0;
     if (maxRank === 0) return 0.0;
@@ -1861,8 +1861,50 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
     return out;
   }
 
+  // The edge ranks, computed once per map and rank set (2026-10-23, STATUS
+  // 3.0): every rebuild timed each edged sweep (spanS) and then ranked it
+  // again for item.sweep_ranks, thousands of vnoise() calls apiece. Keyed
+  // like the Conductor's item.sweep_ranks[rank_set] - the rank_set string
+  // names everything the ranks depend on but the map, and the span is
+  // pinned so a span of 0 still has its ranks timed. The store lives on the
+  // map object, so a new map is a new store; state.js hands a rebuilt map
+  // the store of its predecessor only when the map file (and its board
+  // renumbering) is unchanged - adoptEdgeRankStore(). A straight or natural
+  // sweep is ranksByKey(), not cached, as before. Callers never mutate what
+  // comes back. A store keeps only the rank sets asked for since state.js
+  // last pruned it (pruneEdgeRankStore(), once per build), so a session of
+  // "New pattern" clicks does not pile up one rank array per old seed.
+  const edgeRankStores = new WeakMap();      // map -> Map(rank_set -> {key: rank})
+  const edgeRankAsked = new WeakMap();       // store -> Set(rank_set) since the last prune
+  const edgeRankStats = { computed: 0 };     // cache misses, for tests/test_sim_goldens.py
+  function edgeRankStore(map) {
+    let store = edgeRankStores.get(map);
+    if (!store) { store = new Map(); edgeRankStores.set(map, store); }
+    return store;
+  }
+  function adoptEdgeRankStore(map, store) { edgeRankStores.set(map, store); }
+  function pruneEdgeRankStore(store) {
+    const asked = edgeRankAsked.get(store) || new Set();
+    Array.from(store.keys()).forEach(key => { if (!asked.has(key)) store.delete(key); });
+    edgeRankAsked.set(store, new Set());
+  }
+  function cachedEdgeRanksByKey(map, sweep) {
+    const key = rankSet(Object.assign({}, sweep, { span_s: 1 }));
+    if (!key) return edgeRanksByKey(map, sweep);
+    const store = edgeRankStore(map);
+    if (!edgeRankAsked.has(store)) edgeRankAsked.set(store, new Set());
+    edgeRankAsked.get(store).add(key);
+    let byKey = store.get(key);
+    if (!byKey) {
+      byKey = edgeRanksByKey(map, sweep);
+      edgeRankStats.computed += 1;
+      store.set(key, byKey);
+    }
+    return byKey;
+  }
+
   function edgeRanks(map, sweep) {
-    const byKey = edgeRanksByKey(map, sweep);
+    const byKey = cachedEdgeRanksByKey(map, sweep);
     return map.scales.map(s => byKey[s.key]);
   }
 
@@ -1872,6 +1914,7 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
     EDGES, EDGE_LABELS, EDGE_DEFAULTS, EDGE_FIELDS, EDGE_ROWS_MAX, EDGE_SEED_MAX,
     hash32, h01, vnoise, cleanEdge, cleanEdgeRows, cleanEdgeMinRows, cleanEdgeRandom,
     cleanEdgeSeed, cleanEdgeFields, edgeStored, edgeApplies, rankSet, edgeRanksByKey, edgeRanks,
+    cachedEdgeRanksByKey, edgeRankStore, adoptEdgeRankStore, pruneEdgeRankStore, edgeRankStats,
   };
 
   // ============================================================
@@ -2516,8 +2559,13 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
     return result;
   }
 
+  // map file signature -> its edge rank store, for the maps of the latest
+  // build only (replaced by keptRankStores at the end of each buildState).
+  let edgeRankStores = new Map();
+
   function buildState(project) {
     project = project || {};
+    const keptRankStores = new Map();
     const files = project.files && typeof project.files === "object" ? project.files : {};
     const show = project.show && typeof project.show === "object" ? project.show : {};
     const names = Object.keys(files).sort();
@@ -2565,7 +2613,16 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
         return;
       }
       let map = result.map;
-      map = look.renumber(map, ownBoardsFor(show, map.item || ""));
+      const ownBoards = ownBoardsFor(show, map.item || "");
+      map = look.renumber(map, ownBoards);
+      // The edge ranks already computed for this very map file (2026-10-23):
+      // the same name, text and renumbering parse to the same scales, so the
+      // rebuilt map takes over its predecessor's store; any change to them
+      // starts an empty one (model.js's cachedEdgeRanksByKey()).
+      const signature = JSON.stringify([name, text, ownBoards]);
+      const store = edgeRankStores.get(signature);
+      if (store) sequence.adoptEdgeRankStore(map, store);
+      keptRankStores.set(signature, sequence.edgeRankStore(map));
       const entry = itemEntry(map.item || stem);
       maps[entry.item.toLowerCase()] = map;
       const rowKeys = new Set(map.scales.map(s => `${s.side}|${s.row}`));
@@ -2779,6 +2836,8 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
     Object.keys(unitBoards).forEach(u => {
       minInterval[u] = timeline.minIntervalOf(unitCues[u], unitBoards[u], refresh);
     });
+    edgeRankStores = keptRankStores;      // a removed or edited map lets its ranks go
+    keptRankStores.forEach(store => sequence.pruneEdgeRankStore(store));    // and an unused rank set its own
 
     return {
       // refresh_default / panel_repaint_s: the model's two refresh numbers,
@@ -4536,10 +4595,35 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
       }
       if (ef === "edge_min_rows" && rows > e.edge_rows) { toast("Min cannot be wider than Max"); return null; }
       e[ef] = rows;
-      // A Max brought below the Min takes the Min down with it.
-      if (ef === "edge_rows") e.edge_min_rows = Math.min(e.edge_min_rows, rows);
+      // A Max brought below the Min takes the Min down with it - said in a
+      // toast (2026-10-23), as the Conductor's Edit Cue card does: under
+      // Fixed too, where Min is not on screen. It names the STORED Min
+      // (edgeOf rounds to 0.1) and stays quiet when the rounding leaves Min
+      // where it was (Min 2, Max typed 1.96 -> 2).
+      if (ef === "edge_rows") {
+        const before = e.edge_min_rows;
+        e.edge_min_rows = Math.min(e.edge_min_rows, rows);
+        const stored = edgeOf(e).edge_min_rows;
+        if (stored !== before) toast(`Max is narrower than Min - Min lowered to ${stored} rows`);
+      }
     } else return null;
     return edgeOf(e);
+  }
+  // The project's design transitions as Save project... writes them: each
+  // entry as authored, minus edge keys that are all at their defaults (an
+  // older build wrote them on any touch), so the Conductor's show.json gets
+  // no edge for a straight design (2026-10-23).
+  function exportTransitions(transitions) {
+    const seq = globalThis.SIM.sequence;
+    const out = {};
+    Object.keys(transitions).forEach(name => {
+      const entry = transitions[name];
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)
+          || Object.keys(seq.edgeStored(entry)).length) { out[name] = entry; return; }
+      out[name] = {};
+      Object.keys(entry).forEach(k => { if (seq.EDGE_FIELDS.indexOf(k) === -1) out[name][k] = entry[k]; });
+    });
+    return out;
   }
   // The design transition a design file currently has, as state.js built it.
   function designTransitionOf(name) {
@@ -5912,8 +5996,11 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
       // matching a real cue once state.show.cues came back through
       // SIM.buildState with everything stringified.
       const id = String((project.show.cues.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) || 0) + 1);
-      project.show.cues.push({ id, item, at, design, partial: !!partial, refresh_s: null, transition: "design", sequence: "natural", span_s: 0,
-                               ...globalThis.SIM.sequence.EDGE_DEFAULTS });
+      // No edge keys (2026-10-23): a new cue is straight by their absence,
+      // as in the Conductor's show.json - state.js fills the five defaults
+      // in for the cue editor, and the project only ever carries an edge
+      // the designer actually set.
+      project.show.cues.push({ id, item, at, design, partial: !!partial, refresh_s: null, transition: "design", sequence: "natural", span_s: 0 });
       rebuild(); persist(); return id;
     },
     updateCue(id, patch) {
@@ -5927,19 +6014,36 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
         delete patch.end;
       }
       Object.assign(cue, patch);
+      // An edge edit stores what the Conductor's show.json would: all five
+      // fields, cleaned, or none at all when they are back at the defaults
+      // (sequence.edge_stored) - never the defaults themselves (2026-10-23).
+      const seq = globalThis.SIM.sequence;
+      if (seq.EDGE_FIELDS.some(k => k in patch)) {
+        const stored = seq.edgeStored(cue);
+        seq.EDGE_FIELDS.forEach(k => { delete cue[k]; });
+        Object.assign(cue, stored);
+      }
       rebuild(); persist();
     },
     deleteCue(id) { project.show.cues = project.show.cues.filter(c => !sameId(c.id, id)); if (sameId(ui.cue, id)) ui.cue = null; rebuild(); persist(); },
     // `edge` (optional): the five edge fields to set. Without it the entry
     // keeps whatever edge it already had - changing the sequence or the span
     // must not throw the designer's wave away (2026-10-22).
+    // Default edge fields are never stored (2026-10-23, STATUS 3.0): a set
+    // edge is kept the way the Conductor's set_transition keeps it (all
+    // five, cleaned, or none when they are all defaults), and a touch of the
+    // sequence or span leaves the entry's edge keys exactly as they were -
+    // absent stays absent - except all-default ones an older build wrote,
+    // which are dropped.
     setDesignTransition(designFile, sequence, span_s, edge) {
+      const seq = globalThis.SIM.sequence;
       const prev = project.show.transitions[designFile];
-      const kept = {};
+      let kept = {};
       if (prev && typeof prev === "object" && !Array.isArray(prev)) {
-        for (const k of Object.keys(globalThis.SIM.sequence.EDGE_DEFAULTS)) if (k in prev) kept[k] = prev[k];
+        for (const k of seq.EDGE_FIELDS) if (k in prev) kept[k] = prev[k];
+        if (!Object.keys(seq.edgeStored(kept)).length) kept = {};
       }
-      project.show.transitions[designFile] = Object.assign({ sequence, span_s }, edge || kept);
+      project.show.transitions[designFile] = Object.assign({ sequence, span_s }, edge ? seq.edgeStored(edge) : kept);
       rebuild(); persist();
     },
     exportBundle() {
@@ -5956,7 +6060,9 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
                 cues: project.show.cues.map(({ id, item, at, design, partial, refresh_s, transition, sequence, span_s, ...rest }) =>
                   ({ id, item, at, design, partial: !!partial, refresh_s: refresh_s ?? null, transition: transition || "design", sequence: sequence || "natural", span_s: span_s ?? 0,
                      ...globalThis.SIM.sequence.edgeStored(rest) })),
-                transitions: project.show.transitions || {}, labels: project.show.labels || {},
+                // A design's all-default edge keys (written by builds before
+                // 2026-10-23) are left out, the same as a cue's.
+                transitions: exportTransitions(project.show.transitions || {}), labels: project.show.labels || {},
                 boards: project.show.boards || {}, music: project.show.music ? { name: project.show.music.name } : null },
         files: Object.assign({}, project.files),
         music: project.show.music ? { name: project.show.music.name } : null,

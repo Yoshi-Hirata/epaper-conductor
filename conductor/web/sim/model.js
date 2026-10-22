@@ -1344,7 +1344,7 @@
   function spanS(map, sequence, span, edge) {
     if (sequence === "natural") return 0.0;
     const edged = edge !== undefined && edge !== null && cleanEdgeFields(edge).edge !== "straight";
-    const values = Object.values(edged ? edgeRanksByKey(map, Object.assign({}, edge, { sequence }))
+    const values = Object.values(edged ? cachedEdgeRanksByKey(map, Object.assign({}, edge, { sequence }))
                                        : ranksByKey(map, sequence));
     const maxRank = values.length ? Math.max(...values) : 0;
     if (maxRank === 0) return 0.0;
@@ -1517,8 +1517,50 @@
     return out;
   }
 
+  // The edge ranks, computed once per map and rank set (2026-10-23, STATUS
+  // 3.0): every rebuild timed each edged sweep (spanS) and then ranked it
+  // again for item.sweep_ranks, thousands of vnoise() calls apiece. Keyed
+  // like the Conductor's item.sweep_ranks[rank_set] - the rank_set string
+  // names everything the ranks depend on but the map, and the span is
+  // pinned so a span of 0 still has its ranks timed. The store lives on the
+  // map object, so a new map is a new store; state.js hands a rebuilt map
+  // the store of its predecessor only when the map file (and its board
+  // renumbering) is unchanged - adoptEdgeRankStore(). A straight or natural
+  // sweep is ranksByKey(), not cached, as before. Callers never mutate what
+  // comes back. A store keeps only the rank sets asked for since state.js
+  // last pruned it (pruneEdgeRankStore(), once per build), so a session of
+  // "New pattern" clicks does not pile up one rank array per old seed.
+  const edgeRankStores = new WeakMap();      // map -> Map(rank_set -> {key: rank})
+  const edgeRankAsked = new WeakMap();       // store -> Set(rank_set) since the last prune
+  const edgeRankStats = { computed: 0 };     // cache misses, for tests/test_sim_goldens.py
+  function edgeRankStore(map) {
+    let store = edgeRankStores.get(map);
+    if (!store) { store = new Map(); edgeRankStores.set(map, store); }
+    return store;
+  }
+  function adoptEdgeRankStore(map, store) { edgeRankStores.set(map, store); }
+  function pruneEdgeRankStore(store) {
+    const asked = edgeRankAsked.get(store) || new Set();
+    Array.from(store.keys()).forEach(key => { if (!asked.has(key)) store.delete(key); });
+    edgeRankAsked.set(store, new Set());
+  }
+  function cachedEdgeRanksByKey(map, sweep) {
+    const key = rankSet(Object.assign({}, sweep, { span_s: 1 }));
+    if (!key) return edgeRanksByKey(map, sweep);
+    const store = edgeRankStore(map);
+    if (!edgeRankAsked.has(store)) edgeRankAsked.set(store, new Set());
+    edgeRankAsked.get(store).add(key);
+    let byKey = store.get(key);
+    if (!byKey) {
+      byKey = edgeRanksByKey(map, sweep);
+      edgeRankStats.computed += 1;
+      store.set(key, byKey);
+    }
+    return byKey;
+  }
+
   function edgeRanks(map, sweep) {
-    const byKey = edgeRanksByKey(map, sweep);
+    const byKey = cachedEdgeRanksByKey(map, sweep);
     return map.scales.map(s => byKey[s.key]);
   }
 
@@ -1528,6 +1570,7 @@
     EDGES, EDGE_LABELS, EDGE_DEFAULTS, EDGE_FIELDS, EDGE_ROWS_MAX, EDGE_SEED_MAX,
     hash32, h01, vnoise, cleanEdge, cleanEdgeRows, cleanEdgeMinRows, cleanEdgeRandom,
     cleanEdgeSeed, cleanEdgeFields, edgeStored, edgeApplies, rankSet, edgeRanksByKey, edgeRanks,
+    cachedEdgeRanksByKey, edgeRankStore, adoptEdgeRankStore, pruneEdgeRankStore, edgeRankStats,
   };
 
   // ============================================================

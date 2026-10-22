@@ -673,10 +673,35 @@
       }
       if (ef === "edge_min_rows" && rows > e.edge_rows) { toast("Min cannot be wider than Max"); return null; }
       e[ef] = rows;
-      // A Max brought below the Min takes the Min down with it.
-      if (ef === "edge_rows") e.edge_min_rows = Math.min(e.edge_min_rows, rows);
+      // A Max brought below the Min takes the Min down with it - said in a
+      // toast (2026-10-23), as the Conductor's Edit Cue card does: under
+      // Fixed too, where Min is not on screen. It names the STORED Min
+      // (edgeOf rounds to 0.1) and stays quiet when the rounding leaves Min
+      // where it was (Min 2, Max typed 1.96 -> 2).
+      if (ef === "edge_rows") {
+        const before = e.edge_min_rows;
+        e.edge_min_rows = Math.min(e.edge_min_rows, rows);
+        const stored = edgeOf(e).edge_min_rows;
+        if (stored !== before) toast(`Max is narrower than Min - Min lowered to ${stored} rows`);
+      }
     } else return null;
     return edgeOf(e);
+  }
+  // The project's design transitions as Save project... writes them: each
+  // entry as authored, minus edge keys that are all at their defaults (an
+  // older build wrote them on any touch), so the Conductor's show.json gets
+  // no edge for a straight design (2026-10-23).
+  function exportTransitions(transitions) {
+    const seq = globalThis.SIM.sequence;
+    const out = {};
+    Object.keys(transitions).forEach(name => {
+      const entry = transitions[name];
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)
+          || Object.keys(seq.edgeStored(entry)).length) { out[name] = entry; return; }
+      out[name] = {};
+      Object.keys(entry).forEach(k => { if (seq.EDGE_FIELDS.indexOf(k) === -1) out[name][k] = entry[k]; });
+    });
+    return out;
   }
   // The design transition a design file currently has, as state.js built it.
   function designTransitionOf(name) {
@@ -2049,8 +2074,11 @@
       // matching a real cue once state.show.cues came back through
       // SIM.buildState with everything stringified.
       const id = String((project.show.cues.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) || 0) + 1);
-      project.show.cues.push({ id, item, at, design, partial: !!partial, refresh_s: null, transition: "design", sequence: "natural", span_s: 0,
-                               ...globalThis.SIM.sequence.EDGE_DEFAULTS });
+      // No edge keys (2026-10-23): a new cue is straight by their absence,
+      // as in the Conductor's show.json - state.js fills the five defaults
+      // in for the cue editor, and the project only ever carries an edge
+      // the designer actually set.
+      project.show.cues.push({ id, item, at, design, partial: !!partial, refresh_s: null, transition: "design", sequence: "natural", span_s: 0 });
       rebuild(); persist(); return id;
     },
     updateCue(id, patch) {
@@ -2064,19 +2092,36 @@
         delete patch.end;
       }
       Object.assign(cue, patch);
+      // An edge edit stores what the Conductor's show.json would: all five
+      // fields, cleaned, or none at all when they are back at the defaults
+      // (sequence.edge_stored) - never the defaults themselves (2026-10-23).
+      const seq = globalThis.SIM.sequence;
+      if (seq.EDGE_FIELDS.some(k => k in patch)) {
+        const stored = seq.edgeStored(cue);
+        seq.EDGE_FIELDS.forEach(k => { delete cue[k]; });
+        Object.assign(cue, stored);
+      }
       rebuild(); persist();
     },
     deleteCue(id) { project.show.cues = project.show.cues.filter(c => !sameId(c.id, id)); if (sameId(ui.cue, id)) ui.cue = null; rebuild(); persist(); },
     // `edge` (optional): the five edge fields to set. Without it the entry
     // keeps whatever edge it already had - changing the sequence or the span
     // must not throw the designer's wave away (2026-10-22).
+    // Default edge fields are never stored (2026-10-23, STATUS 3.0): a set
+    // edge is kept the way the Conductor's set_transition keeps it (all
+    // five, cleaned, or none when they are all defaults), and a touch of the
+    // sequence or span leaves the entry's edge keys exactly as they were -
+    // absent stays absent - except all-default ones an older build wrote,
+    // which are dropped.
     setDesignTransition(designFile, sequence, span_s, edge) {
+      const seq = globalThis.SIM.sequence;
       const prev = project.show.transitions[designFile];
-      const kept = {};
+      let kept = {};
       if (prev && typeof prev === "object" && !Array.isArray(prev)) {
-        for (const k of Object.keys(globalThis.SIM.sequence.EDGE_DEFAULTS)) if (k in prev) kept[k] = prev[k];
+        for (const k of seq.EDGE_FIELDS) if (k in prev) kept[k] = prev[k];
+        if (!Object.keys(seq.edgeStored(kept)).length) kept = {};
       }
-      project.show.transitions[designFile] = Object.assign({ sequence, span_s }, edge || kept);
+      project.show.transitions[designFile] = Object.assign({ sequence, span_s }, edge ? seq.edgeStored(edge) : kept);
       rebuild(); persist();
     },
     exportBundle() {
@@ -2093,7 +2138,9 @@
                 cues: project.show.cues.map(({ id, item, at, design, partial, refresh_s, transition, sequence, span_s, ...rest }) =>
                   ({ id, item, at, design, partial: !!partial, refresh_s: refresh_s ?? null, transition: transition || "design", sequence: sequence || "natural", span_s: span_s ?? 0,
                      ...globalThis.SIM.sequence.edgeStored(rest) })),
-                transitions: project.show.transitions || {}, labels: project.show.labels || {},
+                // A design's all-default edge keys (written by builds before
+                // 2026-10-23) are left out, the same as a cue's.
+                transitions: exportTransitions(project.show.transitions || {}), labels: project.show.labels || {},
                 boards: project.show.boards || {}, music: project.show.music ? { name: project.show.music.name } : null },
         files: Object.assign({}, project.files),
         music: project.show.music ? { name: project.show.music.name } : null,

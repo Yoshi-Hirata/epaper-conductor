@@ -12,6 +12,7 @@ browser test here.
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -57,7 +58,17 @@ _PROBE = """
 
       // ---- a cue's own transition ----
       var id = SIM.app.addCue({ item: item.item, at: 590, design: design });
-      out.newCue = edgeFields(projectCue(id));
+      out.newCueKeys = Object.keys(projectCue(id));
+      out.newCue = edgeFields(stateCue(id));
+      // a second, plain cue: no edge keys in the project or the bundle, and an
+      // edge set and taken back again leaves none behind (2026-10-23)
+      var plainId = SIM.app.addCue({ item: item.item, at: 600, design: design });
+      SIM.app.updateCue(plainId, { transition: "custom", sequence: "top_down", span_s: 2, edge: "wave" });
+      out.plainWaveKeys = Object.keys(projectCue(plainId));
+      SIM.app.updateCue(plainId, { edge: "straight" });
+      out.plainBackKeys = Object.keys(projectCue(plainId));
+      SIM.app.updateCue(plainId, { transition: "design", sequence: "natural", span_s: 0 });
+      out.plainBundleKeys = Object.keys(SIM.app.exportBundle().show.cues.find(function (c) { return String(c.id) === String(plainId); }));
       SIM.app.updateCue(id, { transition: "custom", sequence: "natural", span_s: 0 });
       q('[data-tab="timeline"]').click();
       await wait(200);
@@ -103,9 +114,11 @@ _PROBE = """
       change(cueCtl().querySelector('input[data-ef="edge_min_rows"]'), "11");
       await wait(200);
       out.minOverMax = { toast: q("#toast").textContent, stored: edgeFields(projectCue(id)) };
+      document.querySelector("#toast").textContent = "";
       change(cueCtl().querySelector('input[data-ef="edge_rows"]'), "4");
       await wait(200);
       out.maxUnderMin = edgeFields(projectCue(id));
+      out.maxUnderMinToast = q("#toast").textContent;
       cueCtl().querySelector('button[data-ef="new"]').click();
       await wait(200);
       out.newPattern = edgeFields(projectCue(id));
@@ -129,6 +142,7 @@ _PROBE = """
       out.designNatural = visible(q('.edge-ctl[data-tr-edge]'));
       SIM.app.setDesignTransition(design, "left_right", 1.5);
       await wait(100);
+      out.designTouched = Object.keys(SIM.app.getProject().show.transitions[design]);
       var dctl = q('.edge-ctl[data-tr-edge]');
       out.designShown = visible(dctl);
       change(dctl.querySelector('select[data-ef="edge"]'), "fray");
@@ -145,6 +159,58 @@ _PROBE = """
         .designs.find(function (d) { return d.name === design; }).transition;
       out.designState = { rankSet: dtr.rank_set,
         ranked: !!SIM.app.getState().items.find(function (it) { return it.item === item.item; }).sweep_ranks[dtr.rank_set] };
+      // an edge set back to all defaults is stored as no edge at all, and a
+      // later touch of the sequence or span adds none (2026-10-23)
+      var trKeys = function () { return Object.keys(SIM.app.getProject().show.transitions[design]); };
+      SIM.app.setDesignTransition(design, "top_down", 2, SIM.sequence.EDGE_DEFAULTS);
+      out.designDefaults = trKeys();
+      SIM.app.setDesignTransition(design, "top_down", 3);
+      out.designDefaultsTouched = trKeys();
+      SIM.app.show({ tab: "designs", item: item.item, design: design });
+      await wait(100);
+      change(q('.edge-ctl[data-tr-edge] select[data-ef="edge"]'), "wave");
+      await wait(200);
+      out.designWaveKeys = trKeys();
+      change(q('.edge-ctl[data-tr-edge] select[data-ef="edge"]'), "straight");
+      await wait(200);
+      out.designStraightAgain = trKeys();
+      // all-default keys an older build wrote: dropped on the next touch,
+      // and left out of Save project... meanwhile
+      var legacy = Object.assign({ sequence: "top_down", span_s: 3 }, SIM.sequence.EDGE_DEFAULTS);
+      SIM.app.getProject().show.transitions[design] = legacy;
+      out.legacyExported = Object.keys(SIM.app.exportBundle().show.transitions[design]);
+      SIM.app.setDesignTransition(design, "top_down", 4);
+      out.legacyTouched = trKeys();
+
+      // a typed Max that lowers Min says so under Fixed too, naming the
+      // stored Min; quiet when Min did not move (2026-10-23)
+      SIM.app.show({ tab: "designs", item: item.item, design: design });
+      await wait(100);
+      change(q('.edge-ctl[data-tr-edge] select[data-ef="edge"]'), "wave");
+      await wait(200);
+      var maxToast = async function (value) {
+        document.querySelector("#toast").textContent = "";
+        change(q('.edge-ctl[data-tr-edge] input[data-ef="edge_rows"]'), value);
+        await wait(200);
+        return [q("#toast").textContent, SIM.app.getProject().show.transitions[design].edge_min_rows];
+      };
+      out.fixedMaxToasts = [await maxToast("3"), await maxToast("0.5"), await maxToast("0.46")];
+
+      // ---- the Conductor's import of what Save project... writes ----
+      // one straight design, one edged, one legacy all-default entry; the
+      // bundle is trimmed to this garment's files (test_the_conductor_imports_...)
+      var three = item.designs.slice(0, 3).map(function (d) { return d.name; });
+      var trs = SIM.app.getProject().show.transitions;
+      Object.keys(trs).forEach(function (k) { delete trs[k]; });
+      SIM.app.setDesignTransition(three[0], "top_down", 2);
+      SIM.app.setDesignTransition(three[1], "left_right", 1.5,
+        { edge: "wave_fray", edge_rows: 3, edge_random: true, edge_min_rows: 1.5, edge_seed: 7 });
+      trs[three[2]] = Object.assign({ sequence: "center", span_s: 2.5 }, SIM.sequence.EDGE_DEFAULTS);
+      var rt = SIM.app.exportBundle();
+      var keep = three.concat([item.map.name]);
+      Object.keys(rt.files).forEach(function (k) { if (keep.indexOf(k) === -1) delete rt.files[k]; });
+      rt.show.cues = [];
+      out.roundTrip = rt;
     } catch (e) { out.error = String((e && e.stack) || e); }
     publish();
   })();
@@ -164,8 +230,17 @@ def sim(tmp_path_factory):
 
 
 def test_a_new_cue_starts_straight(sim):
+    # straight by the keys' absence in the project (2026-10-23), as in the
+    # Conductor's show.json; the page state fills the defaults in
+    assert not EDGE_KEYS & set(sim["newCueKeys"]), sim["newCueKeys"]
     assert sim["newCue"] == {"edge": "straight", "edge_rows": 6, "edge_random": False,
                              "edge_min_rows": 1, "edge_seed": 1}
+
+
+def test_a_cue_stores_no_default_edge(sim):
+    assert EDGE_KEYS <= set(sim["plainWaveKeys"]), sim["plainWaveKeys"]
+    assert not EDGE_KEYS & set(sim["plainBackKeys"]), sim["plainBackKeys"]
+    assert sim["plainBundleKeys"] and not EDGE_KEYS & set(sim["plainBundleKeys"])
 
 
 def test_the_edge_is_offered_only_for_a_sweep(sim):
@@ -202,8 +277,13 @@ def test_random_width_min_and_max(sim):
     over = sim["minOverMax"]
     assert over["toast"] == "Min cannot be wider than Max", over
     assert over["stored"]["edge_rows"] == 10 and over["stored"]["edge_min_rows"] == 7, over
-    # a Max brought below the Min takes the Min down with it
+    # a Max brought below the Min takes the Min down with it, and says so
     assert sim["maxUnderMin"]["edge_rows"] == 4 and sim["maxUnderMin"]["edge_min_rows"] == 4
+    assert sim["maxUnderMinToast"] == "Max is narrower than Min - Min lowered to 4 rows"
+    # under Fixed too; quiet when Min stays (Max 3 over Min 1, or 0.46
+    # rounding back to the Min of 0.5 already stored)
+    assert sim["fixedMaxToasts"] == [["", 1], ["Max is narrower than Min - Min lowered to 0.5 rows", 0.5],
+                                     ["", 0.5]], sim["fixedMaxToasts"]
 
 
 def test_new_pattern_moves_the_seed_on(sim):
@@ -228,3 +308,32 @@ def test_a_design_transition_keeps_its_edge(sim):
     assert kept["sequence"] == "bottom_up" and kept["edge"] == "fray" and kept["edge_seed"] == 2, kept
     assert sim["designRow"] == "Fray edge, 6 rows"
     assert sim["designState"] == {"rankSet": "bottom_up/fray/6/fixed/1/2", "ranked": True}
+
+
+def test_a_design_transition_stores_no_default_edge(sim):
+    assert sim["designTouched"] == ["sequence", "span_s"]
+    assert sim["designDefaults"] == ["sequence", "span_s"]
+    assert sim["designDefaultsTouched"] == ["sequence", "span_s"]
+    assert EDGE_KEYS <= set(sim["designWaveKeys"]), sim["designWaveKeys"]
+    assert sim["designStraightAgain"] == ["sequence", "span_s"]
+    assert sim["legacyExported"] == ["sequence", "span_s"]
+    assert sim["legacyTouched"] == ["sequence", "span_s"]
+
+
+def test_the_conductor_imports_the_exported_transitions_as_they_are(sim, tmp_path):
+    """Save project... -> the Conductor's Workspace.import_bundle(): the
+    design transitions land in show.json exactly as the simulator wrote
+    them - a straight one and a legacy all-default one with no edge keys,
+    an edged one with all five (2026-10-23)."""
+    from conductor.server import Workspace
+    bundle = sim["roundTrip"]
+    exported = bundle["show"]["transitions"]
+    assert len(exported) == 3, exported
+    edged = [v for v in exported.values() if EDGE_KEYS & set(v)]
+    assert edged == [{"sequence": "left_right", "span_s": 1.5, "edge": "wave_fray", "edge_rows": 3,
+                      "edge_random": True, "edge_min_rows": 1.5, "edge_seed": 7}], exported
+    ws = Workspace(tmp_path / "ws")
+    result = ws.import_bundle(bundle)
+    assert result["refused"] == [] and result["renamed"] == {}, result
+    show = json.loads((ws.root / "show.json").read_text(encoding="utf-8"))
+    assert show["transitions"] == exported

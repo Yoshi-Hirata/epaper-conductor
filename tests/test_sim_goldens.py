@@ -367,3 +367,89 @@ def test_browser_selftest_passes(tmp_path):
         pytest.fail(f"browser self-test failed ({failed}/{total}):\n"
                    f"{detail.group(1) if detail else dom[:3000]}")
     assert total > 900          # sanity: the goldens really did load and run
+
+
+# The edge rank cache (2026-10-23, STATUS 3.0 item 2): state.js used to rank
+# every edged sweep twice per rebuild (spanS(), then item.sweep_ranks) and
+# again on the next rebuild. Now once per map file and rank_set. Node, not a
+# browser: model.js and state.js are classic scripts that only need
+# globalThis, the way tests/test_export3d.py loads model.js.
+_NODE_EDGE_CACHE = r"""
+const root = process.argv[2];
+require(root + "/conductor/web/sim/model.js");
+require(root + "/conductor/web/sim/state.js");
+const fs = require("fs");
+const fix = root + "/tests/fixtures/sim/";
+const mapText = fs.readFileSync(fix + "AZ271SD1301_map.csv", "utf8");
+const design = fs.readFileSync(fix + "AZ271SD1301_1_HW.csv", "utf8");
+function project(map, seed, boards) {
+  return { files: { "AZ271SD1301_map.csv": map, "AZ271SD1301_1_HW.csv": design },
+    show: { duration: 120, refresh_s: 9, labels: {}, boards: boards || {}, cues: [
+      { id: "1", item: "AZ271SD1301", at: 0, design: "AZ271SD1301_1_HW.csv",
+        transition: "custom", sequence: "top_down", span_s: 2, edge: "wave", edge_seed: seed },
+      { id: "2", item: "AZ271SD1301", at: 30, design: "AZ271SD1301_1_HW.csv" }],
+    transitions: { "AZ271SD1301_1_HW.csv": { sequence: "left_right", span_s: 1, edge: "fray" } } } };
+}
+const stats = SIM.sequence.edgeRankStats;
+const count = (fn) => { const before = stats.computed; const st = fn(); return [stats.computed - before, st]; };
+const ranksOf = (st) => st.items[0].sweep_ranks;
+const [first, a] = count(() => SIM.buildState(project(mapText, 1)));
+const [again, b] = count(() => SIM.buildState(project(mapText, 1)));
+const [reseeded, c] = count(() => SIM.buildState(project(mapText, 2)));
+// seed 1 was not asked for by that build, so its ranks were let go
+const [unseeded] = count(() => SIM.buildState(project(mapText, 1)));
+// the board renumbering is part of what makes the map: a new store
+const renumbering = { AZ271SD1301: { "92": 200 } };
+const [renumbered, r] = count(() => SIM.buildState(project(mapText, 1, renumbering)));
+// one scale moved up a row: a different map, so nothing may be reused
+const lines = mapText.split("\n");
+const parts = lines[1].split(","); parts[1] = String(Number(parts[1]) + 40); lines[1] = parts.join(",");
+const [edited, d] = count(() => SIM.buildState(project(lines.join("\n"), 1)));
+const [back, e] = count(() => SIM.buildState(project(mapText, 1)));
+// the uncached ranks, straight from edgeRanksByKey(), in map.scales order
+const parsed = SIM.look.parseMap(mapText, { name: "AZ271SD1301_map.csv", item: "AZ271SD1301" }).map;
+const plainOn = (m, sweep) => { const byKey = SIM.sequence.edgeRanksByKey(m, sweep); return m.scales.map(s => byKey[s.key]); };
+const plain = (sweep) => plainOn(parsed, sweep);
+const renumberedMap = SIM.look.renumber(parsed, { 92: 200 });
+const sweepOf = (st, id) => st.show.cues.find(cu => cu.id === id).sweep;
+process.stdout.write(JSON.stringify({
+  first, again, reseeded, unseeded, renumbered, edited, back,
+  renumberedBoard: r.items[0].map.scales.some(sc => sc[3] === 200),
+  renumberedUncached: JSON.stringify(ranksOf(r)[sweepOf(r, "1").rank_set]) === JSON.stringify(plainOn(renumberedMap, sweepOf(r, "1")))
+            && JSON.stringify(ranksOf(r)[sweepOf(r, "2").rank_set]) === JSON.stringify(plainOn(renumberedMap, sweepOf(r, "2"))),
+  sets: Object.keys(ranksOf(a)).sort(),
+  same: JSON.stringify(ranksOf(a)) === JSON.stringify(ranksOf(b))
+        && JSON.stringify(ranksOf(a)) === JSON.stringify(ranksOf(e)),
+  editedDiffers: JSON.stringify(ranksOf(a)) !== JSON.stringify(ranksOf(d)),
+  spans: [a, b, c, d, e].map(st => st.show.cues.map(cu => cu.span)),
+  uncached: JSON.stringify(ranksOf(a)[sweepOf(a, "1").rank_set]) === JSON.stringify(plain(sweepOf(a, "1")))
+            && JSON.stringify(ranksOf(a)[sweepOf(a, "2").rank_set]) === JSON.stringify(plain(sweepOf(a, "2"))),
+  // the span plays no part in the key: a sweep of span 0 is timed from the same ranks
+  identity: SIM.sequence.cachedEdgeRanksByKey(parsed, { sequence: "center", edge: "wave_fray", span_s: 0 })
+            === SIM.sequence.cachedEdgeRanksByKey(parsed, { sequence: "center", edge: "wave_fray", span_s: 3 }),
+}));
+"""
+
+
+def test_edge_ranks_are_computed_once_per_map_and_rank_set(tmp_path):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is not installed")
+    script = tmp_path / "edge_cache.js"
+    script.write_text(_NODE_EDGE_CACHE, encoding="utf-8")
+    run = subprocess.run([node, str(script), str(ROOT)], capture_output=True, text=True,
+                         encoding="utf-8", check=True)
+    out = json.loads(run.stdout)
+    assert out["sets"] == ["left_right/fray/6/fixed/1/1", "top_down/wave/6/fixed/1/1"], out
+    # the cue's sweep and the design's own: two rankings, each done once
+    # (spanS() and item.sweep_ranks share it), none on an unchanged rebuild
+    assert out["first"] == 2 and out["again"] == 0, out
+    assert out["reseeded"] == 1, out             # only the cue's new seed is new
+    assert out["unseeded"] == 1, out             # the old seed's ranks were pruned
+    # a show.boards renumbering is in the map's signature (ownBoards)
+    assert out["renumbered"] > 0 and out["renumberedBoard"] is True, out
+    assert out["renumberedUncached"] is True, out
+    assert out["edited"] == 2 and out["editedDiffers"] is True, out
+    assert out["back"] == 2, out                 # the old map's store went with its map
+    assert out["same"] is True and out["uncached"] is True and out["identity"] is True, out
+    assert out["spans"][0] == out["spans"][1] == out["spans"][4] == [2, 1], out
