@@ -42,10 +42,14 @@
   // ---- conductor/server.py's _design_transition ----
   function designTransition(entry) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) entry = {};
-    return {
+    // With its edge (2026-10-22) and the key of its ranks in the item's
+    // sweep_ranks, as server.py sends it.
+    const result = Object.assign({
       sequence: sequence.cleanSequence(entry.sequence !== undefined ? entry.sequence : "natural"),
       span_s: sequence.cleanSpan(entry.span_s !== undefined ? entry.span_s : 0.0),
-    };
+    }, sequence.cleanEdgeFields(entry));
+    result.rank_set = sequence.rankSet(result);
+    return result;
   }
 
   // ---- conductor/server.py's _clean_transitions ----
@@ -58,7 +62,11 @@
       const seq = sequence.cleanSequence(entry.sequence !== undefined ? entry.sequence : "natural");
       const span = Math.min(sequence.MAX_DELAY_S,
         sequence.cleanSpan(entry.span_s !== undefined ? entry.span_s : 0.0));
-      if (seq !== "natural" && span > 0) result[String(design)] = { sequence: seq, span_s: span };
+      if (seq !== "natural" && span > 0) {
+        // The edge rides along only when it is not all defaults.
+        result[String(design)] = Object.assign({ sequence: seq, span_s: span },
+                                               sequence.edgeStored(entry));
+      }
     });
     return result;
   }
@@ -71,7 +79,7 @@
       if (sweep.sequence === "natural") {
         cue.span = 0.0;
       } else if (map) {
-        cue.span = sequence.spanS(map, sweep.sequence, sweep.span_s);
+        cue.span = sequence.spanS(map, sweep.sequence, sweep.span_s, sweep);    // with its edge
       }
     });
   }
@@ -326,6 +334,24 @@
     const cues = timeline.clean(show.cues);
     timeline.applyTransitions(cues, transitions);
     timeSweeps(cues, maps);
+    // The ranks of every sweep with an edge (2026-10-22), once per distinct
+    // rank_set and item, in map.scales order: flicker.js's refreshModelFor()
+    // looks them up by the cue's sweep.rank_set, where a straight sweep keeps
+    // using item.sequences. A design's own transition is ranked too, as
+    // server.py's state() does.
+    ordered.forEach(entry => { entry.sweep_ranks = {}; });
+    const wanted = cues.map(cue => [cue.item.toLowerCase(), cue.sweep]);
+    Object.keys(items).forEach(key => {
+      items[key].designs.forEach(record => { wanted.push([key, record.transition]); });
+    });
+    wanted.forEach(([key, sweep]) => {
+      const map = maps[key];
+      if (!map || !sweep.rank_set) return;
+      const own = items[key].sweep_ranks;
+      if (!Object.prototype.hasOwnProperty.call(own, sweep.rank_set)) {
+        own[sweep.rank_set] = sequence.edgeRanks(map, sweep);
+      }
+    });
     const validated = timeline.validate(cues, facts, duration, refresh);
     const cueProblems = validated.problems;
     // server.py's state(): the DIP switch warnings ride on the show's own

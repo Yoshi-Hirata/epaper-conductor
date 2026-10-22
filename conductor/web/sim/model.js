@@ -1338,9 +1338,14 @@
     return map.scales.map(s => byKey[s.key]);
   }
 
-  function spanS(map, sequence, span) {
+  // `edge` (2026-10-22): the sweep's edge fields (a resolved cue.sweep will
+  // do) - an edge can give even a one-row garment a top-down sweep to time
+  // (sequence.py's span_s()/_ranks_for()).
+  function spanS(map, sequence, span, edge) {
     if (sequence === "natural") return 0.0;
-    const values = Object.values(ranksByKey(map, sequence));
+    const edged = edge !== undefined && edge !== null && cleanEdgeFields(edge).edge !== "straight";
+    const values = Object.values(edged ? edgeRanksByKey(map, Object.assign({}, edge, { sequence }))
+                                       : ranksByKey(map, sequence));
     const maxRank = values.length ? Math.max(...values) : 0;
     if (maxRank === 0) return 0.0;
     // Python's `round(float(span), 2)` never catches float()'s own
@@ -1351,9 +1356,176 @@
     return fmt.round(num, 2);
   }
 
+  // ---- the sweep's randomised border ("edge"), 2026-10-22 ----
+  // The operator asked for a swept transition whose border does not advance
+  // as a straight line: a wave, a fray, or both, of a fixed width or one that
+  // itself varies between a min and a max, with a seed so the shape is the
+  // same in the Conductor preview, on the units, in the 3D export, here, and
+  // on every loop ("New pattern" is just seed + 1). Only the RANKS change -
+  // the units already take per-socket delays computed from them - so this is
+  // conductor/sequence.py's edge_ranks(), bit for bit: the same hash32, the
+  // same float operations in the same order, inputs masked to uint32 the way
+  // Python's `& 0xFFFFFFFF` does. A straight edge (and every show that never
+  // heard of edges) keeps exactly today's integer ranks.
+  const EDGES = ["straight", "wave", "fray", "wave_fray"];
+  const EDGE_LABELS = { straight: "Straight", wave: "Wave", fray: "Fray", wave_fray: "Wave + fray" };
+  const EDGE_ROWS_DEFAULT = 6.0;
+  const EDGE_ROWS_MAX = 24.0;
+  const EDGE_MIN_ROWS_DEFAULT = 1.0;
+  const EDGE_SEED_DEFAULT = 1;
+  const EDGE_SEED_MAX = 999999;
+  const EDGE_DEFAULTS = Object.freeze({
+    edge: "straight", edge_rows: EDGE_ROWS_DEFAULT, edge_random: false,
+    edge_min_rows: EDGE_MIN_ROWS_DEFAULT, edge_seed: EDGE_SEED_DEFAULT,
+  });
+
+  // The ONE hash32 of the simulator (flicker.js re-exports this same
+  // function for its refresh flicker; conductor/export3d.py's hash32() is
+  // its Python twin). It lives here, not in flicker.js, because the ranks
+  // need it and model.js is the first script loaded - the goldens harness
+  // (tests/test_sim_goldens.py) loads model.js and state.js without
+  // flicker.js at all.
+  function hash32(a, b) {
+    let h = Math.imul(a ^ 0x9e3779b1, 0x85ebca6b) ^ Math.imul(b ^ 0x27d4eb2f, 0xc2b2ae35);
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+    h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+    return (h ^ (h >>> 15)) >>> 0;
+  }
+  // `>>> 0` is ToUint32, i.e. modulo 2**32 - the same as Python's
+  // `& 0xFFFFFFFF` on a negative int, exact for any integer up to 2**53
+  // (the largest here is about 1e11: seed 999999 * 104729).
+  function h01(a, b) { return hash32(a >>> 0, b >>> 0) / 4294967296.0; }
+  function smooth(t) { return t * t * (3 - 2 * t); }
+  function vnoise(x, y, k) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const q = (a, b) => h01(a + k * 7919, b - k * 104729);
+    const a = q(xi, yi), b = q(xi + 1, yi);
+    const c = q(xi, yi + 1), d = q(xi + 1, yi + 1);
+    const sx = smooth(xf), sy = smooth(yf);
+    const top = a + (b - a) * sx;
+    const bot = c + (d - c) * sx;
+    return top + (bot - top) * sy;
+  }
+
+  // The cleaning rules of the shared spec (a hand-edited show.json or an
+  // untrusted project file must never reach the noise unclean).
+  function cleanEdge(value) { return EDGES.indexOf(value) !== -1 ? value : "straight"; }
+  function cleanRows(value, high, fallback) {
+    const num = toNumber(value);
+    if (num === null) return fallback;
+    const rows = fmt.round(num, 1);
+    if (Number.isNaN(rows)) return fallback;
+    return pyMin2(high, pyMax2(0.0, rows));
+  }
+  function cleanEdgeRows(value) { return cleanRows(value, EDGE_ROWS_MAX, EDGE_ROWS_DEFAULT); }
+  function cleanEdgeMinRows(value, rows) {
+    return cleanRows(value, rows, pyMin2(rows, EDGE_MIN_ROWS_DEFAULT));
+  }
+  // Python's bool(): empty containers and "" are false, everything else that
+  // is not 0/false/None is true.
+  function cleanEdgeRandom(value) {
+    if (value === undefined || value === null || value === false || value === 0 || value === "") return false;
+    if (typeof value === "number" && Number.isNaN(value)) return true;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === "object") return Object.keys(value).length > 0;
+    return true;
+  }
+  // sequence.py's _clean_seed(): int(float(value)) - a numeric string or a
+  // number, truncated; junk, NaN and infinity are the default.
+  function cleanEdgeSeed(value) {
+    const num = toNumber(value);
+    if (num === null || !Number.isFinite(num)) return EDGE_SEED_DEFAULT;
+    return pyMin2(EDGE_SEED_MAX, pyMax2(0, Math.trunc(num))) + 0;    // + 0: never a -0
+  }
+  // The five fields of a raw entry (a custom cue, or a design's transition),
+  // each defaulted and cleaned: sequence.py's clean_edge().
+  function cleanEdgeFields(raw) {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) raw = {};
+    const get = (k) => raw[k] !== undefined ? raw[k] : EDGE_DEFAULTS[k];
+    const rows = cleanEdgeRows(get("edge_rows"));
+    return {
+      edge: cleanEdge(get("edge")),
+      edge_rows: rows,
+      edge_random: cleanEdgeRandom(get("edge_random")),
+      edge_min_rows: cleanEdgeMinRows(get("edge_min_rows"), rows),
+      edge_seed: cleanEdgeSeed(get("edge_seed")),
+    };
+  }
+  const EDGE_FIELDS = Object.keys(EDGE_DEFAULTS);
+  // sequence.py's edge_stored(): what show.json keeps of an edge - nothing
+  // when all five are at their defaults (a show without edges keeps its
+  // show.json, revision and unit show ids), else all five, cleaned.
+  function edgeStored(raw) {
+    const e = cleanEdgeFields(raw);
+    return EDGE_FIELDS.every(k => e[k] === EDGE_DEFAULTS[k]) ? {} : e;
+  }
+  // Whether this sweep's ranks differ from today's straight ones at all.
+  function edgeApplies(sweep) {
+    return !!sweep && cleanEdge(sweep.edge) !== "straight"
+      && cleanSequence(sweep.sequence) !== "natural";
+  }
+  // sequence.py's rank_set(): the key of a sweep's ranks in the page state's
+  // item.sweep_ranks - "" when the edge changes nothing (straight, natural,
+  // or a span of 0), else everything the ranks depend on and nothing else.
+  function rankSet(sweep) {
+    if (typeof sweep !== "object" || sweep === null || Array.isArray(sweep)) sweep = {};
+    const seq = cleanSequence(sweep.sequence !== undefined ? sweep.sequence : "natural");
+    const e = cleanEdgeFields(sweep);
+    if (seq === "natural" || e.edge === "straight"
+        || cleanSpan(sweep.span_s !== undefined ? sweep.span_s : 0.0) <= 0) return "";
+    const width = e.edge_random ? `${fmt.g(e.edge_min_rows)}-${fmt.g(e.edge_rows)}` : fmt.g(e.edge_rows);
+    return `${seq}/${e.edge}/${width}/${e.edge_seed}`;
+  }
+
+  // position key -> rank, rebased so the lowest is 0. `sweep` carries
+  // {sequence, edge, edge_rows, edge_random, edge_min_rows, edge_seed}
+  // (cleaned here again, so a raw entry is safe to pass). Straight or
+  // natural: exactly ranksByKey(), integers and all.
+  function edgeRanksByKey(map, sweep) {
+    const seq = cleanSequence(sweep && sweep.sequence);
+    const e = cleanEdgeFields(sweep);
+    if (e.edge === "straight" || seq === "natural") return ranksByKey(map, seq);
+    const raw = rawRanksByKey(map, seq);       // NOT rebased: the spec adds the offset to the raw rank
+    const vertical = seq === "top_down" || seq === "bottom_up" || seq === "center";
+    const out = {};
+    map.scales.forEach(s => {
+      const across = vertical ? s.col : s.row;
+      const along = vertical ? s.row : s.col;
+      const k = e.edge_seed + (s.side === "back" ? 1000 : 0);
+      let width;
+      if (e.edge_random) {
+        const lo = e.edge_min_rows, hi = e.edge_rows;
+        const g = (vnoise(across * 0.09, along * 0.06, k + 50) - 0.15) / 0.7;
+        width = lo + (hi - lo) * pyMin2(1.0, pyMax2(0.0, g));     // Python's min(1.0, max(0.0, g))
+      } else {
+        width = e.edge_rows;
+      }
+      const wave = vnoise(across * 0.16, along * 0.07, k) * 2 - 1;
+      const fray = h01(across * 7 + k, along * 13 + 5 * k) * 2 - 1;
+      let offset;
+      if (e.edge === "wave") offset = width * wave;
+      else if (e.edge === "fray") offset = width * fray;
+      else offset = width * wave + 0.5 * width * fray;
+      out[s.key] = raw[s.key] + offset;
+    });
+    const values = Object.values(out);
+    const low = values.length ? Math.min(...values) : 0;
+    Object.keys(out).forEach(key => { out[key] = out[key] - low; });
+    return out;
+  }
+
+  function edgeRanks(map, sweep) {
+    const byKey = edgeRanksByKey(map, sweep);
+    return map.scales.map(s => byKey[s.key]);
+  }
+
   const sequenceApi = {
     SEQUENCES, LABELS, MAX_DELAY_S, SPAN_HARD_MAX_S,
     cleanSequence, cleanSpan, ranks, ranksByKey, spanS,
+    EDGES, EDGE_LABELS, EDGE_DEFAULTS, EDGE_FIELDS, EDGE_ROWS_MAX, EDGE_SEED_MAX,
+    hash32, h01, vnoise, cleanEdge, cleanEdgeRows, cleanEdgeMinRows, cleanEdgeRandom,
+    cleanEdgeSeed, cleanEdgeFields, edgeStored, edgeApplies, rankSet, edgeRanksByKey, edgeRanks,
   };
 
   // ============================================================
@@ -1638,28 +1810,37 @@
         transition: (transition === "design" || transition === "custom") ? transition : "design",
         sequence: cleanSequence(raw.sequence !== undefined ? raw.sequence : "natural"),
         span_s: cleanSpan(raw.span_s !== undefined ? raw.span_s : 0.0),
+        // The sweep's edge (2026-10-22): kept like sequence/span whatever
+        // `transition` says, but only when one of the five differs from
+        // its default - a cue without an edge is exactly the cue it always
+        // was (timeline.py's **edge_stored(raw)).
+        ...edgeStored(raw),
       });
     });
     result.sort((a, b) => (a.at - b.at) || (a.item.toLowerCase() < b.item.toLowerCase() ? -1 : a.item.toLowerCase() > b.item.toLowerCase() ? 1 : 0));
     return result;
   }
 
+  // The resolved sweep always carries the five edge fields (defaults when
+  // none were set) and `rank_set`, the key of its ranks in the state's
+  // item.sweep_ranks - "" for a sweep the edge does not change.
   function resolve(cue, transitions) {
     const t = cue.transition !== undefined ? cue.transition : "design";
+    let entry, source;
     if (t === "custom") {
-      return {
-        sequence: cleanSequence(cue.sequence !== undefined ? cue.sequence : "natural"),
-        span_s: cleanSpan(cue.span_s !== undefined ? cue.span_s : 0.0),
-        source: "cue",
-      };
+      entry = cue; source = "cue";
+    } else {
+      entry = transitions ? transitions[cue.design !== undefined ? cue.design : ""] : undefined;
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) entry = {};
+      source = "design";
     }
-    let entry = transitions ? transitions[cue.design !== undefined ? cue.design : ""] : undefined;
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) entry = {};
-    return {
+    const sweep = Object.assign({
       sequence: cleanSequence(entry.sequence !== undefined ? entry.sequence : "natural"),
       span_s: cleanSpan(entry.span_s !== undefined ? entry.span_s : 0.0),
-      source: "design",
-    };
+      source,
+    }, cleanEdgeFields(entry));
+    sweep.rank_set = rankSet(sweep);
+    return sweep;
   }
 
   function applyTransitions(cues, transitions) {
