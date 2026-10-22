@@ -247,7 +247,105 @@
       const got = SIM.fmt.digest64(SIM.fmt.canonical(state));
       return got === c.expect ? null : `state-digest ${c.name} got ${got} want ${c.expect}`;
     },
+
+    // The sweep's randomised edge (2026-10-22): conductor/sequence.py's
+    // edge_ranks() on a fixture map, which the simulator must reproduce BIT
+    // FOR BIT - exact equality, no tolerance, since the same floats become
+    // the per-socket delays the units play and the Conductor previews.
+    edge_ranks(c, fixtures) {
+      const fixture = c.map !== undefined ? c.map : c.mapFixture;
+      const text = fixtures[fixture];
+      if (text === undefined) return `edge_ranks ${fixture}: fixture text missing`;
+      const mapResult = SIM.look.parseMap(text, c.opts || { name: fixture });
+      if (!mapResult.ok) return `edge_ranks ${fixture}: fixture did not parse`;
+      const got = SIM.sequence.edgeRanksByKey(mapResult.map, c.sweep);
+      const want = c.expect || {};
+      const label = `edge_ranks ${fixture} ${short(c.sweep)}`;
+      if (c.rankSet !== undefined) {
+        const set = SIM.sequence.rankSet(c.sweep);
+        if (set !== c.rankSet) return `${label}: rank_set ${short(set)} want ${short(c.rankSet)}`;
+      }
+      const gotKeys = Object.keys(got).sort(), wantKeys = Object.keys(want).sort();
+      if (!deepEqual(gotKeys, wantKeys)) return `${label}: scales ${short(gotKeys)} want ${short(wantKeys)}`;
+      const off = wantKeys.filter(k => got[k] !== want[k]);
+      if (!off.length) return null;
+      const worst = Math.max(...off.map(k => Math.abs(got[k] - want[k])));
+      return `${label}: ${off.length} rank(s) differ (worst by ${worst}), e.g. ${off.slice(0, 3).map(k => `${k} got ${got[k]} want ${want[k]}`).join("; ")}`;
+    },
   };
+
+  // The edge's own self-consistency (2026-10-22), independent of the Python
+  // goldens: a synthetic two-sided 30 x 20 map, every sequence. Each check is
+  // one case of the total.
+  function edgeSelfChecks() {
+    const seqApi = SIM.sequence;
+    const checks = [];
+    const scales = [];
+    ["front", "back"].forEach(side => {
+      for (let row = 0; row < 30; row++) for (let col = 0; col < 20; col++) {
+        scales.push({ side, row, col, key: `${side}|${row}|${col}` });
+      }
+    });
+    const map = { scales, sides: ["front", "back"], shifts: {} };
+    const sweeping = seqApi.SEQUENCES.filter(s => s !== "natural");
+    const base = { edge_rows: 6, edge_random: false, edge_min_rows: 1, edge_seed: 1 };
+    const spread = (edge, raw) => {
+      const d = Object.keys(edge).map(k => edge[k] - raw[k]);
+      return Math.max(...d) - Math.min(...d);
+    };
+    // 1. A straight edge, and any edge on the natural sequence, is exactly today's ranks.
+    checks.push(["straight edge == today's ranks", () => seqApi.SEQUENCES.every(seq =>
+      deepEqual(seqApi.edgeRanksByKey(map, { sequence: seq, edge: "straight", edge_rows: 9, edge_random: true }),
+                seqApi.ranksByKey(map, seq)))]);
+    checks.push(["an edge on the natural sequence is ignored", () =>
+      deepEqual(seqApi.edgeRanksByKey(map, Object.assign({ sequence: "natural", edge: "wave_fray" }, base)),
+                seqApi.ranksByKey(map, "natural"))]);
+    checks.push(["no edge fields at all == today's ranks", () => sweeping.every(seq =>
+      deepEqual(seqApi.edgeRanksByKey(map, { sequence: seq }), seqApi.ranksByKey(map, seq)))]);
+    // 2. The seed fixes the shape; a new seed (New pattern) changes it.
+    checks.push(["same seed, same ranks", () => sweeping.every(seq => ["wave", "fray", "wave_fray"].every(edge => {
+      const sw = Object.assign({ sequence: seq, edge }, base, { edge_random: true });
+      return deepEqual(seqApi.edgeRanksByKey(map, sw), seqApi.edgeRanksByKey(map, Object.assign({}, sw)));
+    }))]);
+    checks.push(["seed + 1 gives another shape", () => sweeping.every(seq => !deepEqual(
+      seqApi.edgeRanksByKey(map, Object.assign({ sequence: seq, edge: "wave" }, base)),
+      seqApi.edgeRanksByKey(map, Object.assign({ sequence: seq, edge: "wave" }, base, { edge_seed: 2 }))))]);
+    // 3. The width: rebased ranks start at 0, the offset never spreads past
+    // the width (twice it: -w..+w; wave + fray adds half a width of fray),
+    // a random width with min == max is the fixed width bit for bit, and a
+    // zero width is today's ranks.
+    checks.push(["edge ranks are rebased to 0", () => sweeping.every(seq =>
+      Math.min(...Object.values(seqApi.edgeRanksByKey(map, Object.assign({ sequence: seq, edge: "wave_fray" }, base)))) === 0)]);
+    checks.push(["the offset stays within the width", () => sweeping.every(seq => {
+      const raw = seqApi.ranksByKey(map, seq);
+      return [["wave", 2], ["fray", 2], ["wave_fray", 3]].every(([edge, k]) =>
+        spread(seqApi.edgeRanksByKey(map, Object.assign({ sequence: seq, edge }, base)), raw) <= k * 6
+        && spread(seqApi.edgeRanksByKey(map, Object.assign({ sequence: seq, edge }, base,
+             { edge_random: true, edge_min_rows: 2, edge_rows: 10 })), raw) <= k * 10);
+    })]);
+    checks.push(["random width with min == max is the fixed width", () => sweeping.every(seq => ["wave", "fray", "wave_fray"].every(edge =>
+      deepEqual(seqApi.edgeRanksByKey(map, Object.assign({ sequence: seq, edge }, base, { edge_rows: 4.5 })),
+                seqApi.edgeRanksByKey(map, Object.assign({ sequence: seq, edge }, base,
+                  { edge_rows: 4.5, edge_random: true, edge_min_rows: 4.5 })))))]);
+    checks.push(["a random width varies between min and max", () => {
+      const raw = seqApi.ranksByKey(map, "top_down");
+      const narrow = spread(seqApi.edgeRanksByKey(map, Object.assign({ sequence: "top_down", edge: "fray" }, base,
+        { edge_random: true, edge_min_rows: 0, edge_rows: 10 })), raw);
+      return narrow > 0 && narrow <= 20;
+    }]);
+    checks.push(["a zero width is today's ranks", () => sweeping.every(seq =>
+      deepEqual(seqApi.edgeRanksByKey(map, Object.assign({ sequence: seq, edge: "wave_fray" }, base, { edge_rows: 0 })),
+                seqApi.ranksByKey(map, seq)))]);
+    // 4. Cleaning, as the shared spec words it.
+    checks.push(["edge fields are cleaned", () => deepEqual(
+      seqApi.cleanEdgeFields({ edge: "zigzag", edge_rows: 99, edge_random: "yes", edge_min_rows: 50, edge_seed: -5 }),
+      { edge: "straight", edge_rows: 24, edge_random: true, edge_min_rows: 24, edge_seed: 0 })
+      && deepEqual(seqApi.cleanEdgeFields({}),
+        { edge: "straight", edge_rows: 6, edge_random: false, edge_min_rows: 1, edge_seed: 1 })
+      && seqApi.cleanEdgeRows(6.25) === 6.2 && seqApi.cleanEdgeSeed(1234567) === 999999
+      && seqApi.cleanEdgeMinRows(3, 2) === 2]);
+    return checks;
+  }
 
   function runAppSmoke(failures) {
     if (typeof SIM.app === "undefined") return;      // Q's module: optional here
@@ -294,6 +392,13 @@
           message = `${c.kind} ${c.name || c.fixture || ""}: threw ${e && e.message ? e.message : e}`;
         }
         if (message) failures.push(message);
+      });
+    }
+    if (globalThis.SIM && SIM.sequence && SIM.sequence.edgeRanksByKey) {
+      edgeSelfChecks().forEach(([name, fn]) => {
+        total += 1;
+        try { if (!fn()) failures.push(`edge self-check failed: ${name}`); }
+        catch (e) { failures.push(`edge self-check ${name}: threw ${e && e.message ? e.message : e}`); }
       });
     }
     runAppSmoke(failures);

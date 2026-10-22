@@ -44,12 +44,9 @@
     tintedHexCache.clear();
   }
 
-  function hash32(a, b) {
-    let h = Math.imul(a ^ 0x9e3779b1, 0x85ebca6b) ^ Math.imul(b ^ 0x27d4eb2f, 0xc2b2ae35);
-    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
-    h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
-    return (h ^ (h >>> 15)) >>> 0;
-  }
+  // model.js's hash32 (2026-10-22): it moved there when the sweep's edge
+  // ranks needed it, so the simulator keeps exactly one implementation.
+  const hash32 = SIM.sequence.hash32;
   function hexOfCode(code, palette) {
     const [r, g, b] = palette[code].rgb;
     return "#" + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, "0")).join("");
@@ -69,17 +66,27 @@
     return out;
   }
   function maxRankOf(item, sequence, ranks) {
-    const key = item.item + "|" + sequence;
+    const key = item.item + "|" + sequence;     // "<sequence>#<rank_set>" when the edge is not straight
     let m = maxRankCache.get(key);
     if (m === undefined) { m = Math.max(...ranks, 0); maxRankCache.set(key, m); }
     return m;
   }
+  // A sweep with a wavy/frayed edge (2026-10-22) plays its own ranks,
+  // item.sweep_ranks[sweep.rank_set], which state.js computes once per
+  // distinct edge, as server.py does for the Conductor page; a straight one
+  // (rank_set "") keeps item.sequences[sequence] as before. The SAME CODE as
+  // index.html's refreshModelFor (test_the_flicker_timing_is_the_same_code_
+  // on_both_screens). The rank set is part of both cache keys, so an edited
+  // edge is never drawn from the old one; rebuild() clears both on every
+  // edit anyway.
   function refreshModelFor(item, cue, sweep) {
-    const key = item.item + "|" + cue.id;
+    const rankSet = typeof sweep.rank_set === "string" ? sweep.rank_set : "";
+    const edged = rankSet ? item.sweep_ranks?.[rankSet] : undefined;
+    const key = item.item + "|" + cue.id + "|" + rankSet;
     let m = refreshModelCache.get(key);
     if (m) return m;
-    const ranks = item.sequences?.[sweep.sequence];
-    const maxRank = ranks ? maxRankOf(item, sweep.sequence, ranks) : 0;
+    const ranks = edged || item.sequences?.[sweep.sequence];
+    const maxRank = ranks ? maxRankOf(item, edged ? sweep.sequence + "#" + rankSet : sweep.sequence, ranks) : 0;
     const n = item.map.scales.length;
     const delay = new Float64Array(n), jitter = new Float64Array(n);
     const swept = !!ranks && maxRank > 0 && sweep.span_s > 0;

@@ -626,6 +626,91 @@
         `<option value="${esc(s.id)}" ${s.id === tr.sequence ? "selected" : ""}>${esc(seqLabel(s))}</option>`).join("")}</select>
       <span ${tr.sequence === "natural" ? 'style="display:none"' : ""}><input type="text" data-tr-span="${esc(name)}" size="4" value="${tr.span_s}"> s</span>`;
   }
+  // ---- the sweep's edge (2026-10-22) ----
+  // The operator's randomised border for a swept transition, in the
+  // Conductor's own words: Edge Straight / Wave / Fray / Wave + fray, Width
+  // Fixed ("[6] rows") or Random ("Min [1] Max [10] rows"), and New pattern
+  // (the seed + 1, so the same edge gets a new shape). Shown only for a
+  // sequence that sweeps; the width and New pattern only once the edge is
+  // not Straight, since a straight border has neither. `owner` is the
+  // attribute that says whose edge it is: data-tr-edge="<design file>" for a
+  // design's transition, data-cue-edge for a cue's own.
+  const edgeOf = tr => globalThis.SIM.sequence.cleanEdgeFields(tr || {});
+  function edgeControl(owner, tr) {
+    const e = edgeOf(tr);
+    const hide = !tr || (tr.sequence || "natural") === "natural";
+    const seq = globalThis.SIM.sequence;
+    const rowsBox = (field, value) => `<input type="text" size="3" data-ef="${field}" value="${esc(value)}">`;
+    return `<span class="edge-ctl" ${owner} ${hide ? 'style="display:none"' : ""}>
+      <span class="edge-lbl">Edge</span><select data-ef="edge">${seq.EDGES.map(id =>
+        `<option value="${id}" ${id === e.edge ? "selected" : ""}>${esc(seq.EDGE_LABELS[id])}</option>`).join("")}</select>
+      <span class="edge-more" ${e.edge === "straight" ? 'style="display:none"' : ""}>
+        <span class="edge-lbl">Width</span><span class="edge-seg"><button type="button" data-ef="width" data-v="fixed" class="${e.edge_random ? "" : "on"}">Fixed</button><button type="button" data-ef="width" data-v="random" class="${e.edge_random ? "on" : ""}">Random</button></span>
+        <span class="edge-rows">${e.edge_random
+          ? `Min ${rowsBox("edge_min_rows", e.edge_min_rows)} Max ${rowsBox("edge_rows", e.edge_rows)} rows`
+          : `${rowsBox("edge_rows", e.edge_rows)} rows`}</span>
+        <button type="button" data-ef="new" title="The same edge with a new random shape">New pattern</button>
+      </span></span>`;
+  }
+  // The five edge fields after one control of an edge-ctl changed, cleaned
+  // (so the project only ever stores what the Conductor would keep), or null
+  // - said in a toast, in the Conductor's words - for a width that is not a
+  // number of rows the Conductor would keep: refused, not clamped, like the
+  // span. The caller re-renders, which puts the last good value back.
+  function edgeAfter(target, current) {
+    const seq = globalThis.SIM.sequence;
+    const e = edgeOf(current);
+    const ef = target.dataset.ef;
+    if (ef === "edge") e.edge = target.value;
+    else if (ef === "width") e.edge_random = target.dataset.v === "random";
+    else if (ef === "new") e.edge_seed = (e.edge_seed + 1) % (seq.EDGE_SEED_MAX + 1);
+    else if (ef === "edge_rows" || ef === "edge_min_rows") {
+      const text = String(target.value).trim();
+      const rows = Number(text);
+      if (text === "" || !(rows >= 0 && rows <= seq.EDGE_ROWS_MAX)) {
+        toast(`Width: 0 to ${seq.EDGE_ROWS_MAX} rows (use a period for decimals, e.g. 2.5)`);
+        return null;
+      }
+      if (ef === "edge_min_rows" && rows > e.edge_rows) { toast("Min cannot be wider than Max"); return null; }
+      e[ef] = rows;
+      // A Max brought below the Min takes the Min down with it.
+      if (ef === "edge_rows") e.edge_min_rows = Math.min(e.edge_min_rows, rows);
+    } else return null;
+    return edgeOf(e);
+  }
+  // The design transition a design file currently has, as state.js built it.
+  function designTransitionOf(name) {
+    for (const item of state.items) {
+      const d = item.designs.find(x => x.name === name);
+      if (d) return d.transition || { sequence: "natural", span_s: 0 };
+    }
+    return { sequence: "natural", span_s: 0 };
+  }
+  // One edge-ctl event (a change on its select/inputs, or a click on one of
+  // its buttons) -> the design's or the cue's own fields.
+  function applyEdgeEvent(target, cue) {
+    const ctl = target.closest(".edge-ctl");
+    if (!ctl || !target.dataset.ef) return false;
+    if (ctl.hasAttribute("data-cue-edge")) {
+      if (!cue) return false;
+      const next = edgeAfter(target, cue);
+      if (next) globalThis.SIM.app.updateCue(cue.id, next); else render();
+      return true;
+    }
+    const name = ctl.getAttribute("data-tr-edge");
+    if (name === null) return false;
+    const tr = designTransitionOf(name);
+    const next = edgeAfter(target, tr);
+    if (next) globalThis.SIM.app.setDesignTransition(name, tr.sequence, tr.span_s, next); else render();
+    return true;
+  }
+  // "Wave edge, 6 rows" - the edge in a line of text, "" for a straight one.
+  function edgeSummary(tr) {
+    const e = edgeOf(tr);
+    if (e.edge === "straight" || (tr.sequence || "natural") === "natural") return "";
+    const width = e.edge_random ? `${e.edge_min_rows}-${e.edge_rows} rows` : `${e.edge_rows} rows`;
+    return `${globalThis.SIM.sequence.EDGE_LABELS[e.edge]} edge, ${width}`;
+  }
   function renderDesigns() {
     const root = $("#content");
     const item = state.items.find(i => i.item === ui.item);
@@ -653,6 +738,7 @@
           <button data-view="outside" class="${ui.view === "outside" ? "on" : ""}">Outside (audience)</button>
           <button data-view="inside" class="${ui.view === "inside" ? "on" : ""}">Inside (as in the CSV)</button></div>
         ${design ? `<div class="group" data-design="${esc(design.name)}"><span>Transition</span>${transitionControl(design.name, selTr)}</div>` : ""}
+        ${design ? edgeControl(`data-tr-edge="${esc(design.name)}"`, selTr) : ""}
       </div>
       <div id="stage">${globalThis.SIM.render.renderGarment(item, { cell: 22, mode: "design", labels: true, view: ui.view,
         colors: design?.colors || {}, undecided: design?.undecided, shifts: design?.shifts, palette: state.palette })}</div>
@@ -675,7 +761,8 @@
                 <div class="dsg-main"><div class="dsg-top"><b>${esc(designLabel(d))}</b>
                   ${designState(d) === "ok" ? '<span class="okline">OK</span>' : designState(d) === "partial" ? '<span class="warn">partial only</span>' : `<span style="color:var(--err)">${d.partial_problems.length} problems</span>`}
                   <span class="use">${esc(usageTxt)}</span></div>
-                  <div class="dsg-file" title="${esc(d.name)}">${esc(d.name)}</div></div>
+                  <div class="dsg-file" title="${esc(d.name)}">${esc(d.name)}</div>
+                  ${edgeSummary(tr) ? `<div class="dsg-edge">${esc(edgeSummary(tr))}</div>` : ""}</div>
                 <div class="dsg-tr">${transitionControl(d.name, tr)}<button data-del="${esc(d.name)}" title="Remove from the workspace">×</button></div>
               </div>`; }).join("") || `<div class="meta">Add design CSV files (*_color_NAME_grid.csv)</div>`}</div>
             <div class="meta" style="margin-top:8px">
@@ -831,10 +918,12 @@
         <div class="ctl" style="flex-direction:column;align-items:flex-start;gap:6px">
           <label class="rad"><input type="radio" name="cue-transition" id="cue-transition-design" ${transitionMode === "design" ? "checked" : ""}> this design (all cues using it)
             ${design ? `<span style="display:inline-flex;gap:8px;align-items:center;margin-left:4px">${transitionControl(cue.design, designTr)}</span>` : ""}</label>
+          ${design && transitionMode === "design" ? edgeControl(`data-tr-edge="${esc(cue.design)}"`, designTr) : ""}
           <label class="rad"><input type="radio" name="cue-transition" id="cue-transition-custom" ${transitionMode === "custom" ? "checked" : ""}> this cue only
             <select id="cue-seq" ${transitionMode !== "custom" ? "disabled" : ""}>${SEQ_OPTIONS().map(s =>
               `<option value="${s.id}" ${s.id === (cue.sequence || "natural") ? "selected" : ""}>${esc(seqLabel(s))}</option>`).join("")}</select>
             <span ${(cue.sequence || "natural") === "natural" ? 'style="display:none"' : ""}><input type="text" id="cue-span" value="${cue.span_s ?? 0}" size="4" ${transitionMode !== "custom" ? "disabled" : ""}> s</span></label>
+          ${transitionMode === "custom" ? edgeControl("data-cue-edge", cue) : ""}
         </div><div class="why"></div></div>
       <div class="cue-computed">Refresh completes at ${clockShort(cue.complete)} (Start + ${esc(completeWhy(cue, refr))})</div>
       <div class="cue-row"><div class="lbl">End</div><div class="ctl">${mmssField("cue-end", cue.end, { disabled: isLast })}</div>
@@ -866,6 +955,10 @@
     card.querySelectorAll("[data-tr-span]").forEach(inp => inp.onchange = e => {
       const name = e.target.dataset.trSpan, sel = card.querySelector(`[data-tr-seq="${CSS.escape(name)}"]`);
       globalThis.SIM.app.setDesignTransition(name, sel.value, Number(e.target.value) || 0);
+    });
+    card.querySelectorAll(".edge-ctl [data-ef]").forEach(el => {
+      if (el.tagName === "BUTTON") el.onclick = e => applyEdgeEvent(e.currentTarget, cue);
+      else el.onchange = e => applyEdgeEvent(e.currentTarget, cue);
     });
   }
 
@@ -960,7 +1053,8 @@
       ${rows.map(c => {
         const item = state.items.find(i => i.item === c.item);
         const trSeq = SEQ_OPTIONS().find(s => s.id === (c.sequence || "natural"));
-        const tr = c.transition === "custom" ? (trSeq ? seqLabel(trSeq) : c.sequence) : "design default";
+        const edgeTxt = c.transition === "custom" ? edgeSummary(c) : "";
+        const tr = c.transition === "custom" ? (trSeq ? seqLabel(trSeq) : c.sequence) + (edgeTxt ? ", " + edgeTxt : "") : "design default";
         const status = (c.problems || []).length ? `<span style="color:var(--err)">${c.problems.length} problem${c.problems.length === 1 ? "" : "s"}</span>` : '<span class="okline">OK</span>';
         return `<tr class="pick ${sameId(c.id, ui.cue) ? "hl" : ""}" data-cue="${esc(c.id)}">
           <td>${clockShort(c.at)}</td><td>${clockShort(c.complete)}</td><td>${clockShort(c.end)}</td>
@@ -1736,6 +1830,8 @@
       const del = e.target.closest("[data-del]"); if (del) { globalThis.SIM.app.removeFile(del.dataset.del); render(); }
       const dsg = e.target.closest(".dsg[data-design]"); if (dsg && !e.target.closest("select,input,button")) { ui.design = dsg.dataset.design; persist(); render(); }
       const vb = e.target.closest("[data-view]"); if (vb) { ui.view = vb.dataset.view; persist(); render(); }
+      const edgeBtn = e.target.closest(".edge-ctl button[data-ef]");
+      if (edgeBtn && !edgeBtn.closest("#cue-editor-body")) applyEdgeEvent(edgeBtn, null);
     });
     document.body.addEventListener("change", e => {
       // The Designs tab's per-item "Add CSV". The item key travels on the
@@ -1767,6 +1863,8 @@
         const name = trSpan.dataset.trSpan, sel = document.querySelector(`[data-tr-seq="${CSS.escape(name)}"]`);
         globalThis.SIM.app.setDesignTransition(name, sel.value, Number(trSpan.value) || 0);
       }
+      // The Designs tab's edge controls (the cue editor wires its own).
+      if (e.target.closest(".edge-ctl") && !e.target.closest("#cue-editor-body")) applyEdgeEvent(e.target, null);
     });
   }
 
@@ -1951,7 +2049,8 @@
       // matching a real cue once state.show.cues came back through
       // SIM.buildState with everything stringified.
       const id = String((project.show.cues.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) || 0) + 1);
-      project.show.cues.push({ id, item, at, design, partial: !!partial, refresh_s: null, transition: "design", sequence: "natural", span_s: 0 });
+      project.show.cues.push({ id, item, at, design, partial: !!partial, refresh_s: null, transition: "design", sequence: "natural", span_s: 0,
+                               ...globalThis.SIM.sequence.EDGE_DEFAULTS });
       rebuild(); persist(); return id;
     },
     updateCue(id, patch) {
@@ -1968,15 +2067,32 @@
       rebuild(); persist();
     },
     deleteCue(id) { project.show.cues = project.show.cues.filter(c => !sameId(c.id, id)); if (sameId(ui.cue, id)) ui.cue = null; rebuild(); persist(); },
-    setDesignTransition(designFile, sequence, span_s) { project.show.transitions[designFile] = { sequence, span_s }; rebuild(); persist(); },
+    // `edge` (optional): the five edge fields to set. Without it the entry
+    // keeps whatever edge it already had - changing the sequence or the span
+    // must not throw the designer's wave away (2026-10-22).
+    setDesignTransition(designFile, sequence, span_s, edge) {
+      const prev = project.show.transitions[designFile];
+      const kept = {};
+      if (prev && typeof prev === "object" && !Array.isArray(prev)) {
+        for (const k of Object.keys(globalThis.SIM.sequence.EDGE_DEFAULTS)) if (k in prev) kept[k] = prev[k];
+      }
+      project.show.transitions[designFile] = Object.assign({ sequence, span_s }, edge || kept);
+      rebuild(); persist();
+    },
     exportBundle() {
       const now = localIso();
       return {
         format: "epaper-show-bundle", version: 1, exported: now, app: "az27ss-simulator 1.0",
         show: { format: "epaper-show", version: 1, exported: now, workspace: "designer",
                 duration: project.show.duration, refresh_s: project.show.refresh_s,
-                cues: project.show.cues.map(({ id, item, at, design, partial, refresh_s, transition, sequence, span_s }) =>
-                  ({ id, item, at, design, partial: !!partial, refresh_s: refresh_s ?? null, transition: transition || "design", sequence: sequence || "natural", span_s: span_s ?? 0 })),
+                // The five edge fields (2026-10-22) travel cleaned, the way
+                // the Conductor's show.json keeps them: all five on a cue that
+                // has an edge, none on one left at the defaults - so the bundle
+                // opens in the Conductor with the same edge, and a show without
+                // edges exports exactly as it did before.
+                cues: project.show.cues.map(({ id, item, at, design, partial, refresh_s, transition, sequence, span_s, ...rest }) =>
+                  ({ id, item, at, design, partial: !!partial, refresh_s: refresh_s ?? null, transition: transition || "design", sequence: sequence || "natural", span_s: span_s ?? 0,
+                     ...globalThis.SIM.sequence.edgeStored(rest) })),
                 transitions: project.show.transitions || {}, labels: project.show.labels || {},
                 boards: project.show.boards || {}, music: project.show.music ? { name: project.show.music.name } : null },
         files: Object.assign({}, project.files),

@@ -233,6 +233,19 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .dsg-tr { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; white-space: nowrap; }
 .dsg-tr select { width: 158px; font-size: 12px; }
 .dsg-tr input[type=text] { width: 44px; }
+.dsg-edge { color: var(--dim); font-size: 11px; }
+
+/* ---- the sweep's edge (2026-10-22): Edge / Width / New pattern ---- */
+.edge-ctl { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.edge-ctl .edge-more, .edge-ctl .edge-rows { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.edge-ctl .edge-lbl { color: var(--dim); font-size: 12px; }
+.edge-ctl input[type=text] { width: 44px; }
+.cue-row .ctl .edge-ctl { margin-left: 22px; }
+.cue-row .ctl .edge-ctl input[type=text] { width: 44px; }
+.edge-seg { display: inline-flex; }
+.edge-seg button { border-radius: 0; margin-left: -1px; }
+.edge-seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.edge-seg button:last-child { border-radius: 0 6px 6px 0; }
 
 /* ---- Timeline: EDIT CUE beside the tracks + a bottom dock ---- */
 #tl-editing { display: flex; flex-direction: column; gap: 12px; }

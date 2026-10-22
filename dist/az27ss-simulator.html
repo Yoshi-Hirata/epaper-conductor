@@ -243,6 +243,19 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .dsg-tr { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; white-space: nowrap; }
 .dsg-tr select { width: 158px; font-size: 12px; }
 .dsg-tr input[type=text] { width: 44px; }
+.dsg-edge { color: var(--dim); font-size: 11px; }
+
+/* ---- the sweep's edge (2026-10-22): Edge / Width / New pattern ---- */
+.edge-ctl { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.edge-ctl .edge-more, .edge-ctl .edge-rows { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.edge-ctl .edge-lbl { color: var(--dim); font-size: 12px; }
+.edge-ctl input[type=text] { width: 44px; }
+.cue-row .ctl .edge-ctl { margin-left: 22px; }
+.cue-row .ctl .edge-ctl input[type=text] { width: 44px; }
+.edge-seg { display: inline-flex; }
+.edge-seg button { border-radius: 0; margin-left: -1px; }
+.edge-seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.edge-seg button:last-child { border-radius: 0 6px 6px 0; }
 
 /* ---- Timeline: EDIT CUE beside the tracks + a bottom dock ---- */
 #tl-editing { display: flex; flex-direction: column; gap: 12px; }
@@ -1669,9 +1682,14 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
     return map.scales.map(s => byKey[s.key]);
   }
 
-  function spanS(map, sequence, span) {
+  // `edge` (2026-10-22): the sweep's edge fields (a resolved cue.sweep will
+  // do) - an edge can give even a one-row garment a top-down sweep to time
+  // (sequence.py's span_s()/_ranks_for()).
+  function spanS(map, sequence, span, edge) {
     if (sequence === "natural") return 0.0;
-    const values = Object.values(ranksByKey(map, sequence));
+    const edged = edge !== undefined && edge !== null && cleanEdgeFields(edge).edge !== "straight";
+    const values = Object.values(edged ? edgeRanksByKey(map, Object.assign({}, edge, { sequence }))
+                                       : ranksByKey(map, sequence));
     const maxRank = values.length ? Math.max(...values) : 0;
     if (maxRank === 0) return 0.0;
     // Python's `round(float(span), 2)` never catches float()'s own
@@ -1682,9 +1700,178 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
     return fmt.round(num, 2);
   }
 
+  // ---- the sweep's randomised border ("edge"), 2026-10-22 ----
+  // The operator asked for a swept transition whose border does not advance
+  // as a straight line: a wave, a fray, or both, of a fixed width or one that
+  // itself varies between a min and a max, with a seed so the shape is the
+  // same in the Conductor preview, on the units, in the 3D export, here, and
+  // on every loop ("New pattern" is just seed + 1). Only the RANKS change -
+  // the units already take per-socket delays computed from them - so this is
+  // conductor/sequence.py's edge_ranks(), bit for bit: the same hash32, the
+  // same float operations in the same order, inputs masked to uint32 the way
+  // Python's `& 0xFFFFFFFF` does. A straight edge (and every show that never
+  // heard of edges) keeps exactly today's integer ranks.
+  const EDGES = ["straight", "wave", "fray", "wave_fray"];
+  const EDGE_LABELS = { straight: "Straight", wave: "Wave", fray: "Fray", wave_fray: "Wave + fray" };
+  const EDGE_ROWS_DEFAULT = 6.0;
+  const EDGE_ROWS_MAX = 24.0;
+  const EDGE_MIN_ROWS_DEFAULT = 1.0;
+  const EDGE_SEED_DEFAULT = 1;
+  const EDGE_SEED_MAX = 999999;
+  const EDGE_DEFAULTS = Object.freeze({
+    edge: "straight", edge_rows: EDGE_ROWS_DEFAULT, edge_random: false,
+    edge_min_rows: EDGE_MIN_ROWS_DEFAULT, edge_seed: EDGE_SEED_DEFAULT,
+  });
+
+  // The ONE hash32 of the simulator (flicker.js re-exports this same
+  // function for its refresh flicker; conductor/export3d.py's hash32() is
+  // its Python twin). It lives here, not in flicker.js, because the ranks
+  // need it and model.js is the first script loaded - the goldens harness
+  // (tests/test_sim_goldens.py) loads model.js and state.js without
+  // flicker.js at all.
+  function hash32(a, b) {
+    let h = Math.imul(a ^ 0x9e3779b1, 0x85ebca6b) ^ Math.imul(b ^ 0x27d4eb2f, 0xc2b2ae35);
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+    h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+    return (h ^ (h >>> 15)) >>> 0;
+  }
+  // `>>> 0` is ToUint32, i.e. modulo 2**32 - the same as Python's
+  // `& 0xFFFFFFFF` on a negative int, exact for any integer up to 2**53
+  // (the largest here is about 1e11: seed 999999 * 104729).
+  function h01(a, b) { return hash32(a >>> 0, b >>> 0) / 4294967296.0; }
+  function smooth(t) { return t * t * (3 - 2 * t); }
+  function vnoise(x, y, k) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const q = (a, b) => h01(a + k * 7919, b - k * 104729);
+    const a = q(xi, yi), b = q(xi + 1, yi);
+    const c = q(xi, yi + 1), d = q(xi + 1, yi + 1);
+    const sx = smooth(xf), sy = smooth(yf);
+    const top = a + (b - a) * sx;
+    const bot = c + (d - c) * sx;
+    return top + (bot - top) * sy;
+  }
+
+  // The cleaning rules of the shared spec (a hand-edited show.json or an
+  // untrusted project file must never reach the noise unclean).
+  function cleanEdge(value) { return EDGES.indexOf(value) !== -1 ? value : "straight"; }
+  function cleanRows(value, high, fallback) {
+    const num = toNumber(value);
+    if (num === null) return fallback;
+    const rows = fmt.round(num, 1);
+    if (Number.isNaN(rows)) return fallback;
+    return pyMin2(high, pyMax2(0.0, rows));
+  }
+  function cleanEdgeRows(value) { return cleanRows(value, EDGE_ROWS_MAX, EDGE_ROWS_DEFAULT); }
+  function cleanEdgeMinRows(value, rows) {
+    return cleanRows(value, rows, pyMin2(rows, EDGE_MIN_ROWS_DEFAULT));
+  }
+  // Python's bool(): empty containers and "" are false, everything else that
+  // is not 0/false/None is true.
+  function cleanEdgeRandom(value) {
+    if (value === undefined || value === null || value === false || value === 0 || value === "") return false;
+    if (typeof value === "number" && Number.isNaN(value)) return true;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === "object") return Object.keys(value).length > 0;
+    return true;
+  }
+  // sequence.py's _clean_seed(): int(float(value)) - a numeric string or a
+  // number, truncated; junk, NaN and infinity are the default.
+  function cleanEdgeSeed(value) {
+    const num = toNumber(value);
+    if (num === null || !Number.isFinite(num)) return EDGE_SEED_DEFAULT;
+    return pyMin2(EDGE_SEED_MAX, pyMax2(0, Math.trunc(num))) + 0;    // + 0: never a -0
+  }
+  // The five fields of a raw entry (a custom cue, or a design's transition),
+  // each defaulted and cleaned: sequence.py's clean_edge().
+  function cleanEdgeFields(raw) {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) raw = {};
+    const get = (k) => raw[k] !== undefined ? raw[k] : EDGE_DEFAULTS[k];
+    const rows = cleanEdgeRows(get("edge_rows"));
+    return {
+      edge: cleanEdge(get("edge")),
+      edge_rows: rows,
+      edge_random: cleanEdgeRandom(get("edge_random")),
+      edge_min_rows: cleanEdgeMinRows(get("edge_min_rows"), rows),
+      edge_seed: cleanEdgeSeed(get("edge_seed")),
+    };
+  }
+  const EDGE_FIELDS = Object.keys(EDGE_DEFAULTS);
+  // sequence.py's edge_stored(): what show.json keeps of an edge - nothing
+  // when all five are at their defaults (a show without edges keeps its
+  // show.json, revision and unit show ids), else all five, cleaned.
+  function edgeStored(raw) {
+    const e = cleanEdgeFields(raw);
+    return EDGE_FIELDS.every(k => e[k] === EDGE_DEFAULTS[k]) ? {} : e;
+  }
+  // Whether this sweep's ranks differ from today's straight ones at all.
+  function edgeApplies(sweep) {
+    return !!sweep && cleanEdge(sweep.edge) !== "straight"
+      && cleanSequence(sweep.sequence) !== "natural";
+  }
+  // sequence.py's rank_set(): the key of a sweep's ranks in the page state's
+  // item.sweep_ranks - "" when the edge changes nothing (straight, natural,
+  // or a span of 0), else the sequence and all five fields - even the
+  // minimum of a fixed width, which moves no rank - and nothing else (not
+  // the span): "top_down/wave/6/fixed/1/1".
+  function rankSet(sweep) {
+    if (typeof sweep !== "object" || sweep === null || Array.isArray(sweep)) sweep = {};
+    const seq = cleanSequence(sweep.sequence !== undefined ? sweep.sequence : "natural");
+    const e = cleanEdgeFields(sweep);
+    if (seq === "natural" || e.edge === "straight"
+        || cleanSpan(sweep.span_s !== undefined ? sweep.span_s : 0.0) <= 0) return "";
+    return `${seq}/${e.edge}/${fmt.g(e.edge_rows)}/${e.edge_random ? "random" : "fixed"}/`
+      + `${fmt.g(e.edge_min_rows)}/${e.edge_seed}`;
+  }
+
+  // position key -> rank, rebased so the lowest is 0. `sweep` carries
+  // {sequence, edge, edge_rows, edge_random, edge_min_rows, edge_seed}
+  // (cleaned here again, so a raw entry is safe to pass). Straight or
+  // natural: exactly ranksByKey(), integers and all.
+  function edgeRanksByKey(map, sweep) {
+    const seq = cleanSequence(sweep && sweep.sequence);
+    const e = cleanEdgeFields(sweep);
+    if (e.edge === "straight" || seq === "natural") return ranksByKey(map, seq);
+    const raw = rawRanksByKey(map, seq);       // NOT rebased: the spec adds the offset to the raw rank
+    const vertical = seq === "top_down" || seq === "bottom_up" || seq === "center";
+    const out = {};
+    map.scales.forEach(s => {
+      const across = vertical ? s.col : s.row;
+      const along = vertical ? s.row : s.col;
+      const k = e.edge_seed + (s.side === "back" ? 1000 : 0);
+      let width;
+      if (e.edge_random) {
+        const lo = e.edge_min_rows, hi = e.edge_rows;
+        const g = (vnoise(across * 0.09, along * 0.06, k + 50) - 0.15) / 0.7;
+        width = lo + (hi - lo) * pyMin2(1.0, pyMax2(0.0, g));     // Python's min(1.0, max(0.0, g))
+      } else {
+        width = e.edge_rows;
+      }
+      const wave = vnoise(across * 0.16, along * 0.07, k) * 2 - 1;
+      const fray = h01(across * 7 + k, along * 13 + 5 * k) * 2 - 1;
+      let offset;
+      if (e.edge === "wave") offset = width * wave;
+      else if (e.edge === "fray") offset = width * fray;
+      else offset = width * wave + 0.5 * width * fray;
+      out[s.key] = raw[s.key] + offset;
+    });
+    const values = Object.values(out);
+    const low = values.length ? Math.min(...values) : 0;
+    Object.keys(out).forEach(key => { out[key] = out[key] - low; });
+    return out;
+  }
+
+  function edgeRanks(map, sweep) {
+    const byKey = edgeRanksByKey(map, sweep);
+    return map.scales.map(s => byKey[s.key]);
+  }
+
   const sequenceApi = {
     SEQUENCES, LABELS, MAX_DELAY_S, SPAN_HARD_MAX_S,
     cleanSequence, cleanSpan, ranks, ranksByKey, spanS,
+    EDGES, EDGE_LABELS, EDGE_DEFAULTS, EDGE_FIELDS, EDGE_ROWS_MAX, EDGE_SEED_MAX,
+    hash32, h01, vnoise, cleanEdge, cleanEdgeRows, cleanEdgeMinRows, cleanEdgeRandom,
+    cleanEdgeSeed, cleanEdgeFields, edgeStored, edgeApplies, rankSet, edgeRanksByKey, edgeRanks,
   };
 
   // ============================================================
@@ -1969,28 +2156,37 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
         transition: (transition === "design" || transition === "custom") ? transition : "design",
         sequence: cleanSequence(raw.sequence !== undefined ? raw.sequence : "natural"),
         span_s: cleanSpan(raw.span_s !== undefined ? raw.span_s : 0.0),
+        // The sweep's edge (2026-10-22): kept like sequence/span whatever
+        // `transition` says, but only when one of the five differs from
+        // its default - a cue without an edge is exactly the cue it always
+        // was (timeline.py's **edge_stored(raw)).
+        ...edgeStored(raw),
       });
     });
     result.sort((a, b) => (a.at - b.at) || (a.item.toLowerCase() < b.item.toLowerCase() ? -1 : a.item.toLowerCase() > b.item.toLowerCase() ? 1 : 0));
     return result;
   }
 
+  // The resolved sweep always carries the five edge fields (defaults when
+  // none were set) and `rank_set`, the key of its ranks in the state's
+  // item.sweep_ranks - "" for a sweep the edge does not change.
   function resolve(cue, transitions) {
     const t = cue.transition !== undefined ? cue.transition : "design";
+    let entry, source;
     if (t === "custom") {
-      return {
-        sequence: cleanSequence(cue.sequence !== undefined ? cue.sequence : "natural"),
-        span_s: cleanSpan(cue.span_s !== undefined ? cue.span_s : 0.0),
-        source: "cue",
-      };
+      entry = cue; source = "cue";
+    } else {
+      entry = transitions ? transitions[cue.design !== undefined ? cue.design : ""] : undefined;
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) entry = {};
+      source = "design";
     }
-    let entry = transitions ? transitions[cue.design !== undefined ? cue.design : ""] : undefined;
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) entry = {};
-    return {
+    const sweep = Object.assign({
       sequence: cleanSequence(entry.sequence !== undefined ? entry.sequence : "natural"),
       span_s: cleanSpan(entry.span_s !== undefined ? entry.span_s : 0.0),
-      source: "design",
-    };
+      source,
+    }, cleanEdgeFields(entry));
+    sweep.rank_set = rankSet(sweep);
+    return sweep;
   }
 
   function applyTransitions(cues, transitions) {
@@ -2231,10 +2427,14 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
   // ---- conductor/server.py's _design_transition ----
   function designTransition(entry) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) entry = {};
-    return {
+    // With its edge (2026-10-22) and the key of its ranks in the item's
+    // sweep_ranks, as server.py sends it.
+    const result = Object.assign({
       sequence: sequence.cleanSequence(entry.sequence !== undefined ? entry.sequence : "natural"),
       span_s: sequence.cleanSpan(entry.span_s !== undefined ? entry.span_s : 0.0),
-    };
+    }, sequence.cleanEdgeFields(entry));
+    result.rank_set = sequence.rankSet(result);
+    return result;
   }
 
   // ---- conductor/server.py's _clean_transitions ----
@@ -2247,7 +2447,11 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
       const seq = sequence.cleanSequence(entry.sequence !== undefined ? entry.sequence : "natural");
       const span = Math.min(sequence.MAX_DELAY_S,
         sequence.cleanSpan(entry.span_s !== undefined ? entry.span_s : 0.0));
-      if (seq !== "natural" && span > 0) result[String(design)] = { sequence: seq, span_s: span };
+      if (seq !== "natural" && span > 0) {
+        // The edge rides along only when it is not all defaults.
+        result[String(design)] = Object.assign({ sequence: seq, span_s: span },
+                                               sequence.edgeStored(entry));
+      }
     });
     return result;
   }
@@ -2260,7 +2464,7 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
       if (sweep.sequence === "natural") {
         cue.span = 0.0;
       } else if (map) {
-        cue.span = sequence.spanS(map, sweep.sequence, sweep.span_s);
+        cue.span = sequence.spanS(map, sweep.sequence, sweep.span_s, sweep);    // with its edge
       }
     });
   }
@@ -2515,6 +2719,24 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
     const cues = timeline.clean(show.cues);
     timeline.applyTransitions(cues, transitions);
     timeSweeps(cues, maps);
+    // The ranks of every sweep with an edge (2026-10-22), once per distinct
+    // rank_set and item, in map.scales order: flicker.js's refreshModelFor()
+    // looks them up by the cue's sweep.rank_set, where a straight sweep keeps
+    // using item.sequences. A design's own transition is ranked too, as
+    // server.py's state() does.
+    ordered.forEach(entry => { entry.sweep_ranks = {}; });
+    const wanted = cues.map(cue => [cue.item.toLowerCase(), cue.sweep]);
+    Object.keys(items).forEach(key => {
+      items[key].designs.forEach(record => { wanted.push([key, record.transition]); });
+    });
+    wanted.forEach(([key, sweep]) => {
+      const map = maps[key];
+      if (!map || !sweep.rank_set) return;
+      const own = items[key].sweep_ranks;
+      if (!Object.prototype.hasOwnProperty.call(own, sweep.rank_set)) {
+        own[sweep.rank_set] = sequence.edgeRanks(map, sweep);
+      }
+    });
     const validated = timeline.validate(cues, facts, duration, refresh);
     const cueProblems = validated.problems;
     // server.py's state(): the DIP switch warnings ride on the show's own
@@ -2528,6 +2750,11 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
       cue.refresh_source = (typeof cue.refresh_s === "number" && !Number.isNaN(cue.refresh_s)) ? "cue" : "show";
       const end = cueEnds[cue.id];
       cue.end = end[0]; cue.end_source = end[1];
+      // The cue's own five edge fields, defaults included, as server.py's
+      // state() sends them (show.json still stores them only when not all
+      // defaults).
+      const edge = sequence.cleanEdgeFields(cue);
+      Object.keys(edge).forEach(k => { if (!(k in cue)) cue[k] = edge[k]; });
       cue.problems = cueProblems[cue.id];
     });
 
@@ -2723,12 +2950,9 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
     tintedHexCache.clear();
   }
 
-  function hash32(a, b) {
-    let h = Math.imul(a ^ 0x9e3779b1, 0x85ebca6b) ^ Math.imul(b ^ 0x27d4eb2f, 0xc2b2ae35);
-    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
-    h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
-    return (h ^ (h >>> 15)) >>> 0;
-  }
+  // model.js's hash32 (2026-10-22): it moved there when the sweep's edge
+  // ranks needed it, so the simulator keeps exactly one implementation.
+  const hash32 = SIM.sequence.hash32;
   function hexOfCode(code, palette) {
     const [r, g, b] = palette[code].rgb;
     return "#" + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, "0")).join("");
@@ -2748,17 +2972,27 @@ button.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset:
     return out;
   }
   function maxRankOf(item, sequence, ranks) {
-    const key = item.item + "|" + sequence;
+    const key = item.item + "|" + sequence;     // "<sequence>#<rank_set>" when the edge is not straight
     let m = maxRankCache.get(key);
     if (m === undefined) { m = Math.max(...ranks, 0); maxRankCache.set(key, m); }
     return m;
   }
+  // A sweep with a wavy/frayed edge (2026-10-22) plays its own ranks,
+  // item.sweep_ranks[sweep.rank_set], which state.js computes once per
+  // distinct edge, as server.py does for the Conductor page; a straight one
+  // (rank_set "") keeps item.sequences[sequence] as before. The SAME CODE as
+  // index.html's refreshModelFor (test_the_flicker_timing_is_the_same_code_
+  // on_both_screens). The rank set is part of both cache keys, so an edited
+  // edge is never drawn from the old one; rebuild() clears both on every
+  // edit anyway.
   function refreshModelFor(item, cue, sweep) {
-    const key = item.item + "|" + cue.id;
+    const rankSet = typeof sweep.rank_set === "string" ? sweep.rank_set : "";
+    const edged = rankSet ? item.sweep_ranks?.[rankSet] : undefined;
+    const key = item.item + "|" + cue.id + "|" + rankSet;
     let m = refreshModelCache.get(key);
     if (m) return m;
-    const ranks = item.sequences?.[sweep.sequence];
-    const maxRank = ranks ? maxRankOf(item, sweep.sequence, ranks) : 0;
+    const ranks = edged || item.sequences?.[sweep.sequence];
+    const maxRank = ranks ? maxRankOf(item, edged ? sweep.sequence + "#" + rankSet : sweep.sequence, ranks) : 0;
     const n = item.map.scales.length;
     const delay = new Float64Array(n), jitter = new Float64Array(n);
     const swept = !!ranks && maxRank > 0 && sweep.span_s > 0;
@@ -4255,6 +4489,91 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
         `<option value="${esc(s.id)}" ${s.id === tr.sequence ? "selected" : ""}>${esc(seqLabel(s))}</option>`).join("")}</select>
       <span ${tr.sequence === "natural" ? 'style="display:none"' : ""}><input type="text" data-tr-span="${esc(name)}" size="4" value="${tr.span_s}"> s</span>`;
   }
+  // ---- the sweep's edge (2026-10-22) ----
+  // The operator's randomised border for a swept transition, in the
+  // Conductor's own words: Edge Straight / Wave / Fray / Wave + fray, Width
+  // Fixed ("[6] rows") or Random ("Min [1] Max [10] rows"), and New pattern
+  // (the seed + 1, so the same edge gets a new shape). Shown only for a
+  // sequence that sweeps; the width and New pattern only once the edge is
+  // not Straight, since a straight border has neither. `owner` is the
+  // attribute that says whose edge it is: data-tr-edge="<design file>" for a
+  // design's transition, data-cue-edge for a cue's own.
+  const edgeOf = tr => globalThis.SIM.sequence.cleanEdgeFields(tr || {});
+  function edgeControl(owner, tr) {
+    const e = edgeOf(tr);
+    const hide = !tr || (tr.sequence || "natural") === "natural";
+    const seq = globalThis.SIM.sequence;
+    const rowsBox = (field, value) => `<input type="text" size="3" data-ef="${field}" value="${esc(value)}">`;
+    return `<span class="edge-ctl" ${owner} ${hide ? 'style="display:none"' : ""}>
+      <span class="edge-lbl">Edge</span><select data-ef="edge">${seq.EDGES.map(id =>
+        `<option value="${id}" ${id === e.edge ? "selected" : ""}>${esc(seq.EDGE_LABELS[id])}</option>`).join("")}</select>
+      <span class="edge-more" ${e.edge === "straight" ? 'style="display:none"' : ""}>
+        <span class="edge-lbl">Width</span><span class="edge-seg"><button type="button" data-ef="width" data-v="fixed" class="${e.edge_random ? "" : "on"}">Fixed</button><button type="button" data-ef="width" data-v="random" class="${e.edge_random ? "on" : ""}">Random</button></span>
+        <span class="edge-rows">${e.edge_random
+          ? `Min ${rowsBox("edge_min_rows", e.edge_min_rows)} Max ${rowsBox("edge_rows", e.edge_rows)} rows`
+          : `${rowsBox("edge_rows", e.edge_rows)} rows`}</span>
+        <button type="button" data-ef="new" title="The same edge with a new random shape">New pattern</button>
+      </span></span>`;
+  }
+  // The five edge fields after one control of an edge-ctl changed, cleaned
+  // (so the project only ever stores what the Conductor would keep), or null
+  // - said in a toast, in the Conductor's words - for a width that is not a
+  // number of rows the Conductor would keep: refused, not clamped, like the
+  // span. The caller re-renders, which puts the last good value back.
+  function edgeAfter(target, current) {
+    const seq = globalThis.SIM.sequence;
+    const e = edgeOf(current);
+    const ef = target.dataset.ef;
+    if (ef === "edge") e.edge = target.value;
+    else if (ef === "width") e.edge_random = target.dataset.v === "random";
+    else if (ef === "new") e.edge_seed = (e.edge_seed + 1) % (seq.EDGE_SEED_MAX + 1);
+    else if (ef === "edge_rows" || ef === "edge_min_rows") {
+      const text = String(target.value).trim();
+      const rows = Number(text);
+      if (text === "" || !(rows >= 0 && rows <= seq.EDGE_ROWS_MAX)) {
+        toast(`Width: 0 to ${seq.EDGE_ROWS_MAX} rows (use a period for decimals, e.g. 2.5)`);
+        return null;
+      }
+      if (ef === "edge_min_rows" && rows > e.edge_rows) { toast("Min cannot be wider than Max"); return null; }
+      e[ef] = rows;
+      // A Max brought below the Min takes the Min down with it.
+      if (ef === "edge_rows") e.edge_min_rows = Math.min(e.edge_min_rows, rows);
+    } else return null;
+    return edgeOf(e);
+  }
+  // The design transition a design file currently has, as state.js built it.
+  function designTransitionOf(name) {
+    for (const item of state.items) {
+      const d = item.designs.find(x => x.name === name);
+      if (d) return d.transition || { sequence: "natural", span_s: 0 };
+    }
+    return { sequence: "natural", span_s: 0 };
+  }
+  // One edge-ctl event (a change on its select/inputs, or a click on one of
+  // its buttons) -> the design's or the cue's own fields.
+  function applyEdgeEvent(target, cue) {
+    const ctl = target.closest(".edge-ctl");
+    if (!ctl || !target.dataset.ef) return false;
+    if (ctl.hasAttribute("data-cue-edge")) {
+      if (!cue) return false;
+      const next = edgeAfter(target, cue);
+      if (next) globalThis.SIM.app.updateCue(cue.id, next); else render();
+      return true;
+    }
+    const name = ctl.getAttribute("data-tr-edge");
+    if (name === null) return false;
+    const tr = designTransitionOf(name);
+    const next = edgeAfter(target, tr);
+    if (next) globalThis.SIM.app.setDesignTransition(name, tr.sequence, tr.span_s, next); else render();
+    return true;
+  }
+  // "Wave edge, 6 rows" - the edge in a line of text, "" for a straight one.
+  function edgeSummary(tr) {
+    const e = edgeOf(tr);
+    if (e.edge === "straight" || (tr.sequence || "natural") === "natural") return "";
+    const width = e.edge_random ? `${e.edge_min_rows}-${e.edge_rows} rows` : `${e.edge_rows} rows`;
+    return `${globalThis.SIM.sequence.EDGE_LABELS[e.edge]} edge, ${width}`;
+  }
   function renderDesigns() {
     const root = $("#content");
     const item = state.items.find(i => i.item === ui.item);
@@ -4282,6 +4601,7 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
           <button data-view="outside" class="${ui.view === "outside" ? "on" : ""}">Outside (audience)</button>
           <button data-view="inside" class="${ui.view === "inside" ? "on" : ""}">Inside (as in the CSV)</button></div>
         ${design ? `<div class="group" data-design="${esc(design.name)}"><span>Transition</span>${transitionControl(design.name, selTr)}</div>` : ""}
+        ${design ? edgeControl(`data-tr-edge="${esc(design.name)}"`, selTr) : ""}
       </div>
       <div id="stage">${globalThis.SIM.render.renderGarment(item, { cell: 22, mode: "design", labels: true, view: ui.view,
         colors: design?.colors || {}, undecided: design?.undecided, shifts: design?.shifts, palette: state.palette })}</div>
@@ -4304,7 +4624,8 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
                 <div class="dsg-main"><div class="dsg-top"><b>${esc(designLabel(d))}</b>
                   ${designState(d) === "ok" ? '<span class="okline">OK</span>' : designState(d) === "partial" ? '<span class="warn">partial only</span>' : `<span style="color:var(--err)">${d.partial_problems.length} problems</span>`}
                   <span class="use">${esc(usageTxt)}</span></div>
-                  <div class="dsg-file" title="${esc(d.name)}">${esc(d.name)}</div></div>
+                  <div class="dsg-file" title="${esc(d.name)}">${esc(d.name)}</div>
+                  ${edgeSummary(tr) ? `<div class="dsg-edge">${esc(edgeSummary(tr))}</div>` : ""}</div>
                 <div class="dsg-tr">${transitionControl(d.name, tr)}<button data-del="${esc(d.name)}" title="Remove from the workspace">×</button></div>
               </div>`; }).join("") || `<div class="meta">Add design CSV files (*_color_NAME_grid.csv)</div>`}</div>
             <div class="meta" style="margin-top:8px">
@@ -4460,10 +4781,12 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
         <div class="ctl" style="flex-direction:column;align-items:flex-start;gap:6px">
           <label class="rad"><input type="radio" name="cue-transition" id="cue-transition-design" ${transitionMode === "design" ? "checked" : ""}> this design (all cues using it)
             ${design ? `<span style="display:inline-flex;gap:8px;align-items:center;margin-left:4px">${transitionControl(cue.design, designTr)}</span>` : ""}</label>
+          ${design && transitionMode === "design" ? edgeControl(`data-tr-edge="${esc(cue.design)}"`, designTr) : ""}
           <label class="rad"><input type="radio" name="cue-transition" id="cue-transition-custom" ${transitionMode === "custom" ? "checked" : ""}> this cue only
             <select id="cue-seq" ${transitionMode !== "custom" ? "disabled" : ""}>${SEQ_OPTIONS().map(s =>
               `<option value="${s.id}" ${s.id === (cue.sequence || "natural") ? "selected" : ""}>${esc(seqLabel(s))}</option>`).join("")}</select>
             <span ${(cue.sequence || "natural") === "natural" ? 'style="display:none"' : ""}><input type="text" id="cue-span" value="${cue.span_s ?? 0}" size="4" ${transitionMode !== "custom" ? "disabled" : ""}> s</span></label>
+          ${transitionMode === "custom" ? edgeControl("data-cue-edge", cue) : ""}
         </div><div class="why"></div></div>
       <div class="cue-computed">Refresh completes at ${clockShort(cue.complete)} (Start + ${esc(completeWhy(cue, refr))})</div>
       <div class="cue-row"><div class="lbl">End</div><div class="ctl">${mmssField("cue-end", cue.end, { disabled: isLast })}</div>
@@ -4495,6 +4818,10 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
     card.querySelectorAll("[data-tr-span]").forEach(inp => inp.onchange = e => {
       const name = e.target.dataset.trSpan, sel = card.querySelector(`[data-tr-seq="${CSS.escape(name)}"]`);
       globalThis.SIM.app.setDesignTransition(name, sel.value, Number(e.target.value) || 0);
+    });
+    card.querySelectorAll(".edge-ctl [data-ef]").forEach(el => {
+      if (el.tagName === "BUTTON") el.onclick = e => applyEdgeEvent(e.currentTarget, cue);
+      else el.onchange = e => applyEdgeEvent(e.currentTarget, cue);
     });
   }
 
@@ -4589,7 +4916,8 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
       ${rows.map(c => {
         const item = state.items.find(i => i.item === c.item);
         const trSeq = SEQ_OPTIONS().find(s => s.id === (c.sequence || "natural"));
-        const tr = c.transition === "custom" ? (trSeq ? seqLabel(trSeq) : c.sequence) : "design default";
+        const edgeTxt = c.transition === "custom" ? edgeSummary(c) : "";
+        const tr = c.transition === "custom" ? (trSeq ? seqLabel(trSeq) : c.sequence) + (edgeTxt ? ", " + edgeTxt : "") : "design default";
         const status = (c.problems || []).length ? `<span style="color:var(--err)">${c.problems.length} problem${c.problems.length === 1 ? "" : "s"}</span>` : '<span class="okline">OK</span>';
         return `<tr class="pick ${sameId(c.id, ui.cue) ? "hl" : ""}" data-cue="${esc(c.id)}">
           <td>${clockShort(c.at)}</td><td>${clockShort(c.complete)}</td><td>${clockShort(c.end)}</td>
@@ -5365,6 +5693,8 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
       const del = e.target.closest("[data-del]"); if (del) { globalThis.SIM.app.removeFile(del.dataset.del); render(); }
       const dsg = e.target.closest(".dsg[data-design]"); if (dsg && !e.target.closest("select,input,button")) { ui.design = dsg.dataset.design; persist(); render(); }
       const vb = e.target.closest("[data-view]"); if (vb) { ui.view = vb.dataset.view; persist(); render(); }
+      const edgeBtn = e.target.closest(".edge-ctl button[data-ef]");
+      if (edgeBtn && !edgeBtn.closest("#cue-editor-body")) applyEdgeEvent(edgeBtn, null);
     });
     document.body.addEventListener("change", e => {
       // The Designs tab's per-item "Add CSV". The item key travels on the
@@ -5396,6 +5726,8 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
         const name = trSpan.dataset.trSpan, sel = document.querySelector(`[data-tr-seq="${CSS.escape(name)}"]`);
         globalThis.SIM.app.setDesignTransition(name, sel.value, Number(trSpan.value) || 0);
       }
+      // The Designs tab's edge controls (the cue editor wires its own).
+      if (e.target.closest(".edge-ctl") && !e.target.closest("#cue-editor-body")) applyEdgeEvent(e.target, null);
     });
   }
 
@@ -5580,7 +5912,8 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
       // matching a real cue once state.show.cues came back through
       // SIM.buildState with everything stringified.
       const id = String((project.show.cues.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) || 0) + 1);
-      project.show.cues.push({ id, item, at, design, partial: !!partial, refresh_s: null, transition: "design", sequence: "natural", span_s: 0 });
+      project.show.cues.push({ id, item, at, design, partial: !!partial, refresh_s: null, transition: "design", sequence: "natural", span_s: 0,
+                               ...globalThis.SIM.sequence.EDGE_DEFAULTS });
       rebuild(); persist(); return id;
     },
     updateCue(id, patch) {
@@ -5597,15 +5930,32 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, { STARTER: {
       rebuild(); persist();
     },
     deleteCue(id) { project.show.cues = project.show.cues.filter(c => !sameId(c.id, id)); if (sameId(ui.cue, id)) ui.cue = null; rebuild(); persist(); },
-    setDesignTransition(designFile, sequence, span_s) { project.show.transitions[designFile] = { sequence, span_s }; rebuild(); persist(); },
+    // `edge` (optional): the five edge fields to set. Without it the entry
+    // keeps whatever edge it already had - changing the sequence or the span
+    // must not throw the designer's wave away (2026-10-22).
+    setDesignTransition(designFile, sequence, span_s, edge) {
+      const prev = project.show.transitions[designFile];
+      const kept = {};
+      if (prev && typeof prev === "object" && !Array.isArray(prev)) {
+        for (const k of Object.keys(globalThis.SIM.sequence.EDGE_DEFAULTS)) if (k in prev) kept[k] = prev[k];
+      }
+      project.show.transitions[designFile] = Object.assign({ sequence, span_s }, edge || kept);
+      rebuild(); persist();
+    },
     exportBundle() {
       const now = localIso();
       return {
         format: "epaper-show-bundle", version: 1, exported: now, app: "az27ss-simulator 1.0",
         show: { format: "epaper-show", version: 1, exported: now, workspace: "designer",
                 duration: project.show.duration, refresh_s: project.show.refresh_s,
-                cues: project.show.cues.map(({ id, item, at, design, partial, refresh_s, transition, sequence, span_s }) =>
-                  ({ id, item, at, design, partial: !!partial, refresh_s: refresh_s ?? null, transition: transition || "design", sequence: sequence || "natural", span_s: span_s ?? 0 })),
+                // The five edge fields (2026-10-22) travel cleaned, the way
+                // the Conductor's show.json keeps them: all five on a cue that
+                // has an edge, none on one left at the defaults - so the bundle
+                // opens in the Conductor with the same edge, and a show without
+                // edges exports exactly as it did before.
+                cues: project.show.cues.map(({ id, item, at, design, partial, refresh_s, transition, sequence, span_s, ...rest }) =>
+                  ({ id, item, at, design, partial: !!partial, refresh_s: refresh_s ?? null, transition: transition || "design", sequence: sequence || "natural", span_s: span_s ?? 0,
+                     ...globalThis.SIM.sequence.edgeStored(rest) })),
                 transitions: project.show.transitions || {}, labels: project.show.labels || {},
                 boards: project.show.boards || {}, music: project.show.music ? { name: project.show.music.name } : null },
         files: Object.assign({}, project.files),
