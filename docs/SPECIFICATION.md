@@ -184,6 +184,36 @@ pipeline = 1。
     無視するので実害はどちらでも無いが、0 は「T0 で描け」の意味であり、
     万一効いてしまうと衣装の反対側が冒頭で 1 枚だけ光る。最終フレームなら
     スイープの陰に隠れて見えない
+  - **スイープの縁(edge、2026-10-22)**: スイープの境目を直線ではなく
+    揺らがせる指定。カスタムのトランジションを持つキュー(`sequence`・
+    `span_s` の隣)と show.json の `transitions` の各デザインに、次の 5 つを
+    任意で持てる(無ければ既定 = 従来どおり)
+
+    | キー | 既定 | 整え方 |
+    |---|---|---|
+    | `edge` | `"straight"` | `straight` / `wave` / `fray` / `wave_fray` 以外は `straight` |
+    | `edge_rows` | 6 | 小数 1 桁、0〜24(固定幅、ランダム時は最大幅。単位はグリッドの 1 段 = 縦スイープなら 1 行) |
+    | `edge_random` | false | 真なら true(幅そのものが場所ごとに min〜max で変わる) |
+    | `edge_min_rows` | 1 | 小数 1 桁、0〜`edge_rows`(ランダム時だけ使う) |
+    | `edge_seed` | 1 | 整数 0〜999999(形を固定する種。「New pattern」は +1) |
+
+    - 各スケールの rank に幅ぶんまでのずれを足し(波 = 値ノイズ、ほつれ =
+      ハッシュ)、最小を 0 に寄せ直す。基準実装は `conductor/sequence.py` の
+      `edge_ranks()`、Conductor ページと設計者用シミュレータは同じ計算を JS で
+      ビット単位に再現する(`tools/make_goldens.py` の `edge_ranks` ケース)。
+      裏面は種に 1000 を足した別の形
+    - 遅延 = rank × span / 最大 rank のまま(rank が小数になるだけ)。**縁は span
+      の内側**で、最後のスケールはちょうど span 秒後に始まる。機体側の変更は
+      無い ― 従来の delay table(0x1F)の値が変わるだけ
+    - `sequence` が natural、または span が 0 のスイープは縁を無視する。
+      **straight は従来とバイト単位で同じ**(delay table・ショー id・
+      ゴールデン・3D 書き出し)。5 つが全部既定のときは show.json に何も
+      書かない(既存のショーのファイルと「changed since」は動かない)
+    - ページの状態では、各キューの `sweep` が 5 つと `rank_set`(rank の組の
+      名前、straight なら `""`)を持ち、各アイテムの `sweep_ranks` が
+      `{rank_set: [item.map.scales 順の rank]}` を持つ(キューとデザインの
+      トランジションが使う縁ごとに 1 つ)。straight は従来どおり
+      `item.sequences[sequence]`
 - **焼き込みの状態と force**(2026-09-25、`/status` の `show.burn`):
   - 新しいエージェントはロード済みのショーについて必ず `burn` を返し、その
     `state` は `burning`(書き込み中、`done`/`total`)| `burned`(完了)|

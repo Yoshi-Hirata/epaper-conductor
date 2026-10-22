@@ -663,6 +663,60 @@ def ranks_cases() -> list:
 
 
 # ============================================================
+# edge_ranks cases: the sweep's edge (2026-10-22)
+# ============================================================
+
+def edge_ranks_cases() -> list:
+    """sequence.edge_ranks() on whole garments - the reference the page
+    and the simulator port bit for bit (floats compared exactly: JSON
+    round-trips a double). Every edge, fixed and random width, a vertical
+    and a horizontal sequence, on a real garment and a small one, both
+    with a back (k = seed + 1000 there). `map` and `mapFixture` are the
+    same fixture name, `opts` as the ranks cases parse it; `expect` maps
+    "side|row|col" to the rank; `rankSet` is sequence.rank_set()."""
+    cases = []
+    sweeps = []
+    for sequence_id in ("top_down", "left_right"):
+        for edge in sequence.EDGES:
+            sweeps.append({"sequence": sequence_id, "span_s": 2.0, "edge": edge,
+                           "edge_rows": 6.0, "edge_random": False,
+                           "edge_min_rows": 1.0, "edge_seed": 1})
+            sweeps.append({"sequence": sequence_id, "span_s": 2.0, "edge": edge,
+                           "edge_rows": 9.5, "edge_random": True,
+                           "edge_min_rows": 2.0, "edge_seed": 4242})
+    # The rest of the sequences once each, and the corners of the fields:
+    # the centre (vertical, rebased), a zero width, a seed of 0 and the
+    # largest, a natural sequence (the edge ignored).
+    sweeps += [
+        {"sequence": "center", "span_s": 3.0, "edge": "wave_fray",
+         "edge_rows": 3.0, "edge_random": True, "edge_min_rows": 0.5,
+         "edge_seed": 17},
+        {"sequence": "bottom_up", "span_s": 1.0, "edge": "wave",
+         "edge_rows": 24.0, "edge_random": False, "edge_min_rows": 1.0,
+         "edge_seed": 0},
+        {"sequence": "right_left", "span_s": 1.0, "edge": "fray",
+         "edge_rows": 0.0, "edge_random": True, "edge_min_rows": 0.0,
+         "edge_seed": 999999},
+        {"sequence": "natural", "span_s": 1.0, "edge": "wave",
+         "edge_rows": 6.0, "edge_random": False, "edge_min_rows": 1.0,
+         "edge_seed": 1},
+    ]
+    for map_fixture in ("AZ271SD1301_map.csv", "Seq_map.csv"):
+        m, problems, used_item = parse_map_fixture(map_fixture)
+        if m is None:
+            continue
+        for sweep in sweeps:
+            ranked = sequence.edge_ranks(m, sweep)
+            cases.append({
+                "kind": "edge_ranks", "map": map_fixture, "mapFixture": map_fixture,
+                "opts": {"name": map_fixture, "item": used_item},
+                "sweep": dict(sweep), "rankSet": sequence.rank_set(sweep),
+                "expect": {f"{s}|{r}|{c}": v for (s, r, c), v in ranked.items()},
+            })
+    return cases
+
+
+# ============================================================
 # timeline cases (transcribed from tests/test_timeline.py)
 # ============================================================
 
@@ -1037,6 +1091,30 @@ def _small_project_cases() -> list:
                 "labels": {}, "boards": {}, "music": None}
     projects.append(("transition_span_over_max", {"files": files, "show": show_over}))
 
+    # The sweep's edge (2026-10-22): a design transition with one and a
+    # custom cue with another - the resolved sweeps carry the five fields
+    # and their rank_set, the design record its own, and the item one
+    # sweep_ranks entry per distinct rank_set; a straight cue adds none.
+    show_edge = {"duration": 120.0, "refresh_s": 8.0,
+                 "cues": [{"id": "a", "item": "Sample", "at": 0,
+                           "design": "Sample_color_pattern01_grid.csv"},
+                          {"id": "b", "item": "Sample", "at": 30,
+                           "design": "Sample_color_pattern01_grid.csv",
+                           "transition": "custom", "sequence": "left_right",
+                           "span_s": 1.5, "edge": "fray", "edge_rows": 2,
+                           "edge_seed": 5},
+                          {"id": "c", "item": "Sample", "at": 60,
+                           "design": "Sample_color_pattern01_grid.csv",
+                           "transition": "custom", "sequence": "top_down",
+                           "span_s": 1.0}],
+                 "transitions": {"Sample_color_pattern01_grid.csv":
+                                 {"sequence": "top_down", "span_s": 2.0,
+                                  "edge": "wave_fray", "edge_rows": 3,
+                                  "edge_random": True, "edge_min_rows": 1,
+                                  "edge_seed": 9}},
+                 "labels": {}, "boards": {}, "music": None}
+    projects.append(("transition_with_edge", {"files": files, "show": show_edge}))
+
     # A DIP ID set by hand (show.json's `dips`): Sample's third board, 20,
     # would rank as address 3; its switches really read 28, so the bus is
     # 1, 2, 28 - the gap the rank left stays a gap. The board's row also
@@ -1152,6 +1230,7 @@ def build_goldens() -> dict:
     cases += design_cases()
     cases += check_cases()
     cases += ranks_cases()
+    cases += edge_ranks_cases()
     cases += timeline_cases()
     cases += state_cases()
     cases += state_digest_cases()

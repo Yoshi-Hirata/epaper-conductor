@@ -1401,17 +1401,24 @@ def test_the_show_file_carries_uint16_delay_tables_and_the_unit_of_ten_ms(worksp
 
 # ---- per-design transitions ----
 
+# A sweep with no edge, as the page state carries it (2026-10-22): the five
+# defaults, and no ranks of its own.
+NO_EDGE = {"edge": "straight", "edge_rows": 6.0, "edge_random": False,
+           "edge_min_rows": 1.0, "edge_seed": 1, "rank_set": ""}
+
+
 def test_a_designs_transition_is_stored_and_undoable(workspace):
     grid = "Look22_color_pattern01_grid.csv"
     workspace.set_transition(grid, "top_down", 3.0)
     design = item(workspace.state(), "Look22")["designs"][0]
-    assert design["transition"] == {"sequence": "top_down", "span_s": 3.0}
+    assert design["transition"] == {"sequence": "top_down", "span_s": 3.0,
+                                    **NO_EDGE}
     assert workspace.state()["transitions"] == {grid: {"sequence": "top_down",
                                                         "span_s": 3.0}}
     assert workspace.undo()
     assert workspace.state()["transitions"] == {}
     assert item(workspace.state(), "Look22")["designs"][0]["transition"] == \
-        {"sequence": "natural", "span_s": 0.0}
+        {"sequence": "natural", "span_s": 0.0, **NO_EDGE}
     with pytest.raises(ValueError):
         workspace.set_transition("nope.csv", "top_down", 3.0)
     # Natural, or a zero span, removes the entry - and is not a step if
@@ -1430,7 +1437,7 @@ def test_a_cue_inherits_the_design_transition_and_reaches_the_show_file(workspac
     cue = workspace.state()["show"]["cues"][0]
     assert cue["transition"] == "design"                # nothing overridden
     assert cue["sweep"] == {"sequence": "top_down", "span_s": 2.0,
-                            "source": "design"}
+                            "source": "design", **NO_EDGE}
     assert cue["span"] == 2.0
     shows, problems = workspace.compile_show()
     assert problems == []
@@ -1441,8 +1448,228 @@ def test_a_cue_inherits_the_design_transition_and_reaches_the_show_file(workspac
                                   "design": grid, "transition": "custom",
                                   "sequence": "natural", "span_s": 0}])
     cue = workspace.state()["show"]["cues"][0]
-    assert cue["sweep"] == {"sequence": "natural", "span_s": 0.0, "source": "cue"}
+    assert cue["sweep"] == {"sequence": "natural", "span_s": 0.0, "source": "cue",
+                            **NO_EDGE}
     assert cue["span"] == 0.0
+
+
+# ---- the sweep's edge (2026-10-22) ----
+
+WAVE = {"edge": "wave_fray", "edge_rows": 2.5, "edge_random": True,
+        "edge_min_rows": 0.5, "edge_seed": 7}
+
+
+def _edge_of(entry):
+    return {k: entry[k] for k in WAVE}
+
+
+def _frames(tables):
+    return [f for t in tables.values()
+            for f in struct.unpack(">64H", bytes.fromhex(t)) if f != 0xFFFF]
+
+
+def test_a_cues_edge_reaches_the_page_with_its_own_ranks(workspace):
+    from conductor import sequence
+    grid = "Look22_color_pattern01_grid.csv"
+    workspace.set_timeline(600, [
+        {"id": "a", "item": "Look22", "at": 0, "design": grid,
+         "transition": "custom", "sequence": "top_down", "span_s": 1.0},
+        {"id": "b", "item": "Look22", "at": 60, "design": grid,
+         "transition": "custom", "sequence": "top_down", "span_s": 2.0, **WAVE},
+        # The same shape at another span is the same ranks: one entry.
+        {"id": "c", "item": "Look22", "at": 120, "design": grid,
+         "transition": "custom", "sequence": "top_down", "span_s": 3.0, **WAVE}])
+    state = workspace.state()
+    a, b, c = state["show"]["cues"]
+    assert a["sweep"]["rank_set"] == "" and a["sweep"]["edge"] == "straight"
+    assert _edge_of(b["sweep"]) == WAVE
+    # Each cue also echoes its own five fields next to sequence/span_s,
+    # defaults included, for the page's cue editor - though show.json
+    # stores none for the cue without an edge.
+    assert _edge_of(a) == {k: NO_EDGE[k] for k in WAVE}
+    assert _edge_of(b) == WAVE
+    stored = json.loads((workspace.root / "show.json").read_text(
+        encoding="utf-8"))["cues"]
+    assert "edge" not in stored[0] and _edge_of(stored[1]) == WAVE
+    assert b["sweep"]["rank_set"] == "top_down/wave_fray/2.5/random/0.5/7"
+    assert c["sweep"]["rank_set"] == b["sweep"]["rank_set"]
+    look = item(state, "Look22")
+    assert list(look["sweep_ranks"]) == [b["sweep"]["rank_set"]]
+    ranks = look["sweep_ranks"][b["sweep"]["rank_set"]]
+    # In item.map.scales order, as item.sequences are.
+    look_map = workspace._maps_for_migration({})["look22"]
+    expected = sequence.edge_ranks(look_map, b["sweep"])
+    assert ranks == [expected[(s, r, col)] for s, r, col, _, _ in look["map"]["scales"]]
+    assert ranks != look["sequences"]["top_down"] and min(ranks) == 0
+    # The span still ends where it says: the edge is inside it.
+    assert b["span"] == 2.0 and b["problems"] == []
+
+
+def test_an_item_with_no_edge_has_empty_sweep_ranks(workspace):
+    state = workspace.state()
+    assert all(entry["sweep_ranks"] == {} for entry in state["items"])
+
+
+def test_a_show_without_edges_keeps_its_file_and_its_unit_show_ids(workspace):
+    """Straight is today, byte for byte: posting the five defaults stores
+    nothing new (no undo step, the same revision), and the units' show
+    ids and delay tables do not move."""
+    grid = "Look22_color_pattern01_grid.csv"
+    workspace.assign("Look22", "radxa-01")
+    plain = [{"id": "a", "item": "Look22", "at": 0, "design": grid},
+             {"id": "b", "item": "Look22", "at": 60, "design": grid,
+              "transition": "custom", "sequence": "top_down", "span_s": 2.0}]
+    workspace.set_timeline(600, plain)
+    before_file = (workspace.root / "show.json").read_text(encoding="utf-8")
+    before_rev = workspace.revision()
+    before_shows, _ = workspace.compile_show()
+    steps = workspace.state()["history"]["undo"]
+    defaults = {"edge": "straight", "edge_rows": 6, "edge_random": False,
+                "edge_min_rows": 1, "edge_seed": 1}
+    workspace.set_timeline(600, [dict(c, **defaults) for c in plain])
+    assert workspace.state()["history"]["undo"] == steps          # not a step
+    assert (workspace.root / "show.json").read_text(encoding="utf-8") == before_file
+    assert "edge" not in before_file
+    assert workspace.revision() == before_rev
+    shows, _ = workspace.compile_show()
+    assert shows["radxa-01"]["id"] == before_shows["radxa-01"]["id"]
+    assert shows == before_shows
+
+
+def test_the_units_get_the_edge_as_their_delays(workspace):
+    grid = "Look22_color_pattern01_grid.csv"
+    workspace.assign("Look22", "radxa-01")
+    cue = {"id": "b", "item": "Look22", "at": 60, "design": grid,
+           "transition": "custom", "sequence": "top_down", "span_s": 2.0}
+    workspace.set_timeline(600, [cue])
+    straight, _ = workspace.compile_show()
+    workspace.set_timeline(600, [dict(cue, **WAVE)])
+    edged, problems = workspace.compile_show()
+    assert problems == []
+    old = straight["radxa-01"]["cues"][0]
+    new = edged["radxa-01"]["cues"][0]
+    assert new["delays"] != old["delays"]
+    assert edged["radxa-01"]["id"] != straight["radxa-01"]["id"]
+    frames = _frames(new["delays"])
+    # The first scale with the broadcast, the last exactly on the span.
+    assert min(frames) == 0 and max(frames) == 200
+    assert new["span"] == old["span"] == 2.0
+    # Every scale between the two: the edge is never added to the span.
+    assert sorted(frames) != sorted(_frames(old["delays"]))
+
+
+def test_a_designs_edge_is_stored_previewed_and_sent_with_a_prepare(workspace):
+    grid = "Look22_color_pattern01_grid.csv"
+    workspace.assign("Look22", "radxa-01")
+    workspace.set_transition(grid, "top_down", 3.0, edge=WAVE)
+    stored = json.loads((workspace.root / "show.json").read_text(
+        encoding="utf-8"))["transitions"][grid]
+    assert stored == {"sequence": "top_down", "span_s": 3.0, **WAVE}
+    state = workspace.state()
+    look = item(state, "Look22")
+    record = look["designs"][0]["transition"]
+    assert _edge_of(record) == WAVE
+    assert record["rank_set"] == "top_down/wave_fray/2.5/random/0.5/7"
+    # Ranked before any cue wears it, so the Designs tab can preview it.
+    assert list(look["sweep_ranks"]) == [record["rank_set"]]
+    # A cue that wears the design sweeps with its edge.
+    workspace.set_timeline(600, [{"id": "a", "item": "Look22", "at": 0,
+                                  "design": grid}])
+    sweep = workspace.state()["show"]["cues"][0]["sweep"]
+    assert sweep["source"] == "design" and sweep["rank_set"] == record["rank_set"]
+    # The manual one-shot carries the same edge.
+    payloads, problems = workspace.compile_units({"Look22": grid}, "m")
+    assert problems == []
+    edged = payloads["radxa-01"]["delays"]
+    assert min(_frames(edged)) == 0 and max(_frames(edged)) == 300
+    workspace.set_transition(grid, "top_down", 3.0)          # no edge given
+    assert json.loads((workspace.root / "show.json").read_text(
+        encoding="utf-8"))["transitions"][grid] == {"sequence": "top_down",
+                                                    "span_s": 3.0}
+    payloads, _ = workspace.compile_units({"Look22": grid}, "m")
+    assert payloads["radxa-01"]["delays"] != edged
+    assert workspace.undo()
+    assert _edge_of(workspace.state()["transitions"][grid]) == WAVE
+
+
+def test_the_edge_round_trips_through_save_show_and_load_show(workspace):
+    grid = "Look22_color_pattern01_grid.csv"
+    workspace.set_transition(grid, "bottom_up", 1.5, edge=dict(WAVE, edge="fray"))
+    workspace.set_timeline(600, [{"id": "a", "item": "Look22", "at": 0,
+                                  "design": grid, "transition": "custom",
+                                  "sequence": "left_right", "span_s": 2.0,
+                                  **WAVE}])
+    exported = workspace.export_show()
+    assert _edge_of(exported["cues"][0]) == WAVE
+    assert _edge_of(exported["transitions"][grid]) == dict(WAVE, edge="fray")
+    workspace.set_timeline(600, [])
+    workspace.set_transition(grid, "natural", 0)
+    workspace.import_show(json.loads(json.dumps(exported)))
+    state = workspace.state()
+    assert _edge_of(state["show"]["cues"][0]) == WAVE
+    assert _edge_of(state["show"]["cues"][0]["sweep"]) == WAVE
+    assert _edge_of(state["transitions"][grid]) == dict(WAVE, edge="fray")
+    # A hand-edited file's junk is tidied on the way in, not refused.
+    exported["cues"][0].update(edge="zigzag", edge_rows=99, edge_seed=-3)
+    exported["transitions"][grid].update(edge_min_rows=50)
+    workspace.import_show(exported)
+    cue = workspace.state()["show"]["cues"][0]
+    assert (cue["edge"], cue["edge_rows"], cue["edge_seed"]) == ("straight", 24.0, 0)
+    assert workspace.state()["transitions"][grid]["edge_min_rows"] == 2.5
+
+
+def test_the_edge_arrives_with_a_designers_bundle(workspace):
+    grid = "Look22_color_pattern01_grid.csv"
+    workspace.import_bundle({
+        "format": "epaper-show-bundle", "version": 1, "files": {},
+        "show": {"format": "epaper-show", "version": 1, "duration": 600,
+                 "transitions": {grid: {"sequence": "center", "span_s": 2,
+                                        **WAVE}},
+                 "cues": [{"id": "a", "item": "Look22", "at": 0,
+                           "design": grid}]}})
+    state = workspace.state()
+    assert _edge_of(state["transitions"][grid]) == WAVE
+    sweep = state["show"]["cues"][0]["sweep"]
+    assert sweep["rank_set"] == "center/wave_fray/2.5/random/0.5/7"
+    assert sweep["rank_set"] in item(state, "Look22")["sweep_ranks"]
+
+
+def test_the_edge_is_taken_over_http(tmp_path):
+    ws = Workspace(tmp_path / "ws")
+    ws.save("Look22_map.csv", MAP)
+    ws.save("Look22_color_pattern01_grid.csv", GRID)
+    grid = "Look22_color_pattern01_grid.csv"
+    server = make_server(ws.root, port=0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+
+    def post(path, body):
+        request = urllib.request.Request(f"{base}{path}",
+                                         data=json.dumps(body).encode())
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return json.loads(response.read())
+
+    try:
+        assert post("/api/transition", {"design": grid, "sequence": "top_down",
+                                        "span_s": 2, **WAVE})["ok"]
+        assert post("/api/show", {"duration": 600, "cues": [
+            {"id": "a", "item": "Look22", "at": 0, "design": grid,
+             "transition": "custom", "sequence": "right_left", "span_s": 1,
+             **dict(WAVE, edge="wave", edge_seed=8)}]})["ok"]
+        with urllib.request.urlopen(f"{base}/api/state", timeout=5) as response:
+            state = json.loads(response.read())
+        assert _edge_of(state["transitions"][grid]) == WAVE
+        cue = state["show"]["cues"][0]
+        assert _edge_of(cue["sweep"]) == dict(WAVE, edge="wave", edge_seed=8)
+        look = item(state, "Look22")
+        assert set(look["sweep_ranks"]) == {
+            cue["sweep"]["rank_set"],
+            look["designs"][0]["transition"]["rank_set"]}
+        assert all(len(r) == len(look["map"]["scales"])
+                   for r in look["sweep_ranks"].values())
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 # ---- the show's music ----
