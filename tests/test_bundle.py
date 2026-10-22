@@ -438,7 +438,12 @@ def test_a_full_width_design_name_is_kept_exactly_as_the_site_writes_it(tmp_path
     # the designer set on it - "is not loaded" was the whole symptom.
     designs = item(state, "Look22")["designs"]
     assert [d["name"] for d in designs] == [wide]
-    assert designs[0]["transition"] == {"sequence": "top_down", "span_s": 2.0}
+    # (the transition also carries the sweep-edge fields at their defaults
+    # and an empty rank_set since the edge landed - only the pair the
+    # designer set is pinned here)
+    transition = designs[0]["transition"]
+    assert (transition["sequence"], transition["span_s"]) == ("top_down", 2.0)
+    assert transition["edge"] == "straight" and transition["rank_set"] == ""
 
 
 def test_a_full_width_hw_name_and_a_japanese_design_name_both_round_trip(tmp_path):
