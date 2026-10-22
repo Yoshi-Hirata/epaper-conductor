@@ -12,3 +12,5 @@ exhibition-data/
 # designers…" button, or `python tools/build_designer.py --music auto` -
 # and never committed: only the lean dist/az27ss-simulator.html is.
 dist/*-with-music.html
+# The 3D developer kit (docs/3d_kit/ + tools/blender/ + a sample export), built on demand.
+dist/EPaper_3D_kit_*

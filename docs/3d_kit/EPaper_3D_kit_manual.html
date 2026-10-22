@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E-paper 3D キット</title>
+<style>
+  :root {
+    --ink: #1d2230; --muted: #5b6475; --line: #d9dde5; --soft: #f3f5f9;
+    --accent: #3a5bd9; --warn: #a3520f; --warn-bg: #fff4e8; --code-bg: #f1f3f7;
+  }
+  @page { size: A4; margin: 16mm 15mm 16mm 15mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--ink);
+         font: 10.5pt/1.65 "Yu Gothic UI", "Hiragino Sans", "Noto Sans JP", "Segoe UI", sans-serif; }
+  main { max-width: 820px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { font-size: 21pt; margin: 0 0 4px; letter-spacing: .02em; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  h2 { font-size: 13.5pt; margin: 26px 0 8px; padding-bottom: 4px; border-bottom: 2px solid var(--ink);
+       break-after: avoid; }
+  h3 { font-size: 11pt; margin: 16px 0 6px; break-after: avoid; }
+  p, li { margin: 4px 0; }
+  ul, ol { padding-left: 1.4em; margin: 6px 0; }
+  code, pre { font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: 9.2pt; }
+  code { background: var(--code-bg); padding: 1px 4px; border-radius: 3px; }
+  pre { background: var(--code-bg); padding: 10px 12px; border-radius: 6px; overflow-x: auto;
+        white-space: pre-wrap; word-break: break-all; break-inside: avoid; margin: 8px 0; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 9.6pt; break-inside: avoid; }
+  th, td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; white-space: nowrap; }
+  .box { border: 1px solid var(--line); background: var(--soft); border-radius: 8px; padding: 10px 14px;
+         margin: 10px 0; break-inside: avoid; }
+  .warn { border-color: #f0c79e; background: var(--warn-bg); }
+  .warn strong { color: var(--warn); }
+  .flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+  .flow div { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; }
+  .flow b { display: block; color: var(--accent); font-size: 9pt; }
+  .toc { columns: 2; column-gap: 24px; font-size: 9.8pt; }
+  .toc a { color: inherit; text-decoration: none; }
+  @media (max-width: 600px) { .flow { grid-template-columns: 1fr; } .toc { columns: 1; } }
+  @media print { main { padding: 0; max-width: none; } a { color: inherit; text-decoration: none; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>E-paper 3D キット</h1>
+<p class="sub">AZ 27SS の衣装の鱗(電子ペーパー)の色の変化を、Blender の 3D モデルで再現するための説明書 ― 2026-10-22 版</p>
+
+<div class="box">
+  このキットは、ショーを操作する PC(Conductor)が書き出す <b>3D 用 JSON</b> と、それを Blender で読み込む
+  <b>Python スクリプト</b>のセットです。スクリプトを実行すると、モデルの各鱗に、本番の画面と同じ色の変化
+  (書き換えの波と、書き換え中のチラつきを含む)がキーフレームとして入ります。
+  受け取る側で計算することはなく、<b>鱗のオブジェクトに決まった名前を付けておくこと</b>だけが必要です。
+</div>
+
+<nav class="toc">
+  <div>1. 同梱物</div><div>2. 全体の流れ</div><div>3. 動作環境</div><div>4. モデルの準備(鱗の名前)</div>
+  <div>5. 実行のしかた</div><div>6. 設定項目</div><div>7. 見え方(色・マテリアル)</div><div>8. 時間とフレーム</div>
+  <div>9. 書き出し直したとき</div><div>10. 重さの目安</div><div>11. 困ったとき</div><div>12. JSON の中身(要点)</div>
+</nav>
+
+<h2>1. 同梱物</h2>
+<table>
+  <tr><th>ファイル</th><th>内容</th></tr>
+  <tr><td><code>EPaper_3D_kit_manual.pdf</code></td><td>この説明書</td></tr>
+  <tr><td><code>import_epaper_3d.py</code></td><td>Blender 用の取り込みスクリプト(Python、Blender の中で動く)</td></tr>
+  <tr><td><code>EXPORT_3D_FORMAT.md</code></td><td>3D 用 JSON(形式名 <code>epaper-3d-timeline</code> v1)の詳しい仕様</td></tr>
+  <tr><td><code>scales.csv</code></td><td>全鱗の一覧(品番・LOOK・鱗の名前・表裏・行・列)。モデルの名前付けに使う</td></tr>
+  <tr><td><code>sample/…json</code></td><td>動作確認用の書き出し例。今の演出データは <b>LOOK 28(AZ271SD1307)だけに色が付いている</b>途中段階のもの(ほかの品番はずっと色なし)</td></tr>
+</table>
+
+<h2>2. 全体の流れ</h2>
+<div class="flow">
+  <div><b>① ショーの PC</b>Conductor の Timeline で <code>Export for 3D simulator…</code> を押し、JSON を書き出す</div>
+  <div><b>② 受け渡し</b>JSON(と必要なら音源の MP3)を 3D 担当へ渡す</div>
+  <div><b>③ Blender</b>スクリプトで JSON を読み込むと、全鱗にキーフレームが入る</div>
+</div>
+<p>演出が更新されたら、①〜③を繰り返します。スクリプトを再実行すると、前回のキーは置き換わります。</p>
+
+<h2>3. 動作環境</h2>
+<ul>
+  <li><b>Blender 3.6 〜 5.x</b>。4.4 以降の新しいアニメーションの仕組み(スロット付きアクション)と、それ以前の仕組みの両方に対応</li>
+  <li>追加のアドオンやライブラリは不要(Blender に入っている Python だけで動く)</li>
+</ul>
+
+<h2>4. モデルの準備(鱗の名前)</h2>
+<p>鱗は、本番の配線ファイルの <b>ラベル</b>で識別します。各鱗のオブジェクトに、このラベルと同じ名前を付けてください。</p>
+<table>
+  <tr><th>ラベルの例</th><th>意味</th></tr>
+  <tr><td><code>017-01</code></td><td>基板 17 番のソケット 1 番につながっている鱗(基板番号は 3 桁、ソケットは 2 桁)</td></tr>
+</table>
+<ul>
+  <li>全 10 品番・<b>8,011 枚</b>のラベルは、品番をまたいでも重複しません。品番を付けずにラベルだけで名前を付けられます</li>
+  <li>品番付きの名前 <code>AZ271SD1307_033-01</code> または <code>AZ271SD1307/033-01</code> でも見つけられます</li>
+  <li>どの鱗がどのラベルかは <code>scales.csv</code> を見てください。<code>side</code>(front / back)・<code>row</code>(行)・<code>col</code>(列)は、
+      デザイン上の格子での位置です。名前付けの照合に使えます</li>
+  <li>鱗は 1 枚 = 1 オブジェクトにしてください(色をオブジェクトごとに付けるため)。メッシュの共有(リンク複製)は問題ありません</li>
+</ul>
+<table>
+  <tr><th>品番</th><th>LOOK</th><th>鱗の数</th><th>品番</th><th>LOOK</th><th>鱗の数</th></tr>
+  <tr><td>AZ271SD1305</td><td>23</td><td>862</td><td>AZ271SB2303(Skirt)</td><td>26</td><td>876</td></tr>
+  <tr><td>AZ271SD1305_B</td><td>24</td><td>862</td><td>AZ271SD1306</td><td>27</td><td>1,083</td></tr>
+  <tr><td>AZ271SD1301</td><td>25</td><td>1,482</td><td>AZ271SD1307</td><td>28</td><td>1,217</td></tr>
+  <tr><td>AZ271SC6302(Tops)</td><td>26</td><td>868</td><td>AZ271SG1035(Bag 01)</td><td>―</td><td>432</td></tr>
+  <tr><td>AZ271SG1036(Bag 02)</td><td>―</td><td>168</td><td>AZ271SG3037(Bag 03)</td><td>―</td><td>161</td></tr>
+</table>
+
+<h2>5. 実行のしかた</h2>
+<h3>A. Blender の画面から</h3>
+<ol>
+  <li>モデルの .blend を開き、<b>Scripting</b> タブへ</li>
+  <li>テキストエディタで <code>import_epaper_3d.py</code> を開く</li>
+  <li>先頭の設定 <code>JSON_PATH = r"…"</code> に、書き出した JSON の場所を書く</li>
+  <li><b>Run Script</b>(▶)を押す。結果はシステムコンソール(Window → Toggle System Console)に出る</li>
+</ol>
+<pre><code>[epaper-3d] {'scales keyed': 1217, 'keys': 270928, 'missing objects': 0,
+             'show 0:00 at frame': 241.0, 'frames': (1, 19891), 'fps': 30.0}</code></pre>
+<h3>B. コマンドラインから</h3>
+<pre><code>blender model.blend --python import_epaper_3d.py -- show-3d.json</code></pre>
+<p><code>--</code> のあとに JSON の場所を書きます(<code>JSON_PATH</code> より優先)。保存まで自動にしたい場合は、
+<code>--background</code> を付け、最後に <code>bpy.ops.wm.save_mainfile()</code> を呼ぶ 1 行を足してください。</p>
+
+<h2>6. 設定項目</h2>
+<p>スクリプト先頭の <code>settings</code> の部分を書き換えます。</p>
+<table>
+  <tr><th>項目</th><th>既定</th><th>意味</th></tr>
+  <tr><td><code>JSON_PATH</code></td><td>空</td><td>読み込む JSON の場所</td></tr>
+  <tr><td><code>ITEMS</code></td><td><code>None</code></td><td>読み込む品番。<code>None</code> は全部。例:<code>["AZ271SD1307"]</code></td></tr>
+  <tr><td><code>INCLUDE_PRESET</code></td><td><code>True</code></td><td>開始前のプリセット(マイナスの時刻)からフレームを並べる。<code>False</code> なら 0:00 が開始フレーム</td></tr>
+  <tr><td><code>NULL_COLOR</code></td><td><code>#808080</code></td><td>ショーの色が付いていない鱗の色(最初の色が付くまで、など)</td></tr>
+  <tr><td><code>ASSIGN_MATERIAL</code></td><td><code>False</code></td><td><code>True</code> にすると、全部の鱗に共通マテリアル「EPaper Scale」を付ける(既存のマテリアルは外れる)</td></tr>
+  <tr><td><code>EMISSION</code></td><td><code>0.0</code></td><td>0 より大きいと、その強さで鱗の色を発光させる(実物の電子ペーパーは光らない)</td></tr>
+  <tr><td><code>MUSIC_PATH</code></td><td>空</td><td>音源のファイル。指定すると、0:00 の位置にサウンドストリップを置く</td></tr>
+  <tr><td><code>SNAP_TO_FRAMES</code></td><td><code>False</code></td><td><code>True</code> で 1 フレームに 1 キーへまとめる(軽くなるが、1 フレームより細かいチラつきは消える)</td></tr>
+  <tr><td><code>ACTION_PREFIX</code></td><td><code>"EPaper "</code></td><td>作るアクションの名前の頭。再実行のときはこの名前で置き換える</td></tr>
+</table>
+
+<h2>7. 見え方(色・マテリアル)</h2>
+<ul>
+  <li>色は<b>オブジェクトの色</b>(オブジェクトプロパティ → ビューポート表示 → カラー、<code>obj.color</code>)に、
+      <b>補間なし(Constant)</b>で打ちます。マテリアルを鱗ごとに複製しないので、8,000 枚でも 1 つのマテリアルで済みます</li>
+  <li><b>ビューポート</b>:Solid 表示のシェーディング設定で Color を <b>Object</b> にすると、すぐに見えます</li>
+  <li><b>レンダー</b>:スクリプトが作るマテリアル「EPaper Scale」は、<b>Object Info ノードの Color</b> を Base Color につないだものです。
+      手持ちのマテリアルを使う場合は、Object Info → Color をつないでください</li>
+  <li>JSON の色(<code>#rrggbb</code>)は sRGB です。スクリプトがリニアに変換して入れるので、
+      カラーマネジメントの View Transform を <b>Standard</b> にすると、本番の画面の色とそろいます(Filmic / AgX では色味が変わります)</li>
+</ul>
+<div class="box warn"><strong>補間は必ず Constant のままにしてください。</strong>
+キーの間をなめらかにつなぐと、色が混ざって本番とは別の見え方になります。グラフエディタで補間を変えないでください。</div>
+
+<h2>8. 時間とフレーム</h2>
+<ul>
+  <li>JSON の時刻はショーの時計(秒、0 = START、ミリ秒単位)。シーンの fps(<code>fps / fps_base</code>)でフレームに直します</li>
+  <li>開始前のプリセットはマイナスの時刻から始まります(今のデータでは −8 秒)。<code>INCLUDE_PRESET = True</code> のとき、
+      その最初のキーがシーンの開始フレームになり、<b>0:00 のフレーム</b>は実行結果の <code>show 0:00 at frame</code> に出ます</li>
+  <li>シーンの終了フレームは、ショーの長さ(<code>duration</code>)に合わせて自動で設定します</li>
+  <li>キーは書き出しどおりの時刻(小数のフレーム)に打つので、レンダーの fps を変えても時刻はずれません</li>
+  <li>音源は JSON に入っていません(名前だけ)。ショー担当から MP3 を別に受け取り、<code>MUSIC_PATH</code> に指定してください</li>
+</ul>
+
+<h2>9. 書き出し直したとき</h2>
+<ul>
+  <li>新しい JSON でスクリプトを再実行すれば、前回のキー(アクション <code>EPaper &lt;ラベル&gt;</code>)は置き換わります</li>
+  <li>鱗に手でつけたほかのアニメーションがある場合、そのオブジェクトのアクションは差し替わるので注意してください</li>
+</ul>
+
+<h2>10. 重さの目安</h2>
+<table>
+  <tr><th>データ</th><th>キーの数</th><th>メモ</th></tr>
+  <tr><td>同梱の sample(LOOK 28 のみ)</td><td>約 27 万</td><td>1,217 枚、1 枚あたり約 230 キー</td></tr>
+  <tr><td>全品番に色が付いたフルのショー</td><td>約 180 万(見込み)</td><td>読み込みに数分。重いときは <code>ITEMS</code> で品番を絞るか、<code>SNAP_TO_FRAMES = True</code></td></tr>
+</table>
+
+<h2>11. 困ったとき</h2>
+<table>
+  <tr><th>症状</th><th>原因と対処</th></tr>
+  <tr><td><code>no object for: …</code> と出る</td><td>その名前のオブジェクトがない。<code>scales.csv</code> のラベルと名前を照合する。
+      Blender が複製時に付ける <code>.001</code> などが残っていないか確認</td></tr>
+  <tr><td>ビューポートで色が見えない</td><td>Solid 表示の Color を Object にする。マテリアル表示・レンダーでは、マテリアルが Object Info の Color を使っているか確認</td></tr>
+  <tr><td>色がくすむ・明るすぎる</td><td>View Transform を Standard に。発光(<code>EMISSION</code>)やライトの強さも確認</td></tr>
+  <tr><td>色がパッと切り替わるだけで、チラつきがない</td><td><code>SNAP_TO_FRAMES</code> が True、または fps が低いと細かい変化が見えにくい。fps を上げて確認</td></tr>
+  <tr><td>色がなめらかに混ざる</td><td>補間が Constant 以外になっている。スクリプトを再実行する</td></tr>
+  <tr><td>ずっと灰色の品番がある</td><td>その品番に演出(色の指示)がまだない。同梱の sample は LOOK 28 だけ</td></tr>
+  <tr><td><code>is not an epaper-3d-timeline v1 file</code></td><td>別の JSON(デザイナー用のプロジェクトファイルなど)を読んでいる。<code>Export for 3D simulator…</code> の書き出しを使う</td></tr>
+</table>
+
+<h2>12. JSON の中身(要点)</h2>
+<p>詳しくは <code>EXPORT_3D_FORMAT.md</code>。スクリプトを使う限り、中身を意識する必要はありません。</p>
+<pre><code>{
+  "format": "epaper-3d-timeline", "version": 1,
+  "duration": 655.0,                      // ショーの長さ(秒)
+  "music": {"name": "….mp3"},             // 音源は名前だけ
+  "interpolation": "constant",
+  "colors": ["#3a2f5a", "#2b2a4e", …],    // キーが参照する色の表
+  "items": {
+    "AZ271SD1307": {
+      "look": "28",
+      "scales": [{"label": "033-01", "side": "front", "row": 14, "col": 10}, …],
+      "cues":   [{"at": 10.0, "design": "…csv", "label": "案-G", "partial": false}, …],
+      "keys":   {"033-01": [[-7.865, 0], [-7.615, 1], …]}   // [時刻(秒), colors の番号 or null]
+    }, …
+  }
+}</code></pre>
+<ul>
+  <li><code>keys</code> が鱗ごとの色の変化のすべて。各キーの色を、次のキーまで保持します</li>
+  <li><code>null</code> は「ショーの色が付いていない」状態(スクリプトでは <code>NULL_COLOR</code>)</li>
+  <li><code>cues</code> は参考情報(どの時刻にどのデザインへ変わるか)。字幕やタイムライン表示に使えます</li>
+  <li>書き換え中の鱗は、暗転 → いろいろな色のチラつき → 目標の色に寄っていく → 確定、を 0.25 秒程度の刻みで変化します。
+      これも全部キーとして入っていて、本番の Conductor の画面と 50 ms 刻みで一致することを確認済みです</li>
+</ul>
+
+</main>
+</body>
+</html>
