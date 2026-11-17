@@ -251,6 +251,36 @@ _UPDATE_STATUS = {
 }
 
 
+def _image_parts(label: str) -> "tuple[str, str, bool]":
+    """'FW_261109/mcb_pink_purple_0_7.bin (trial)' -> ('FW_261109',
+    'mcb_pink_purple_0_7.bin', True); a label with no folder keeps its
+    whole text as the name."""
+    trial = label.endswith(" (trial)")
+    if trial:
+        label = label[:-len(" (trial)")]
+    folder, sep, name = label.partition("/")
+    return (folder, name, trial) if sep else ("", label, trial)
+
+
+def _name_lines(name: str, max_width: int) -> "tuple[list[str], object]":
+    """(lines, font) for the file name: one FONT_M line when it fits, else
+    one FONT_S line, else two FONT_S lines broken at a '_', '.' or '-' near
+    the end of the first, the second ellipsized only if even that is not
+    enough."""
+    if FONT_M.getlength(name) <= max_width:
+        return [name], FONT_M
+    if FONT_S.getlength(name) <= max_width:
+        return [name], FONT_S
+    cut = len(name)
+    while cut > 1 and FONT_S.getlength(name[:cut]) > max_width:
+        cut -= 1
+    for i in range(cut, max(1, cut - 12), -1):
+        if name[i - 1] in "_.-":
+            cut = i
+            break
+    return [name[:cut], _ellipsize(name[cut:], FONT_S, max_width)], FONT_S
+
+
 def update_screen(firmware: str, size: int, addr: int, phase: str,
                   board_state: str, done: int, log_lines: list[str],
                   error: str | None = None,
@@ -271,21 +301,38 @@ def update_screen(firmware: str, size: int, addr: int, phase: str,
     status, color = _UPDATE_STATUS.get(phase, (phase.upper(), DIM))
     _header(draw, "FW UPDATE", status=status, status_color=color, host=host)
 
-    draw.text((8, 32), "image", font=FONT_S, fill=DIM)
+    # The image on two lines so the whole name is readable before KEY1:
+    # "image  FW_<yymmdd>  trial  < n/m >", then the file name in full
+    # (two smaller lines if it is too long for one).
+    folder, name, trial = _image_parts(firmware)
+    draw.text((8, 30), "image", font=FONT_S, fill=DIM)
     choice = f"< {image_choice} >" if image_choice else ""
     choice_w = int(FONT_S.getlength(choice)) + 6 if choice else 0
-    draw.text((56, 30), _ellipsize(firmware, FONT_M, WIDTH - 64 - choice_w),
-              font=FONT_M, fill=FG)
+    trial_w = int(FONT_S.getlength("TRIAL")) + 8 if trial else 0
+    x = 52
+    if folder:
+        draw.text((x, 30), _ellipsize(folder, FONT_S, WIDTH - x - 8 - choice_w - trial_w),
+                  font=FONT_S, fill=FG)
+        x += int(FONT_S.getlength(folder)) + 8
+    if trial:
+        draw.text((min(x, WIDTH - 8 - choice_w - trial_w + 8), 30), "TRIAL",
+                  font=FONT_S, fill=WARN)
     if choice:
-        draw.text((WIDTH - 8 - choice_w + 6, 32), choice, font=FONT_S, fill=DIM)
-    draw.text((8, 52), "board", font=FONT_S, fill=DIM)
-    draw.text((56, 46), f"{addr:02d}", font=FONT_L, fill=FG)
+        draw.text((WIDTH - 8 - choice_w + 6, 30), choice, font=FONT_S, fill=DIM)
+    lines, font = _name_lines(name, WIDTH - 16)
+    if len(lines) == 1:
+        draw.text((8, 46 if font is FONT_M else 48), lines[0], font=font, fill=FG)
+    else:
+        for i, line in enumerate(lines):
+            draw.text((8, 44 + 12 * i), line, font=FONT_S, fill=FG)
+    draw.text((8, 72), "board", font=FONT_S, fill=DIM)
+    draw.text((56, 66), f"{addr:02d}", font=FONT_L, fill=FG)
     tint = ERR if board_state.startswith(("ERROR", "no ")) else DIM
-    draw.text((92, 52), _ellipsize(board_state, FONT_S, WIDTH - 100),
+    draw.text((92, 72), _ellipsize(board_state, FONT_S, WIDTH - 100),
               font=FONT_S, fill=tint)
 
     # Transfer bar: the whole image, filled as chunks are acknowledged.
-    top, bottom = 76, 90
+    top, bottom = 94, 106
     draw.rectangle((8, top, WIDTH - 8, bottom), outline=DIM, width=1)
     fill_w = int((WIDTH - 18) * (done / size)) if size else 0
     if fill_w > 0:
@@ -293,20 +340,22 @@ def update_screen(firmware: str, size: int, addr: int, phase: str,
                        fill=ERR if phase == "failed" else OK)
     pct = f"{done * 100 // size}%" if size else "-"
     label = f"{done}/{size} B  {pct}"
-    draw.text((8, 92), label, font=FONT_S, fill=DIM)
+    draw.text((8, 108), label, font=FONT_S, fill=DIM)
     if error:
-        draw.text((WIDTH - 8 - FONT_S.getlength("see log"), 92), "see log",
+        draw.text((WIDTH - 8 - FONT_S.getlength("see log"), 108), "see log",
                   font=FONT_S, fill=ERR)
 
-    top = 108
+    top = 124
     if usb_board is not None:
         text, tint = usb_board_line(usb_board, shared=bus_shared)
-        draw.text((8, 106), _ellipsize(text, FONT_S, WIDTH - 16),
+        draw.text((8, 122), _ellipsize(text, FONT_S, WIDTH - 16),
                   font=FONT_S, fill=tint)
-        top = 122
+        top = 138
     draw.line((8, top, WIDTH - 8, top), fill=BAR, width=1)
     y = top + 4
-    for line in log_lines[-LOG_LINES:]:
+    # The image block grew by a line: the log keeps what still fits above
+    # the hint (5 rows, 4 with the USB board line).
+    for line in log_lines[-(LOG_LINES - (2 if usb_board is not None else 1)):]:
         tint = ERR if "ERROR" in line else DIM
         draw.text((8, y), _ellipsize(line, FONT_S, WIDTH - 16),
                   font=FONT_S, fill=tint)
