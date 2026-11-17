@@ -1,7 +1,11 @@
 """Frame builders for color-test commands.
 
-Deliberately excluded (destructive / risky): 0x15 clear-all, 0x03 set
-address, 0x05 factory reset.
+Deliberately excluded (risky): 0x03 set address. The two clearing
+commands, 0x15 clear-all-colours and 0x05 clear-autoplay, are here only
+for the LCD's CLEAR BOARD screen (ui/boardclear.py, 2026-11-17: the
+FW_261109 trial firmware's engineer asked for "clear the wave first"),
+which sends them to one board behind a two-hold confirmation; nothing
+else may call them.
 """
 
 import struct
@@ -16,6 +20,8 @@ from .protocol import (
     CMD_PLAY_STOP,
     CMD_CLEAR_PIPELINE,
     CMD_SAVE_PIPELINE,
+    CMD_CLEAR_ALL,
+    CMD_CLEAR_AUTOPLAY,
     DEV_H_WALL_BRICKS,
     Frame,
 )
@@ -148,3 +154,25 @@ def delete_slot(dest: int, slot: int, group_count: int = 2) -> Frame:
     if not 0 <= slot <= 19:
         raise ValueError(f"slot {slot} out of range 0-19")
     return _frame(dest, CMD_DELETE_SLOT, bytes([slot]), group_count)
+
+
+def clear_all_colors(dest: int, group_count: int = 2,
+                     dev_type: int = DEV_H_WALL_BRICKS) -> Frame:
+    """Erase the colour data of all 20 slots (V1.4 7.3, 0x15), empty
+    payload. Slots 17/18 - the factory demo pictures - go too. The slot
+    playback configuration (0x1B) stays; the per-segment pipeline tables
+    (0x1F) go with the colours (V1.4 7.4, "deletion coupling").
+    ACK_SUCCESS = cleared, ACK_FAIL = hardware error. V1.4 10.3 sends a
+    0x17 stop first."""
+    return _frame(dest, CMD_CLEAR_ALL, b"", group_count, dev_type)
+
+
+def clear_autoplay(dest: int, group_count: int = 2,
+                   dev_type: int = DEV_H_WALL_BRICKS) -> Frame:
+    """Clear the power-on auto-play configuration (V1.4 6.7, 0x05), empty
+    payload: enabled=0, start slot 0, 15 s, loop, persisted at once. A
+    compatibility command for parameters old firmware froze in storage;
+    master and slaves both take it, unicast. The master (0x01) still
+    auto-plays slot 0 every 15 s at power-up afterwards (firmware
+    default). Firmware before V1.3 answers ACK_FAIL + 0x0A."""
+    return _frame(dest, CMD_CLEAR_AUTOPLAY, b"", group_count, dev_type)

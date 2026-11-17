@@ -89,8 +89,10 @@
 推奨値: mode = 0x02(全点灯)、dir = 0x0A(自然方向)、遅延 = 0、
 pipeline = 1。
 
-使用禁止(ツール未実装): 0x15 全消去 / 0x03 アドレス変更 /
-0x05 工場出荷リセット。
+使用禁止(ツール未実装): 0x03 アドレス変更。0x15 全消去と 0x05(V1.3 以降の名は
+「電源投入時オートプレイ設定のクリア」、旧称 工場出荷リセット)は**機体の LCD の
+CLEAR BOARD からだけ** 1 枚の基板へ送る(§5「基板のクリア」、2026-11-17)。ショーや
+Conductor からは送らない。
 
 ### 2.5 応答(ACK)
 
@@ -1681,6 +1683,35 @@ radxa-05(Debian 11、SD/eMMC 上の ext4 `rw,relatime`)は 2026-10-01 に 2 回�
   琥珀色の `MCU ID 3930`(ツールチップ: This board's MCU serial differs from most
   boards (…324C). Two such boards behaved differently (colours) on 2026-09-28. Only
   the board on the USB cable can be identified.)
+
+### 基板のクリア(CLEAR BOARD、2026-11-17)
+
+- 試験 FW(`FW/FW_261109`)の技術者の「maybe need to clear the wave first」を受けて、
+  V1.4 にある 2 つのクリアコマンドを**選んだ 1 枚の基板に**機体の LCD から送る
+  (`ui/boardclear.py`、フレームは `commands.clear_all_colors` / `clear_autoplay`、
+  どちらもデータ体なし):
+  - `CLEAR COLOURS (0x15)`: 20 スロットすべての色データを消す(17/18 の工場デモも)。
+    スロット設定(0x1B)は残り、パイプライン表(0x1F)は一緒に消える(V1.4 7.3 / 7.4)
+  - `CLEAR AUTOPLAY (0x05)`: 電源投入時オートプレイ設定を既定(無効・スロット 0・15 秒・
+    ループ)に戻して即保存(V1.4 6.7)。**マスタ(0x01)は電源投入でスロット 0 を 15 秒
+    間隔で再生し続ける**(FW の既定)。V1.2 以前は ACK_FAIL + 0x0A
+- **行**: UPDATE FW の直後(行順は UPDATE FW、CLEAR BOARD、FW VERSION、GIT PULL、
+  REBOOT、WIFI、EXHIBITION、SPEAKER、BOARD INFO)。入ると UPDATE FW と同じくランナーを
+  止め、各アドレスへ PLAY_STOP の存在確認(`ota.find_boards`、中継しても安全 ――
+  どちらのコマンドも OTA ではないので 485 の先の基板も選べる)
+- **操作**: UP/DOWN = 応答した基板の中から、LEFT/RIGHT = コマンド、KEY1 短押し = 再走査。
+  **KEY1 長押し 2 回**: 1 回目は 5 秒間の予約だけ(`hold KEY1 again: CLEAR COLOURS
+  board 03`、他のボタンで取消)、同じ基板・同じコマンドで 2 回目に送信。送るのは
+  V1.4 10.3 の順で 0x17(停止、応答はログだけ)→ コマンド(応答待ち 4 秒、2 回まで)。
+  結果 `ACK_SUCCESS` / `ACK_FAIL from 0x03 (error 0x06: …)` / `no answer` は画面と
+  ジャーナルに出て、機体には何も記録しない。結果の画面で KEY1 = 選択に戻る、
+  KEY2 = メニュー(ランナーは止まったまま、塗り直さない)。走査・送信中は KEY3 以外無視
+- **断る**: UPDATE FW と同じ `_remote_holds()`(PC のショーが再生中・保留中・
+  再起動で戻ったまま・書き込み中、セッションが機体を握っている)に加え、**Upload 済みで
+  START 待ちの PC ショー**(WIFI の LOADED と同じ判定)も `PC show loaded - CLEAR
+  locked` ―― 0x15 はそのショーが焼いた絵そのものを消すため。判定は入るときと
+  送信の長押しの両方で行う。走査・送信中は `remote.busy` が真で、PC のセッションは
+  ポートを取らない
 
 ### Wi-Fi の切り替え(WIFI と `/status` の `wifi`、2026-09-30)
 

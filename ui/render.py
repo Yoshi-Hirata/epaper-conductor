@@ -652,6 +652,81 @@ def boardinfo_screen(lines: "list[tuple[str, str, str]]", reading: bool,
     return image
 
 
+_CLEAR_STATUS = {
+    "idle": ("READY", ACCENT),
+    "scanning": ("SCANNING", DIM),
+    "sending": ("CLEARING", WARN),
+    "done": ("CLEARED", OK),
+    "failed": ("FAILED", ERR),
+}
+
+
+def clear_screen(addr: "int | None", choice: str, action: str, detail: str,
+                 phase: str, status: str, log_lines: "list[str]",
+                 armed: str = "", locked: bool = False,
+                 host: "str | None" = None) -> Image.Image:
+    """CLEAR BOARD (ui/boardclear.py): which board, which clearing
+    command, what it erases, the verdict, the log tail.
+
+    `choice` ("2/3") says UP/DOWN have other answering boards; `armed`
+    is the first hold's `hold KEY1 again: ...` line, amber, in place of
+    the status while it stands.
+    """
+    image, draw = _blank()
+    word, color = _CLEAR_STATUS.get(phase, (phase.upper(), DIM))
+    if armed:
+        word, color = "ARMED", WARN
+    _header(draw, "CLEAR BOARD", status=word, status_color=color, host=host)
+
+    draw.text((8, 36), "board", font=FONT_S, fill=DIM)
+    draw.text((56, 30), "--" if addr is None else f"{addr:02d}",
+              font=FONT_L, fill=FG)
+    if choice:
+        draw.text((92, 36), f"UP/DOWN {choice}", font=FONT_S, fill=DIM)
+    draw.text((8, 60), _ellipsize(f"< {action} >", FONT_M, WIDTH - 16),
+              font=FONT_M, fill=FG if addr is not None else DIM)
+    draw.text((8, 80), _ellipsize(detail, FONT_S, WIDTH - 16), font=FONT_S,
+              fill=DIM)
+
+    text = armed or status
+    if armed:
+        tint = WARN
+    elif phase == "failed" or text.startswith(("ERROR", "no ", "refused")):
+        tint = ERR
+    elif phase == "done":
+        tint = OK
+    else:
+        tint = DIM
+    y = 100
+    for line in _fit_lines(text, FONT_S, WIDTH - 16, 2):
+        draw.text((8, y), line, font=FONT_S, fill=tint)
+        y += 14
+
+    top = 132
+    draw.line((8, top, WIDTH - 8, top), fill=BAR, width=1)
+    y = top + 4
+    for line in log_lines[-(LOG_LINES - 1):]:
+        tint = ERR if "ERROR" in line else DIM
+        draw.text((8, y), _ellipsize(line, FONT_S, WIDTH - 16),
+                  font=FONT_S, fill=tint)
+        y += 15
+
+    if locked:
+        hint = "buttons locked"
+    elif phase == "scanning":
+        hint = "scanning - please wait"
+    elif phase == "sending":
+        hint = "clearing - please wait"
+    elif phase in ("done", "failed"):
+        hint = "KEY1 back  KEY2 menu"
+    elif armed:
+        hint = "hold KEY1 again  other key cancels"
+    else:
+        hint = "hold KEY1 twice = clear  KEY2"
+    _hint(draw, hint)
+    return image
+
+
 _WIFI_STATUS = {
     "idle": ("READY", ACCENT),
     "connecting": ("CONNECTING", OK),

@@ -35,6 +35,7 @@ from .updater import (FirmwareUpdater, find_firmware, find_firmware_images,
                       usb_rebind)
 from .versions import BoardVersions
 from .boardinfo import BoardInfo
+from .boardclear import BoardClearer
 from .exhibition import Exhibition
 from .speaker import INSTRUCTION as SPEAKER_INSTRUCTION, Speaker
 from .wifi import Wifi
@@ -163,6 +164,26 @@ def preview(directory: str) -> int:
          ("FW", "(not read while the PC is driving)", ""),
          ("", "no flash record here", "")],
         False, usb_line=usb, host="radxa-01").save(out / "boardinfo_pc.png")
+    clear_log = ["10:00:00 boards 01,02 answer",
+                 "10:00:09 board 01: CLEAR COLOURS (0x15)",
+                 "10:00:09 board 01 stop 0x17: ACK_SUCCESS"]
+    render.clear_screen(1, "1/2", "CLEAR COLOURS (0x15)",
+                        "erases all 20 slots' pictures (17/18 too)", "idle",
+                        "", clear_log[:1],
+                        armed="hold KEY1 again: CLEAR COLOURS board 01",
+                        host="radxa-01").save(out / "clear_armed.png")
+    render.clear_screen(1, "1/2", "CLEAR AUTOPLAY (0x05)",
+                        "power-on autoplay back to defaults", "done",
+                        "board 01: ACK_SUCCESS",
+                        clear_log + ["10:00:09 board 01 CLEAR AUTOPLAY "
+                                     "(0x05): ACK_SUCCESS"],
+                        host="radxa-01").save(out / "clear_done.png")
+    render.clear_screen(1, "", "CLEAR COLOURS (0x15)",
+                        "erases all 20 slots' pictures (17/18 too)", "failed",
+                        "board 01: no answer",
+                        clear_log + ["10:00:17 ERROR board 01 CLEAR COLOURS "
+                                     "(0x15): no answer"],
+                        host="radxa-01").save(out / "clear_failed.png")
     nets = [("yoshihirock.net_5G", "client", True), ("AZ-Epaper", "client", False)]
     render.wifi_screen("yoshihirock.net_5G", "IP 192.168.51.103  72%  client",
                        nets, 1, "idle", host="radxa-03"
@@ -587,6 +608,7 @@ def main() -> int:
     puller = RepoPuller()
     rebooter = Rebooter()
     versions = BoardVersions(boards=args.boards, port=args.port)
+    clearer = BoardClearer(boards=args.boards, port=args.port)
     # Their own (bounded) USB descriptor reads also fill the runner's cache
     # behind /status usb_board - read on the unit's own screen, never by
     # /status itself.
@@ -642,6 +664,7 @@ def main() -> int:
                       "updater": updater, "puller": puller, "host": host,
                       "versions": versions, "rebooter": rebooter,
                       "boardinfo": boardinfo, "wifi": wifi,
+                      "clearer": clearer,
                       "exhibition": exhibition, "speaker": speaker,
                       "remote": remote,
                       "player": player if remote is not None else None,
