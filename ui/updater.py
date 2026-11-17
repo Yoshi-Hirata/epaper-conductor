@@ -86,10 +86,24 @@ def find_firmware_images(directory: Path = FIRMWARE_DIR) -> list[Path]:
     return sorted(directory.glob("FW_*/**/*.bin"))
 
 
+TRIAL_MARKER = "TRIAL"
+
+
+def is_trial(image: Path) -> bool:
+    """An image from a FW_<yymmdd> folder holding a TRIAL file: a build the
+    vendor sent to try (e.g. FW_261109's colour variants). It is offered
+    with LEFT/RIGHT like any other, but never as the default."""
+    folder = next((p for p in image.parents if p.name.startswith("FW_")), None)
+    return folder is not None and (folder / TRIAL_MARKER).is_file()
+
+
 def find_firmware(directory: Path = FIRMWARE_DIR) -> Path | None:
-    """The newest OTA image in the repo (what the menu offers first)."""
+    """The newest OTA image in the repo that is not a trial build (what the
+    menu offers first); the newest trial one only when there is nothing
+    else."""
     candidates = find_firmware_images(directory)
-    return candidates[-1] if candidates else None
+    proven = [p for p in candidates if not is_trial(p)]
+    return (proven or candidates)[-1] if candidates else None
 
 
 def firmware_label(image: Path | None) -> str:
@@ -207,7 +221,8 @@ class FirmwareUpdater:
 
     @property
     def firmware_label(self) -> str:
-        return firmware_label(self.firmware)
+        label = firmware_label(self.firmware)
+        return f"{label} (trial)" if self.firmware and is_trial(self.firmware) else label
 
     @property
     def image_choice(self) -> str:
@@ -440,7 +455,7 @@ class FirmwareUpdater:
             return
         size, crc = ota.image_fingerprint(image)
         try:
-            flashlog.record(serial_no, addr, self.firmware_label, size, crc,
+            flashlog.record(serial_no, addr, firmware_label(self.firmware), size, crc,
                             path=self.flash_log)
         except OSError as exc:
             self.emit(f"flash record not written: {exc}", error=True)

@@ -181,11 +181,51 @@ def test_repo_ships_the_fw_260923_image_and_the_one_before_it():
     # the vendor's subfolder; FW_260917 stays offered, to go back to.
     image = updater_mod.find_firmware()
     assert image is not None
+    # FW_261109's trial builds are newer but never the default.
     assert updater_mod.firmware_label(image) == "FW_260923/MCB_16_0923.bin"
     assert 0 < image.stat().st_size <= ota.MAX_IMAGE_SIZE
     labels = [updater_mod.firmware_label(p) for p in updater_mod.find_firmware_images()]
     assert "FW_260917/MCB_e16_2029.09.17.bin" in labels
-    assert labels[-1] == "FW_260923/MCB_16_0923.bin"
+    assert "FW_260923/MCB_16_0923.bin" in labels
+
+
+def test_the_fw_261109_trial_builds_are_offered_but_not_by_default():
+    images = updater_mod.find_firmware_images()
+    trial = [updater_mod.firmware_label(p) for p in images if updater_mod.is_trial(p)]
+    assert trial == ["FW_261109/mcb_pink_purple_0_7.bin",
+                     "FW_261109/mcb_pink_red_0_16.bin"]
+    for p in images:
+        if updater_mod.is_trial(p):
+            assert 0 < p.stat().st_size <= ota.MAX_IMAGE_SIZE
+
+
+def test_a_trial_folder_is_listed_marked_and_never_the_default(tmp_path):
+    (tmp_path / "FW_260923").mkdir()
+    proven = tmp_path / "FW_260923" / "MCB_16_0923.bin"
+    proven.write_bytes(b"p" * 10)
+    (tmp_path / "FW_261109").mkdir()
+    trial = tmp_path / "FW_261109" / "mcb_trial.bin"
+    trial.write_bytes(b"t" * 20)
+    (tmp_path / "FW_261109" / updater_mod.TRIAL_MARKER).write_text("try me")
+    images = updater_mod.find_firmware_images(tmp_path)
+    assert images == [proven, trial]
+    assert updater_mod.find_firmware(tmp_path) == proven
+    updater, _ = make_updater(proven, images=images, bus=FakeOtaBus(answers={20}))
+    assert updater.firmware_label == "FW_260923/MCB_16_0923.bin"
+    updater.select_image(1)
+    assert updater.firmware == trial
+    assert updater.firmware_label == "FW_261109/mcb_trial.bin (trial)"
+    # Without the marker the newest is the default again.
+    (tmp_path / "FW_261109" / updater_mod.TRIAL_MARKER).unlink()
+    assert updater_mod.find_firmware(tmp_path) == trial
+
+
+def test_only_trial_builds_still_give_a_default(tmp_path):
+    (tmp_path / "FW_261109").mkdir()
+    trial = tmp_path / "FW_261109" / "mcb_trial.bin"
+    trial.write_bytes(b"t")
+    (tmp_path / "FW_261109" / updater_mod.TRIAL_MARKER).write_text("")
+    assert updater_mod.find_firmware(tmp_path) == trial
 
 
 def test_images_in_vendor_subfolders_are_found_and_labelled_by_fw_folder(tmp_path):

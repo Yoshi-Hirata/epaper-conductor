@@ -1,0 +1,6 @@
+Trial builds from the vendor (2026-11-09), received 2026-11-17:
+  mcb_pink_purple_0_7.bin
+  mcb_pink_red_0_16.bin
+UPDATE FW offers them with LEFT/RIGHT, marked "(trial)", but never as the
+default image (ui/updater.py is_trial / find_firmware). Delete this file to
+make the newest of them the default.
