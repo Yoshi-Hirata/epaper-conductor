@@ -1702,15 +1702,28 @@ radxa-05(Debian 11、SD/eMMC 上の ext4 `rw,relatime`)は 2026-10-01 に 2 回�
 - **操作**: UP/DOWN = 応答した基板の中から、LEFT/RIGHT = コマンド、KEY1 短押し = 再走査。
   **KEY1 長押し 2 回**: 1 回目は 5 秒間の予約だけ(`hold KEY1 again: CLEAR COLOURS
   board 03`、他のボタンで取消)、同じ基板・同じコマンドで 2 回目に送信。送るのは
-  V1.4 10.3 の順で 0x17(停止、応答はログだけ)→ コマンド(応答待ち 4 秒、2 回まで)。
+  V1.4 10.3 の順で 0x17(停止、応答はログだけ)→ 回線が 0.3 秒静かになるまで読み捨て
+  (ACK はどのコマンドへの応答かを言わないので、遅れた 0x17 の ACK を 0x15 の結果と
+  取り違えないため)→ コマンド(応答待ち 4 秒、2 回まで)。
   結果 `ACK_SUCCESS` / `ACK_FAIL from 0x03 (error 0x06: …)` / `no answer` は画面と
   ジャーナルに出て、機体には何も記録しない。結果の画面で KEY1 = 選択に戻る、
-  KEY2 = メニュー(ランナーは止まったまま、塗り直さない)。走査・送信中は KEY3 以外無視
+  KEY2 = メニュー(ランナーは止まったまま、塗り直さない)。走査・送信中は KEY3 以外無視。
+  予約は画面の消灯(KEY3・自動消灯)でも取り消す
+- **0x15 のあと**: 応答が ACK_SUCCESS でも ACK_FAIL でも無応答でも(遅れた・黙った基板も
+  消しているかもしれない)、その基板をランナーの書き込みキャッシュから忘れる
+  (`DemoRunner.forget_board()`)。キャッシュは `runner.stop()` を越えて残り、同じ絵の
+  (board, slot) は書き込みを飛ばすので、忘れないと同じショーの再 Upload やデモの
+  焼き直しがこの基板に何も書かず、空のスロットを再生する
 - **断る**: UPDATE FW と同じ `_remote_holds()`(PC のショーが再生中・保留中・
   再起動で戻ったまま・書き込み中、セッションが機体を握っている)に加え、**Upload 済みで
   START 待ちの PC ショー**(WIFI の LOADED と同じ判定)も `PC show loaded - CLEAR
-  locked` ―― 0x15 はそのショーが焼いた絵そのものを消すため。判定は入るときと
-  送信の長押しの両方で行う。走査・送信中は `remote.busy` が真で、PC のセッションは
+  locked` ―― 0x15 はそのショーが焼いた絵そのものを消すため。判定は入るとき、
+  KEY1 の再走査、送信の長押しで行う。さらに **CLEAR COLOURS** は、PC のショーの絵が
+  基板に載っている間(燃焼記録が `burned` / `failed`。再起動で `restore()` が戻した
+  ショーも含む ―― START の関門はその `burned` で通ってしまう)は送信の長押しで
+  `PC show on the boards - Clear pictures on the PC first` と断る。外れるのは PC の
+  「Clear pictures now」(記録が `cleared` になる)かデモの読み込み。CLEAR AUTOPLAY は
+  絵に触れないので断らない。走査・送信中は `remote.busy` が真で、PC のセッションは
   ポートを取らない
 
 ### Wi-Fi の切り替え(WIFI と `/status` の `wifi`、2026-09-30)

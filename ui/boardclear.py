@@ -25,7 +25,10 @@ the BACKUPS restore gesture, because an accidental press must not erase
 a board. The send is the order of V1.4 10.3: 0x17 stop to that board,
 then the command; ACK_SUCCESS / ACK_FAIL (with its error code) / no
 answer is the verdict, on the screen and in the journal. Nothing is
-recorded on the unit.
+recorded on the unit - but after every 0x15 sent the runner is told to
+forget that board's burn cache (forget_board), whatever the answer, so
+the next burn writes it again instead of skipping "unchanged" pictures
+that are gone (review of d08e126).
 
 Like UPDATE FW it needs the port to itself: the App stops the runner on
 the way in and refuses the row while a show holds the unit (_remote_holds,
@@ -69,6 +72,10 @@ ARM_S = 5.0
 CLEAR_ACK_S = 4.0
 CLEAR_TRIES = 2
 STOP_ACK_S = 0.8
+# Before the command: the line quiet this long, so a late 0x17 ACK is
+# not taken for the command's (ACKs do not name the command).
+DRAIN_QUIET_S = 0.3
+DRAIN_LIMIT_S = 2.0
 
 
 @dataclass(frozen=True)
@@ -114,7 +121,7 @@ class BoardClearer:
     def __init__(self, boards: "list[int] | None" = None,
                  port: "str | None" = None, open_bus=None, locate=find_port,
                  find=ota.find_boards, clock=time.monotonic,
-                 echo_log: bool = True):
+                 echo_log: bool = True, forget_board=None):
         self.boards = list(boards) if boards else list(range(1, 21))
         # The runner's group count (DemoRunner._group_count): the list's
         # length, or its highest address when it has gaps.
@@ -125,6 +132,9 @@ class BoardClearer:
         self._find = find
         self._clock = clock
         self._echo_log = echo_log
+        # The runner's forget_board (ui/main.py wires it): called after
+        # every 0x15 sent, see _forget().
+        self.forget_board = forget_board
 
         self.found: list[int] = []      # last sweep's answering addresses
         self.addr: "int | None" = None
@@ -293,6 +303,8 @@ class BoardClearer:
         self._start(lambda: self._send(addr, action))
 
     def _send(self, addr: int, action: ClearAction) -> None:
+        tried = False                     # the command itself went out
+        phase = FAILED
         try:
             port = self.port or self._locate()
             if not port:
@@ -305,21 +317,58 @@ class BoardClearer:
                 said = ("no answer" if stopped is None else
                         ACK_NAMES.get(stopped.cmd, f"0x{stopped.cmd:02X}"))
                 self.emit(f"board {addr:02d} stop 0x17: {said}")
+                # An ACK does not say which command it answers: a 0x17
+                # ACK arriving after STOP_ACK_S would read as the
+                # command's verdict ("CLEARED" with the 0x15 dropped).
+                # So the line has to be quiet before the command goes.
+                self._drain(bus)
+                tried = True
                 ack = self._request(bus, action.build(addr, self.groups),
                                     CLEAR_ACK_S, CLEAR_TRIES)
             cleared, verdict = describe_answer(action, ack)
             self.status = f"board {addr:02d}: {verdict}"
             self.emit(f"board {addr:02d} {action.label}: {verdict}",
                       error=not cleared)
-            self.phase = DONE if cleared else FAILED
+            phase = DONE if cleared else FAILED
         except serial.SerialTimeoutException:
             self.status = "port wedged: replug USB / power-cycle board"
             self.emit(ota.WEDGE_MSG, error=True)
-            self.phase = FAILED
         except Exception as exc:          # noqa: BLE001 - shown, not raised
             self.status = f"ERROR {exc}"
             self.emit(f"{exc}", error=True)
-            self.phase = FAILED
+        if tried and action.key == "colours":
+            self._forget(addr)
+        self.phase = phase
+
+    def _forget(self, addr: int) -> None:
+        """0x15 went out to `addr`: whatever the answer (a board that
+        answered late, or not at all, may still have erased), the unit
+        must stop believing it holds pictures there. The runner's burn
+        cache outlives runner.stop() on purpose and a burn skips every
+        (board, slot) it remembers - a re-Upload of the same show, or a
+        demo burned again, would write nothing to this board and play
+        its empty slots (review of d08e126, BLOCKER 1)."""
+        if self.forget_board is None:
+            return
+        try:
+            self.forget_board(addr)
+        except Exception as exc:          # noqa: BLE001 - shown, not raised
+            self.emit(f"burn cache for board {addr:02d} not forgotten: "
+                      f"{exc}", error=True)
+            return
+        self.emit(f"board {addr:02d}: next burn writes it again")
+
+    @staticmethod
+    def _drain(bus, quiet: "float | None" = None,
+               limit: "float | None" = None) -> None:
+        """Read and drop frames until the line has been quiet for
+        `quiet` seconds (or `limit` has passed)."""
+        quiet = DRAIN_QUIET_S if quiet is None else quiet
+        deadline = time.monotonic() + (DRAIN_LIMIT_S if limit is None
+                                       else limit)
+        while time.monotonic() < deadline:
+            if bus.recv(timeout=quiet) is None:
+                return
 
     @staticmethod
     def _request(bus, frame, timeout: float, tries: int):

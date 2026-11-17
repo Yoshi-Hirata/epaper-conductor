@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -24,7 +25,7 @@ from epaper.protocol import (ACK_FAIL, ACK_INVALID_CMD, ACK_SUCCESS,
                              CMD_FACTORY_RESET, CMD_PLAY_STOP, Frame,
                              crc16_modbus)
 from ui import boardclear, render
-from ui.app import CLEAR_LOCKED_LOADED, App, Screen
+from ui.app import CLEAR_LOCKED_LOADED, CLEAR_LOCKED_PICTURES, App, Screen
 from ui.boardclear import (ARM_S, CLEAR_TRIES, DONE, FAILED, IDLE,
                            BoardClearer)
 from ui.config import HEIGHT, WIDTH
@@ -453,3 +454,150 @@ def test_the_screen_renders_every_phase_and_the_app_draws_it():
     key = app._drawn_key
     app.handle("key1_hold")
     assert app._display_key() != key            # the arming repaints
+
+
+# ---- review of d08e126: the unit forgets what 0x15 erased ----
+
+def test_every_0x15_sent_makes_the_runner_forget_the_board(monkeypatch):
+    monkeypatch.setattr(boardclear, "CLEAR_ACK_S", 0.05)
+    for reply in ((ACK_SUCCESS, b""), (ACK_FAIL, b"\x06"), None):
+        forgotten = []
+        clearer, _, _ = make_clearer(bus=ClearBus(answers=(1,), reply=reply),
+                                     forget_board=forgotten.append)
+        sent_and_settled(clearer)
+        # A late or silent board may still have erased: forgotten anyway.
+        assert forgotten == [1], reply
+        assert any("next burn writes it again" in line
+                   for line in clearer.recent(10))
+    # CLEAR AUTOPLAY touches no picture; no port means nothing went out.
+    forgotten = []
+    clearer, _, _ = make_clearer(answers=(1,), forget_board=forgotten.append)
+    sent_and_settled(clearer, action_step=1)
+    assert clearer.phase == DONE and forgotten == []
+    clearer, _, _ = make_clearer(answers=(1,), forget_board=forgotten.append)
+    scanned(clearer)
+    clearer._locate = lambda: None
+    clearer.confirm()
+    clearer.confirm()
+    settle(clearer)
+    assert clearer.phase == FAILED and forgotten == []
+
+
+def test_after_forget_board_a_reburn_of_the_same_cue_writes_the_board_again():
+    from tests.test_ui_remote import SAVE, array, make_session
+    session, runner, bus = make_session()
+    cues = [{"slot": 1, "boards": {1: array(1), 2: array(1)}, "delays": {}}]
+    session.burn(cues, dev_type=3)
+    assert wait_until(lambda: (session.burn_status() or {}).get("state")
+                      == "burned")
+    n = len([f for f in bus.requested if f.cmd == SAVE])
+    runner.forget_board(1)                       # CLEAR COLOURS on board 01
+    session.burn(cues, dev_type=3)               # the same show again
+    assert wait_until(lambda: session.burn_status()["done"] == 2
+                      and session.burn_status()["state"] == "burned")
+    again = [f for f in bus.requested if f.cmd == SAVE][n:]
+    assert [(f.dest, f.data[0]) for f in again] == [(1, 1)]   # 02 still skipped
+    runner.stop()
+
+
+class LateStopBus(ClearBus):
+    """The stop's ACK arrives `late` seconds after it was sent; the
+    clearing command is never answered."""
+
+    def __init__(self, late: float, **kwargs):
+        super().__init__(reply=None, **kwargs)
+        self.late = late
+        self._due: list = []
+
+    def send(self, frame: Frame) -> None:
+        if frame.cmd == CMD_PLAY_STOP:
+            self.sent.append(frame)
+            self._due.append((time.monotonic() + self.late,
+                              self._ack(frame, ACK_SUCCESS)))
+            return
+        super().send(frame)
+
+    def recv(self, timeout: float = 0.5):
+        end = time.monotonic() + timeout
+        while True:
+            now = time.monotonic()
+            for item in self._due:
+                if item[0] <= now:
+                    self._due.remove(item)
+                    return item[1]
+            if self._pending:
+                return self._pending.popleft()
+            if now >= end:
+                return None
+            time.sleep(min(0.005, end - now))
+
+
+def test_a_late_stop_ack_is_never_read_as_the_commands_verdict(monkeypatch):
+    monkeypatch.setattr(boardclear, "STOP_ACK_S", 0.05)
+    monkeypatch.setattr(boardclear, "CLEAR_ACK_S", 0.3)
+    bus = LateStopBus(late=0.15, answers=(1,))
+    clearer = BoardClearer(boards=[1], open_bus=lambda port: bus,
+                           locate=lambda: "/dev/fake", clock=Clock(),
+                           echo_log=False, find=lambda b, boards: {1: None})
+    scanned(clearer)
+    clearer.confirm()
+    clearer.confirm()
+    settle(clearer)
+    assert clearer.phase == FAILED and clearer.status == "board 01: no answer"
+
+
+def test_clear_colours_is_refused_while_a_restored_pc_show_is_on_the_boards():
+    # restore() brought the last PC show back LOADED with "burned": the
+    # row opens (it must not lock for good), but 0x15 would leave START
+    # passing its gate onto a blank board - so COLOURS is refused, and
+    # AUTOPLAY (no picture touched) still goes.
+    clearer, bus, _ = make_clearer(answers=(1,))
+    player = FakePlayer(state=LOADED, burn="burned", loaded_here=False)
+    app, _ = make_app(clearer, remote=FakeRemote(), player=player)
+    enter(app)
+    assert app.screen is Screen.CLEAR
+    app.handle("key1_hold")
+    app.handle("key1_hold")
+    settle(clearer)
+    assert cleared_frames(bus) == []
+    assert clearer.status == CLEAR_LOCKED_PICTURES
+    app.handle("right")                          # CLEAR AUTOPLAY
+    app.handle("key1_hold")
+    app.handle("key1_hold")
+    settle(clearer)
+    assert [f.cmd for f in cleared_frames(bus)] == [CMD_CLEAR_AUTOPLAY]
+    # Once the PC has cleared its pictures, COLOURS goes too.
+    player.burn = "cleared"
+    app.handle("key1")                           # off the verdict
+    app.handle("left")
+    app.handle("key1_hold")
+    app.handle("key1_hold")
+    settle(clearer)
+    assert [f.cmd for f in cleared_frames(bus)] == [CMD_CLEAR_AUTOPLAY,
+                                                     CMD_CLEAR_ALL]
+
+
+def test_a_plain_key1_rescan_is_refused_while_the_pc_holds_the_unit():
+    clearer, bus, _ = make_clearer(answers=(1,))
+    remote = FakeRemote()
+    app, _ = make_app(clearer, remote=remote)
+    enter(app)
+    sweeps = len(bus.sent)
+    remote.active = True
+    app.handle("key1")
+    assert not clearer.busy and len(bus.sent) == sweeps
+    assert clearer.status == "PC holds this unit - release it on the PC"
+
+
+def test_blanking_the_screen_disarms():
+    clearer, bus, _ = make_clearer(answers=(1,))
+    app, _ = make_app(clearer)
+    enter(app)
+    app.handle("key1_hold")
+    assert clearer.armed_text()
+    app.handle("key3")                           # blank
+    assert clearer.armed_text() == ""
+    app.handle("key1")                           # wakes only
+    app.handle("key1_hold")                      # arms again, sends nothing
+    settle(clearer)
+    assert cleared_frames(bus) == []
