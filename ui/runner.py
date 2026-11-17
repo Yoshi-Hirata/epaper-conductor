@@ -1192,6 +1192,14 @@ class DemoRunner:
         self._burn_cache = {k: v for k, v in self._burn_cache.items()
                             if k[0] != board}
 
+    def forget_board(self, board: int) -> None:
+        """Public _forget_board() for the LCD's CLEAR BOARD (ui/
+        boardclear.py): 0x15 has just erased every slot of `board`, so
+        the next burn must write it again rather than skip what the
+        cache remembers. Called with the worker stopped (the screen
+        stops the runner on the way in)."""
+        self._forget_board(board)
+
     def _forget_burned(self, board: int, slot: int) -> None:
         """A manual /prepare (always slot 19) just wrote over what a
         burn might have put there - the cache no longer knows what the

@@ -31,7 +31,10 @@ pick the board among those, LEFT/RIGHT the command, a plain KEY1 sweeps
 again; KEY1 *held* arms the send for 5 s (`hold KEY1 again: CLEAR
 COLOURS board 03`, any other button disarms) and a second hold sends it
 - 0x17 stop to that board first, then the command - after the same
-refusal check once more. The answer (ACK_SUCCESS, ACK_FAIL and its
+refusal check once more, and for CLEAR COLOURS also while any PC show's
+pictures are on the boards, a restored one included
+(_pictures_on_boards()). After every 0x15 sent the runner forgets that
+board's burn cache, so the next burn writes it again. The answer (ACK_SUCCESS, ACK_FAIL and its
 code, no answer) stays on the screen and in the journal; KEY1 then goes
 back to the choice, KEY2 to the menu (runner stopped, no repaint). While
 the sweep or the send is on the port every button but KEY3 is ignored.
@@ -230,6 +233,9 @@ WIFI_LOCKED = "PC show running - WIFI locked"
 WIFI_LOCKED_LOADED = "PC show loaded - WIFI locked"
 # CLEAR BOARD's own refusal for that same uploaded-and-waiting show.
 CLEAR_LOCKED_LOADED = "PC show loaded - CLEAR locked"
+# ...and CLEAR COLOURS' while any PC show's pictures are on the boards.
+CLEAR_LOCKED_PICTURES = ("PC show on the boards - "
+                         "Clear pictures on the PC first")
 
 # Standalone demos poll the store rather than being pushed a change from
 # the agent's HTTP thread - the two run in the same process but talking
@@ -612,13 +618,21 @@ class App:
         elif event == "right":
             clearer.select_action(+1)
         elif event in ("key1", "press"):
-            clearer.scan()
+            # The sweep takes the port too: refused like the row itself.
+            note = self._clear_holds()
+            if note is not None:
+                clearer.refuse(note)
+            else:
+                clearer.scan()
         elif event == "key1_hold":
             if clearer.armed_text():
                 # The hold that would send: whatever took the unit since
                 # the screen was entered (the PC armed its session, a show
-                # was uploaded) still refuses it.
+                # was uploaded) still refuses it - and CLEAR COLOURS also
+                # while a PC show's pictures are on the boards.
                 note = self._clear_holds()
+                if note is None and clearer.action.key == "colours":
+                    note = self._pictures_on_boards()
                 if note is not None:
                     clearer.refuse(note)
                     self._dirty = True
@@ -639,6 +653,24 @@ class App:
             return note
         if self.wifi_lock_note(self.player) is not None:
             return CLEAR_LOCKED_LOADED
+        return None
+
+    def _pictures_on_boards(self) -> "str | None":
+        """CLEAR COLOURS refused while the player holds a PC show whose
+        pictures are on the boards ("burned", or "failed" part way) - a
+        show restore() brought back after a reboot included, which
+        _clear_holds() lets through on purpose (it must not lock the row
+        for good). START would pass its burn gate on that "burned" and
+        play this board's empty slots (review of d08e126, BLOCKER 1).
+        The way out is the PC's "Clear pictures now" (the record turns
+        "cleared") or a demo, which loads over it; CLEAR AUTOPLAY touches
+        no picture and is not refused."""
+        player = self.player
+        if player is None or player.show is None or player.is_demo:
+            return None
+        burn = (player.status() or {}).get("burn") or {}
+        if burn.get("state") in ("burned", "failed"):
+            return CLEAR_LOCKED_PICTURES
         return None
 
     def _enter_clear(self) -> None:
@@ -1438,6 +1470,10 @@ class App:
         self._dirty = True
 
     def _blank(self) -> None:
+        if self.screen is Screen.CLEAR and self.clearer is not None:
+            # A send armed before the screen went dark must not be sent
+            # by a hold made blind after waking it.
+            self.clearer.disarm()
         if not self.blanked:
             self.blanked = True
             self.display.sleep()

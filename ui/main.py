@@ -608,7 +608,8 @@ def main() -> int:
     puller = RepoPuller()
     rebooter = Rebooter()
     versions = BoardVersions(boards=args.boards, port=args.port)
-    clearer = BoardClearer(boards=args.boards, port=args.port)
+    clearer = BoardClearer(boards=args.boards, port=args.port,
+                           forget_board=runner.forget_board)
     # Their own (bounded) USB descriptor reads also fill the runner's cache
     # behind /status usb_board - read on the unit's own screen, never by
     # /status itself.
