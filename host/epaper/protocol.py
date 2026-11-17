@@ -30,6 +30,10 @@ CMD_GET_VERSION = 0x02
 CMD_SET_ADDRESS = 0x03
 CMD_SAVE_CONFIG = 0x04
 CMD_FACTORY_RESET = 0x05
+# V1.3+ names 0x05 "Clear Power-On Auto-Play Configuration" (6.7): it
+# resets the four auto-play fields, nothing else - "factory reset" was
+# the V1.0 guess. Both names stay; new code uses the accurate one.
+CMD_CLEAR_AUTOPLAY = CMD_FACTORY_RESET
 CMD_SAVE_COLOR = 0x13
 CMD_DELETE_SLOT = 0x14
 CMD_CLEAR_ALL = 0x15

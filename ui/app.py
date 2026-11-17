@@ -18,6 +18,24 @@ white repaint on the way out (removed 2026-09-17 at the operator's
 request), so the rebooted board keeps playing whatever it wakes up
 with until a demo is started or STANDBY is chosen.
 
+CLEAR BOARD (ui/boardclear.py, the row right after UPDATE FW, added
+2026-11-17 for the FW_261109 trial firmware: "maybe need to clear the
+wave first") sends one of V1.4's two clearing commands to ONE board:
+CLEAR COLOURS (0x15, all 20 slots' pictures, the factory demo in 17/18
+too) or CLEAR AUTOPLAY (0x05, the power-on auto-play configuration back
+to its defaults). It enters like UPDATE FW - refused by _remote_holds()
+while a show holds the unit, and also while a PC show is uploaded and
+waiting (_clear_holds(): 0x15 would erase its burned pictures); the
+runner is stopped and a relay-safe sweep lists who answers. UP/DOWN
+pick the board among those, LEFT/RIGHT the command, a plain KEY1 sweeps
+again; KEY1 *held* arms the send for 5 s (`hold KEY1 again: CLEAR
+COLOURS board 03`, any other button disarms) and a second hold sends it
+- 0x17 stop to that board first, then the command - after the same
+refusal check once more. The answer (ACK_SUCCESS, ACK_FAIL and its
+code, no answer) stays on the screen and in the journal; KEY1 then goes
+back to the choice, KEY2 to the menu (runner stopped, no repaint). While
+the sweep or the send is on the port every button but KEY3 is ignored.
+
 FW VERSION asks every configured address its OTA state (0x29) and
 lists what each answering board runs (ui/versions.py) - the runner is
 stopped for the scan and stays stopped on the way out, no repaint.
@@ -55,8 +73,8 @@ WIFI locked" whenever a demo row's KEY1 is refused (_pc_show_wins())
 and with "PC show loaded - WIFI locked" for a PC show uploaded and
 waiting for START (_wifi_locked()). The choice lasts until the next
 reboot - autoconnect is never touched. The runner, the port and the
-boards are never touched either; the row order is UPDATE FW, FW
-VERSION, GIT PULL, REBOOT, WIFI, EXHIBITION, SPEAKER (while the local
+boards are never touched either; the row order is UPDATE FW, CLEAR
+BOARD, FW VERSION, GIT PULL, REBOOT, WIFI, EXHIBITION, SPEAKER (while the local
 Conductor reports one), BOARD INFO. The show PC
 (or the Conductor on radxa-05, before it leaves the network to become
 the hotspot) can also ask for a switch over the agent - POST
@@ -210,6 +228,8 @@ from .showplay import ENDED, HOLDING, LOADED, RUNNING, STOPPED
 # The WIFI row's refusals (ui/wifi.py shows whichever it is given).
 WIFI_LOCKED = "PC show running - WIFI locked"
 WIFI_LOCKED_LOADED = "PC show loaded - WIFI locked"
+# CLEAR BOARD's own refusal for that same uploaded-and-waiting show.
+CLEAR_LOCKED_LOADED = "PC show loaded - CLEAR locked"
 
 # Standalone demos poll the store rather than being pushed a change from
 # the agent's HTTP thread - the two run in the same process but talking
@@ -225,6 +245,7 @@ class Screen(Enum):
     MENU = "menu"
     RUNNING = "running"
     UPDATE = "update"
+    CLEAR = "clear"
     VERSIONS = "versions"
     BOARDINFO = "boardinfo"
     PULL = "pull"
@@ -255,7 +276,7 @@ class App:
                  clock=time.monotonic, updater=None, puller=None,
                  host: str | None = None, versions=None, rebooter=None,
                  remote=None, player=None, demos=None, boardinfo=None,
-                 wifi=None, exhibition=None, speaker=None):
+                 wifi=None, exhibition=None, speaker=None, clearer=None):
         self.display = display
         self.inputs = inputs
         self.runner = runner or DemoRunner()
@@ -266,6 +287,11 @@ class App:
         self.updater = updater
         if updater is not None:
             self.patterns.append(updater.menu_entry)
+        # CLEAR BOARD (ui/boardclear.py) right after UPDATE FW: the other
+        # row that writes into a board, under the same port rules.
+        self.clearer = clearer
+        if clearer is not None:
+            self.patterns.append(clearer.menu_entry)
         self.versions = versions
         if versions is not None:
             self.patterns.append(versions.menu_entry)
@@ -308,7 +334,8 @@ class App:
         if remote is not None:
             remote.busy = lambda: any(
                 worker is not None and worker.busy
-                for worker in (self.updater, self.versions, self.rebooter))
+                for worker in (self.updater, self.clearer, self.versions,
+                               self.rebooter))
         # Standalone demos (ui/demos.py): `player` is the same ShowPlayer
         # the PC's shows run on, `demos` is the store menu rows are built
         # from. Either may be None (older callers, or --no-remote), and
@@ -445,6 +472,9 @@ class App:
         if self.screen is Screen.UPDATE:
             self._handle_update(event)
             return
+        if self.screen is Screen.CLEAR:
+            self._handle_clear(event)
+            return
         if self.screen is Screen.PULL:
             self._handle_pull(event)
             return
@@ -553,6 +583,78 @@ class App:
             updater.start()
         elif event == "key2":
             self._leave_update()
+        self._dirty = True
+
+    def _handle_clear(self, event: str) -> None:
+        """CLEAR BOARD: UP/DOWN board, LEFT/RIGHT command, KEY1 sweeps
+        again, KEY1 *held twice* sends (the first hold only arms it, any
+        other button disarms), KEY2 back to the menu. Nothing is heard
+        while the sweep or the send holds the port."""
+        clearer = self.clearer
+        if clearer.busy:
+            return                  # on the port; let it finish
+        if clearer.finished:
+            # The verdict stays until read: KEY1 back to the choice (the
+            # boards found are kept), KEY2 to the menu. A hold does
+            # nothing here, so a second gesture cannot chain a send.
+            if event in ("key1", "press"):
+                clearer.reset()
+            elif event == "key2":
+                self._leave_clear()
+            self._dirty = True
+            return
+        if event == "up":
+            clearer.select(-1)
+        elif event == "down":
+            clearer.select(+1)
+        elif event == "left":
+            clearer.select_action(-1)
+        elif event == "right":
+            clearer.select_action(+1)
+        elif event in ("key1", "press"):
+            clearer.scan()
+        elif event == "key1_hold":
+            if clearer.armed_text():
+                # The hold that would send: whatever took the unit since
+                # the screen was entered (the PC armed its session, a show
+                # was uploaded) still refuses it.
+                note = self._clear_holds()
+                if note is not None:
+                    clearer.refuse(note)
+                    self._dirty = True
+                    return
+            clearer.confirm()
+        elif event == "key2":
+            self._leave_clear()
+        self._dirty = True
+
+    def _clear_holds(self) -> "str | None":
+        """Why CLEAR BOARD must be refused now, or None: what refuses
+        UPDATE FW (_remote_holds - a show running, held, restored, being
+        written, or a session on the unit), and a PC show uploaded and
+        waiting for START (the WIFI row's LOADED case, wifi_lock_note):
+        0x15 erases exactly the pictures that show burned."""
+        note = self._remote_holds()
+        if note is not None:
+            return note
+        if self.wifi_lock_note(self.player) is not None:
+            return CLEAR_LOCKED_LOADED
+        return None
+
+    def _enter_clear(self) -> None:
+        # Like UPDATE FW: the runner owns the port (standby keeps it open
+        # to watch the link), and the sweep and the send need it.
+        self.runner.stop()
+        self._standby = False
+        self.clearer.reset()
+        self.clearer.scan()
+        self.screen = Screen.CLEAR
+        self._dirty = True
+
+    def _leave_clear(self) -> None:
+        # Straight back, as from UPDATE FW: runner stopped, no repaint.
+        self.clearer.disarm()
+        self.screen = Screen.MENU
         self._dirty = True
 
     def _handle_pull(self, event: str) -> None:
@@ -1280,7 +1382,7 @@ class App:
 
     def _restart(self) -> None:
         key = self.patterns[self.selected].key
-        if key in ("update", "versions", "standby") or (
+        if key in ("update", "clear", "versions", "standby") or (
                 key not in ("pull", "boardinfo", "reboot", "wifi", "exhibition",
                             "speaker")
                 and not isinstance(self.patterns[self.selected], DemoRow)):
@@ -1290,6 +1392,13 @@ class App:
                 return
         if key == "update":
             self._enter_update()
+            return
+        if key == "clear":
+            note = self._clear_holds()
+            if note is not None:
+                self._note_on_menu(note)
+                return
+            self._enter_clear()
             return
         if self.patterns[self.selected].key == "pull":
             self._enter_pull()
@@ -1384,6 +1493,13 @@ class App:
                 image_choice=updater.image_choice,
                 usb_board=getattr(updater, "usb_board", None),
                 bus_shared=bool(getattr(updater, "bus_shared", False)))
+        if self.screen is Screen.CLEAR:
+            clearer = self.clearer
+            return render.clear_screen(
+                clearer.addr, clearer.choice, clearer.action.label,
+                clearer.action.detail, clearer.phase, clearer.status,
+                clearer.recent(LOG_LINES), armed=clearer.armed_text(),
+                locked=self.locked, host=self.host)
         if self.screen is Screen.VERSIONS:
             versions = self.versions
             return render.versions_screen(
@@ -1496,6 +1612,8 @@ class App:
                         tuple(sorted((getattr(updater, "usb_board", None)
                                       or {}).items())),
                         bool(getattr(updater, "bus_shared", False)))
+            if self.screen is Screen.CLEAR:
+                return ("clear", self.clearer.key(), self.locked)
             if self.screen is Screen.VERSIONS:
                 versions = self.versions
                 return ("versions", versions.phase, tuple(versions.rows),
