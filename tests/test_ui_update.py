@@ -178,29 +178,36 @@ def test_vendor_named_image_in_a_newer_folder_wins(tmp_path):
 def test_repo_ships_the_fw_260923_image_and_the_one_before_it():
     # The whole "copy the firmware to the appliance" step is git pull,
     # which only works if the images are in the tree. FW_260923 keeps
-    # the vendor's subfolder; FW_260917 stays offered, to go back to.
+    # the vendor's subfolder. Since 2026-11-20 the units are offered
+    # exactly two images; every other build sits in FW/archive/.
     image = updater_mod.find_firmware()
     assert image is not None
-    # FW_261109/FW_261118 trial builds are newer but never the default.
+    # The FW_261119F trial is newer but never the default.
     assert updater_mod.firmware_label(image) == "FW_260923/MCB_16_0923.bin"
     assert 0 < image.stat().st_size <= ota.MAX_IMAGE_SIZE
     labels = [updater_mod.firmware_label(p) for p in updater_mod.find_firmware_images()]
-    assert "FW_260917/MCB_e16_2029.09.17.bin" in labels
-    assert "FW_260923/MCB_16_0923.bin" in labels
+    assert labels == ["FW_260923/MCB_16_0923.bin", "FW_261119F/mcb_pinks_0a-purple_0c-red.bin"]
+
+
+def test_the_archive_is_never_offered(tmp_path):
+    # FW/archive/ (2026-11-20): the glob starts at FW_*, so nothing under
+    # archive/ is listed, TRIAL or not - on the real tree and on a tmp one.
+    images = updater_mod.find_firmware_images()
+    assert not any("archive" in p.parts for p in images)
+    assert (updater_mod.FIRMWARE_DIR / "archive" / "FW_260917").is_dir()
+    (tmp_path / "FW_260923").mkdir()
+    (tmp_path / "FW_260923" / "a.bin").write_bytes(b"a")
+    (tmp_path / "archive" / "FW_261231" / "sub").mkdir(parents=True)
+    (tmp_path / "archive" / "FW_261231" / "sub" / "z.bin").write_bytes(b"z")
+    assert updater_mod.find_firmware_images(tmp_path) == [tmp_path / "FW_260923" / "a.bin"]
 
 
 def test_the_trial_builds_are_offered_but_not_by_default():
     images = updater_mod.find_firmware_images()
     trial = [updater_mod.firmware_label(p) for p in images if updater_mod.is_trial(p)]
-    assert trial == ["FW_261109/mcb_pink_purple_0_7.bin",
-                     "FW_261109/mcb_pink_red_0_16.bin",
-                     "FW_261118/mcb_two_pinks(0a,0c).bin",
-                     # Home-made, not the vendor's (2026-11-19, tools/fw_waveform.py).
-                     "FW_261118B/mcb_0923_pinks_no13.bin",
-                     # Plan C, home-made too (2026-11-20): FW_261118 program + FW_260923 table.
-                     "FW_261119/mcb_1118prog_seq0923_pinks_no13.bin",
-                     # Plan D (2026-11-20): plan C with each colour's rest after the shake.
-                     "FW_261119D/mcb_1118prog_pinks_no13_endalign.bin"]
+    # The final home-made image (2026-11-20, tools/fw_waveform.py): the
+    # earlier trials (FW_261109 .. FW_261119D) are in FW/archive/.
+    assert trial == ["FW_261119F/mcb_pinks_0a-purple_0c-red.bin"]
     assert updater_mod.firmware_label(updater_mod.find_firmware()) == "FW_260923/MCB_16_0923.bin"
     for p in images:
         if updater_mod.is_trial(p):
@@ -237,7 +244,7 @@ def test_the_update_screen_shows_the_whole_image_name():
     for name in ("mcb_pink_purple_0_7.bin", "mcb_pink_red_0_16.bin",
                  "MCB_16_0923.bin", "MCB_e16_2029.09.17.bin",
                  "mcb_0923_pinks_no13.bin", "mcb_1118prog_seq0923_pinks_no13.bin",
-                 "mcb_1118prog_pinks_no13_endalign.bin"):
+                 "mcb_1118prog_pinks_no13_endalign.bin", "mcb_pinks_0a-purple_0c-red.bin"):
         lines, _ = render._name_lines(name, render.WIDTH - 16)
         assert lines == [name]                 # today's names fit whole
     long = "a_very_long_vendor_firmware_name_v2_final_release.bin"
@@ -261,6 +268,14 @@ def test_the_update_screen_shows_the_whole_image_name():
     assert render._ellipsize("FW_261119D", render.FONT_S, room) == "FW_261119D"
     render.update_screen("FW_261119D/mcb_1118prog_pinks_no13_endalign.bin (trial)",
                          63144, 3, "idle", "", 0, [], image_choice="10/10")
+    # The final image as the units see it: 2 of 2.
+    choice_w2 = int(render.FONT_S.getlength("< 2/2 >")) + 6
+    room2 = render.WIDTH - 52 - 8 - choice_w2 - trial_w
+    assert render._ellipsize("FW_261119F", render.FONT_S, room2) == "FW_261119F"
+    assert render._name_lines("mcb_pinks_0a-purple_0c-red.bin", render.WIDTH - 16)[0] == [
+        "mcb_pinks_0a-purple_0c-red.bin"]
+    render.update_screen("FW_261119F/mcb_pinks_0a-purple_0c-red.bin (trial)",
+                         63144, 3, "idle", "", 0, [], image_choice="2/2")
 
 
 def test_only_trial_builds_still_give_a_default(tmp_path):

@@ -49,7 +49,7 @@ HI_Z_V11 = 0xFF
 COLOR_COUNT_16 = 16
 SEGMENTS_GEN = frozenset(range(1, 61))
 
-# 16-color LUT as of FW_260917 - FW/FW_260917/260917_16_Color_Chart_
+# 16-color LUT as of FW_260917 - FW/archive/FW_260917/260917_16_Color_Chart_
 # changed.xlsx, the chart the garment designers work from. The V1.1
 # datasheet (5.1.1) and FW_260903 had turquoise at 0x05 and green at
 # 0x06; FW_260917 swapped the two back, so green is 0x05 again as in the

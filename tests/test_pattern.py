@@ -130,7 +130,7 @@ def test_slot_range_guard():
 
 
 def test_palette_matches_the_fw_260917_color_chart():
-    # FW/FW_260917/260917_16_Color_Chart_ changed.xlsx: value, name,
+    # FW/archive/FW_260917/260917_16_Color_Chart_ changed.xlsx: value, name,
     # reference RGB. Green is 0x05 and turquoise 0x06 - the V1.1
     # datasheet table (and FW_260903) had those two the other way round.
     from epaper.pattern import COLOR_LABELS_16, COLOR_NAMES_16, COLOR_RGB_16

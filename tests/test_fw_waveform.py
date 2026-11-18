@@ -19,11 +19,13 @@ import ota  # noqa: E402
 import tools.fw_waveform as fw  # noqa: E402
 
 FW_DIR = REPO / "FW"
+ARCHIVE = FW_DIR / "archive"           # 2026-11-20: builds UPDATE FW no longer offers
 BASE = FW_DIR / "FW_260923" / "fw2029.09.23" / "MCB_16_0923.bin"
-RED = FW_DIR / "FW_261109" / "mcb_pink_red_0_16.bin"
-PURPLE = FW_DIR / "FW_261109" / "mcb_pink_purple_0_7.bin"
-TWO = FW_DIR / "FW_261118" / "mcb_two_pinks(0a,0c).bin"
-SHIPPED = FW_DIR / "FW_261118B" / "mcb_0923_pinks_no13.bin"
+RED = ARCHIVE / "FW_261109" / "mcb_pink_red_0_16.bin"
+PURPLE = ARCHIVE / "FW_261109" / "mcb_pink_purple_0_7.bin"
+TWO = ARCHIVE / "FW_261118" / "mcb_two_pinks(0a,0c).bin"
+SHIPPED = ARCHIVE / "FW_261118B" / "mcb_0923_pinks_no13.bin"
+ALL_IMAGES = sorted(FW_DIR.rglob("*.bin"))     # offered and archived
 PLAN = [(10, RED, 12), (12, PURPLE, 12)]
 
 
@@ -35,8 +37,8 @@ def make_plan_image():
 # ---- decoding the shipped images ----
 
 @pytest.mark.parametrize("path, total", [
-    (FW_DIR / "FW_260903" / "OTA_16c.bin", 616),     # name PDName1SPS005001
-    (FW_DIR / "FW_260917" / "MCB_e16_2029.09.17.bin", 662),   # = FW_260923's table
+    (ARCHIVE / "FW_260903" / "OTA_16c.bin", 616),     # name PDName1SPS005001
+    (ARCHIVE / "FW_260917" / "MCB_e16_2029.09.17.bin", 662),   # = FW_260923's table
     (BASE, 662), (PURPLE, 585), (RED, 611), (TWO, 1197)])
 def test_every_colour_lasts_the_header_total(path, total):
     table = fw.parse(path.read_bytes())
@@ -201,7 +203,7 @@ def test_the_trial_image_has_its_own_ota_fingerprint():
     assert fw.crc16_modbus(image) == ota.crc16_modbus(image)
     catalog = ota.bundled_images(FW_DIR)
     assert catalog[ota.image_fingerprint(image)] == "FW_261118B"
-    images = sorted(FW_DIR.glob("FW_*/**/*.bin"))
+    images = ALL_IMAGES
     fingerprints = {ota.image_fingerprint(p.read_bytes()) for p in images}
     assert len(fingerprints) == len(images)
 
@@ -437,7 +439,11 @@ def test_the_output_in_fw_needs_a_trial_folder(tmp_path, monkeypatch, capsys):
     assert not (root / "TRIAL").exists()        # never written for the user
     assert fw.main(transplant_argv(tmp_path / "elsewhere.bin")) == 0
     # The real FW/ tree: the shipped image's folder has its TRIAL.
-    fw.check_out(REPO / "FW" / "FW_261118B" / "new.bin", [BASE], False, REPO / "FW")
+    fw.check_out(ARCHIVE / "FW_261118B" / "new.bin", [BASE], False, REPO / "FW")
+    fw.check_out(REPO / "FW" / "FW_261119F" / "new.bin", [BASE], False, REPO / "FW")
+    for no_trial in (ARCHIVE / "new.bin", ARCHIVE / "FW_260917" / "new.bin"):
+        with pytest.raises(fw.WaveformError, match="TRIAL"):
+            fw.check_out(no_trial, [BASE], False, REPO / "FW")
     with pytest.raises(fw.WaveformError, match="TRIAL"):
         fw.check_out(REPO / "FW" / "FW_260923" / "new.bin", [BASE], False, REPO / "FW")
 
@@ -506,7 +512,8 @@ def test_the_trial_folder_is_the_nearest_fw_folder(tmp_path, monkeypatch, capsys
 
 
 def test_validate_refuses_bad_steps_and_every_vendor_image_passes():
-    for path in sorted(FW_DIR.glob("FW_*/**/*.bin")):
+    assert len(ALL_IMAGES) == 10
+    for path in ALL_IMAGES:
         fw.validate(path.read_bytes(), path.name)
     base = base_entries()
     for bad, why in (((0, 0, 10, 0, 0, 0, 0), "repeat 0 or lasts 0"),
@@ -541,7 +548,7 @@ def test_a_folder_that_cannot_be_made_is_refused(tmp_path, capsys):
 # flash, carrying FW_260923's table (total 662) and the 11/9 pinks ----
 
 PROG_1118 = TWO
-PLAN_C_OUT = FW_DIR / "FW_261119" / "mcb_1118prog_seq0923_pinks_no13.bin"
+PLAN_C_OUT = ARCHIVE / "FW_261119" / "mcb_1118prog_seq0923_pinks_no13.bin"
 PLAN_C_SHA256 = "364152af818e88ba1e000abfe12d915388fe75c27becc1aa6cc3be0defef7d50"
 PLAN_C_SETS = ([(c, BASE, c) for c in range(16) if c not in (10, 12)]
                + [(10, RED, 12), (12, PURPLE, 12)])
@@ -711,7 +718,7 @@ def test_the_cli_takes_total(tmp_path, capsys):
 # ---- retime --end-align: plan D, FW_261119D (2026-11-20) - plan C with
 # each colour's trailing rest moved to right after the shake ----
 
-PLAN_D_OUT = FW_DIR / "FW_261119D" / "mcb_1118prog_pinks_no13_endalign.bin"
+PLAN_D_OUT = ARCHIVE / "FW_261119D" / "mcb_1118prog_pinks_no13_endalign.bin"
 PLAN_D_SHA256 = "c07909b5fad5e6fdbd3a00efd119d569ef649c5b28726a981df8041f6ab7e067"
 MOVED_D = {0: 1, 1: 1, 2: 1, 4: 1, 8: 2, 9: 1, 10: 2, 11: 1, 12: 2}   # colour: steps
 INSERT_D = {c: 10 for c in MOVED_D}
@@ -846,3 +853,98 @@ def test_the_cli_retimes(tmp_path, capsys):
     assert "exists" in capsys.readouterr().err
     assert fw.main(argv + ["--force", "--shake-end", "999"]) == 2
     assert "at or after the trailing rest" in capsys.readouterr().err
+
+
+# ---- the final image FW_261119F (2026-11-20): plan D with the pinks the
+# way the user's colour chart has them (0x0A pink purple, 0x0C pink red),
+# made by transplant --total 662 --end-align in one command ----
+
+FINAL_OUT = FW_DIR / "FW_261119F" / "mcb_pinks_0a-purple_0c-red.bin"
+FINAL_SHA256 = "2f666df70c6badcfa80600f1a208c3485e1edb0a8af259afd189d740b4cccab7"
+FINAL_SETS = ([(c, BASE, c) for c in range(16) if c not in (10, 12)]
+              + [(10, PURPLE, 12), (12, RED, 12)])
+SHAKE = ((26, 6, 2, 1, 2, 0, 0), (1, 6, 10, 0, 0, 0, 0), (5, 6, 2, 1, 2, 0, 0),
+         (1, 6, 10, 0, 0, 0, 0), (5, 6, 2, 1, 2, 0, 0), (1, 6, 10, 0, 0, 0, 0),
+         (3, 1, 4, 6, 4, 0, 0), (1, 6, 10, 0, 0, 0, 0), (3, 1, 4, 6, 4, 0, 0))
+STEPS_F = {
+    10: ((1, 0, 97, 1, 25, 0, 0),) + SHAKE
+    + ((12, 0, 0, 0, 6, 0, 11), (2, 0, 2, 0, 0, 0, 0),           # 208 ticks of rest
+       (1, 0, 4, 0, 0, 0, 0), (4, 6, 3, 0, 5, 3, 16)),
+    12: ((1, 0, 91, 1, 31, 0, 0),) + SHAKE
+    + ((12, 0, 0, 0, 0, 0, 6), (1, 0, 0, 0, 8, 0, 0),            # 80 ticks of rest
+       (1, 0, 4, 0, 0, 0, 0), (8, 6, 6, 0, 5, 3, 17)),
+}
+ENTRY_10_F = (0xCF60, 0xCFC3)
+ENTRY_12_F = (0xD01F, 0xD082)
+
+
+def make_final_image():
+    image, _ = fw.transplant(TWO.read_bytes(),
+                             [(c, p.read_bytes(), dc, p.name) for c, p, dc in FINAL_SETS], 662)
+    return fw.retime(image)[0]
+
+
+def test_the_final_image_is_pinned():
+    image = FINAL_OUT.read_bytes()
+    assert len(image) == 63144
+    assert hashlib.sha256(image).hexdigest() == FINAL_SHA256
+    assert ota.crc16_modbus(image) == 0xC56D
+    total, entries = table_here(image)
+    assert total == 662
+    assert entries[10][2] == STEPS_F[10] and entries[12][2] == STEPS_F[12]
+    assert [last_drive_here(s) for _, _, s in entries] == LAST_DRIVE_D
+    for steps in (STEPS_F[10], STEPS_F[12]):
+        assert sum(r * (a + b + d) for r, _, a, _, b, _, d in steps) == 662
+
+
+def test_the_final_image_is_plan_d_with_entries_10_and_12_exchanged():
+    final, plan_d = FINAL_OUT.read_bytes(), PLAN_D_OUT.read_bytes()
+    _, f_entries = table_here(final)
+    _, d_entries = table_here(plan_d)
+    assert f_entries[10][2] == d_entries[12][2] and f_entries[12][2] == d_entries[10][2]
+    assert (f_entries[10][:2], f_entries[12][:2]) == (ENTRY_10_F, ENTRY_12_F)
+    diff = [i for i, (a, b) in enumerate(zip(plan_d, final)) if a != b]
+    assert len(diff) == 20 and (diff[0], diff[-1]) == (0xCF63, 0xD081)
+    assert all(ENTRY_10_F[0] <= i < ENTRY_10_F[1] or ENTRY_12_F[0] <= i < ENTRY_12_F[1]
+               for i in diff)
+    assert len(final) == len(plan_d)
+
+
+def test_the_final_image_is_what_the_tool_makes_now():
+    assert make_final_image() == FINAL_OUT.read_bytes()
+
+
+def test_transplant_end_align_does_both_steps_in_one_command(tmp_path, capsys):
+    out = tmp_path / "f.bin"
+    argv = ["transplant", "--base", str(TWO), "--total", "662", "--end-align",
+            "--out", str(out)]
+    for c, p, dc in FINAL_SETS:
+        argv += ["--set", f"{c}={p}:{dc}"]
+    assert fw.main(argv) == 0
+    assert out.read_bytes() == FINAL_OUT.read_bytes()
+    assert [p.name for p in tmp_path.iterdir()] == ["f.bin"]       # no intermediate
+    text = capsys.readouterr().out
+    assert "then retime --end-align:" in text and "454 -> 662" in text
+    assert "colours whose own shake ends later: 1: 364, 5: 426, 6: 426, 7: 426" in text
+    bad = list(argv)
+    bad[bad.index("--out") + 1] = str(tmp_path / "g.bin")
+    assert fw.main(bad + ["--shake-end", "999"]) == 2
+    assert not (tmp_path / "g.bin").exists()
+
+
+def test_every_trial_note_reproduces_its_image(tmp_path):
+    # The reproduce line of each TRIAL note, run with --out redirected:
+    # the archived images still come out byte for byte from their new paths.
+    import shlex
+    import subprocess
+    for folder, image in ((ARCHIVE / "FW_261118B", SHIPPED), (ARCHIVE / "FW_261119", PLAN_C_OUT),
+                          (ARCHIVE / "FW_261119D", PLAN_D_OUT), (FW_DIR / "FW_261119F", FINAL_OUT)):
+        line = next(l for l in (folder / "TRIAL").read_text().splitlines()
+                    if l.startswith("  python tools/fw_waveform.py"))
+        args = shlex.split(line)[1:]
+        i = args.index("--out")
+        assert (REPO / args[i + 1]).resolve() == image.resolve()
+        args[i + 1] = str(tmp_path / image.name)
+        subprocess.run([sys.executable] + args, cwd=REPO, check=True,
+                       capture_output=True)
+        assert (tmp_path / image.name).read_bytes() == image.read_bytes()

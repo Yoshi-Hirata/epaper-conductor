@@ -84,8 +84,12 @@ def test_bundled_images_are_keyed_by_size_and_crc(tmp_path):
 
 
 def test_repo_catalog_names_both_shipped_images():
+    # The archived builds (FW/archive/, 2026-11-20) are still named.
     catalog = ota.bundled_images(Path(__file__).resolve().parents[1] / "FW")
     assert {"FW_260903", "FW_260917"} <= set(catalog.values())
+    assert set(catalog.values()) == {"FW_260903", "FW_260917", "FW_260923", "FW_261109",
+                                     "FW_261118", "FW_261118B", "FW_261119", "FW_261119D",
+                                     "FW_261119F"}
 
 
 def test_repo_catalog_names_subfolder_images_and_keeps_every_key_unique():
@@ -94,27 +98,44 @@ def test_repo_catalog_names_subfolder_images_and_keeps_every_key_unique():
     # same size, so the two must still get their own (size, crc) keys.
     fw_dir = Path(__file__).resolve().parents[1] / "FW"
     catalog = ota.bundled_images(fw_dir)
-    images = sorted(fw_dir.glob("FW_*/**/*.bin"))
-    assert len(catalog) == len(images)                  # no key collides
+    images = sorted(fw_dir.rglob("*.bin"))              # offered and archived
+    assert len(images) == 10 and len(catalog) == len(images)   # no key collides
+    arch = fw_dir / "archive"
     prod = ota.image_fingerprint(
         (fw_dir / "FW_260923" / "fw2029.09.23" / "MCB_16_0923.bin").read_bytes())
     trial = ota.image_fingerprint(
-        (fw_dir / "FW_261118B" / "mcb_0923_pinks_no13.bin").read_bytes())
+        (arch / "FW_261118B" / "mcb_0923_pinks_no13.bin").read_bytes())
     assert prod[0] == trial[0] and prod != trial
     assert catalog[prod] == "FW_260923"
     assert catalog[trial] == "FW_261118B"
     # Plan C (2026-11-20) has the same size as the FW_261118 program it keeps.
     prog = ota.image_fingerprint(
-        (fw_dir / "FW_261118" / "mcb_two_pinks(0a,0c).bin").read_bytes())
+        (arch / "FW_261118" / "mcb_two_pinks(0a,0c).bin").read_bytes())
     plan_c = ota.image_fingerprint(
-        (fw_dir / "FW_261119" / "mcb_1118prog_seq0923_pinks_no13.bin").read_bytes())
+        (arch / "FW_261119" / "mcb_1118prog_seq0923_pinks_no13.bin").read_bytes())
     assert prog[0] == plan_c[0] and prog[1] != plan_c[1]
     assert (catalog[prog], catalog[plan_c]) == ("FW_261118", "FW_261119")
     # Plan D (2026-11-20): the third image of that size.
     plan_d = ota.image_fingerprint(
-        (fw_dir / "FW_261119D" / "mcb_1118prog_pinks_no13_endalign.bin").read_bytes())
+        (arch / "FW_261119D" / "mcb_1118prog_pinks_no13_endalign.bin").read_bytes())
     assert plan_d[0] == prog[0] and len({prog[1], plan_c[1], plan_d[1]}) == 3
     assert catalog[plan_d] == "FW_261119D"
+    # The final image (2026-11-20): the fourth of that size.
+    final = ota.image_fingerprint(
+        (fw_dir / "FW_261119F" / "mcb_pinks_0a-purple_0c-red.bin").read_bytes())
+    assert final[0] == prog[0] and len({prog[1], plan_c[1], plan_d[1], final[1]}) == 4
+    assert catalog[final] == "FW_261119F"
+
+
+def test_archived_builds_are_named_and_nested_archive_folders_too(tmp_path):
+    (tmp_path / "FW_260923").mkdir()
+    (tmp_path / "FW_260923" / "a.bin").write_bytes(b"\x0a" * 30)
+    (tmp_path / "archive" / "FW_260917" / "sub").mkdir(parents=True)
+    (tmp_path / "archive" / "FW_260917" / "sub" / "b.bin").write_bytes(b"\x0b" * 30)
+    (tmp_path / "archive" / "loose.bin").write_bytes(b"\x0c" * 30)    # no FW_ folder
+    assert ota.bundled_images(tmp_path) == {
+        ota.image_fingerprint(b"\x0a" * 30): "FW_260923",
+        ota.image_fingerprint(b"\x0b" * 30): "FW_260917"}
 
 
 def test_nested_fw_folders_are_named_like_the_updater_labels_them(tmp_path):

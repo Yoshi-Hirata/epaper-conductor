@@ -4,3 +4,5 @@ Trial builds from the vendor (2026-11-09), received 2026-11-17:
 UPDATE FW offers them with LEFT/RIGHT, marked "(trial)", but never as the
 default image (ui/updater.py is_trial / find_firmware). Delete this file to
 make the newest of them the default.
+Archived 2026-11-19: no longer offered by UPDATE FW (the "offers it" lines above
+describe the time it was written); see FW/archive/README.

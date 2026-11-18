@@ -140,7 +140,7 @@ Pi Zero 2 W ──USB OTG(micro-B "USB"ポート)── 基板 ID:1 ──4芯�
 
 | 行 | 動作 |
 |---|---|
-| `UPDATE FW` | 基板の FW を OTA で書き込む(485 を抜いて 1 枚ずつ)。確認画面で **LEFT / RIGHT** が書き込む版(`FW/FW_*` にある全部、既定は最新)、UP / DOWN が基板 |
+| `UPDATE FW` | 基板の FW を OTA で書き込む(485 を抜いて 1 枚ずつ)。確認画面で **LEFT / RIGHT** が書き込む版(`FW/FW_*` にある全部 ―― 2026-11-20 から `FW_260923` と試作 `FW_261119F` の 2 つ、既定は TRIAL でない最新 = `FW_260923`。旧版は `FW/archive/`)、UP / DOWN が基板 |
 | **`CLEAR BOARD`** | **1 枚の基板に V1.4 のクリアコマンドを送る**(試験 FW `FW_261109` の「先に wave をクリア」用、2026-11-17)。入ると UPDATE FW と同じくランナーを止め、応答する基板を走査(0x17 だけ。485 の先の基板も選べる)。**UP / DOWN** = 基板(応答したものから)、**LEFT / RIGHT** = `CLEAR COLOURS (0x15)`(20 スロットの絵をすべて消す、17/18 の工場デモも) / `CLEAR AUTOPLAY (0x05)`(電源投入時の自動再生設定を既定に戻す。マスタ 0x01 は電源投入でスロット 0 の 15 秒巡回を続ける ―― FW の既定)。KEY1 短押しは再走査。**KEY1 を 1 秒長押しで予約**(5 秒間 `hold KEY1 again: CLEAR COLOURS board 03`、他のボタンで取消)、**もう 1 回長押しで送信**(0x17 停止 → コマンド)。結果 `ACK_SUCCESS` / `ACK_FAIL`(エラーコード付き)/ `no answer` が画面とジャーナルに出る(機体には何も記録しない)。PC のショーが機体を握っている間(UPDATE FW と同じ)と、Upload 済みで START 待ちの間(`PC show loaded - CLEAR locked`)は断る。CLEAR COLOURS は、再起動で戻ったものも含め PC のショーの絵が基板に載っている間も断る(`PC show on the boards - Clear pictures on the PC first` ―― PC の「Clear pictures now」かデモの読み込みで外れる)。0x15 を送ったあとは、応答に関わらずその基板を機体の書き込みキャッシュから忘れる(次の Upload・デモで書き直す)(docs/SPECIFICATION.md「基板のクリア」) |
 | `FW VERSION` | 応答した基板の FW を一覧。V1.4(FW_260923 以降)は `V1.4 16-color`、それ以前は `V1.1` と出る(USB 直結の 1 枚に 0x25 で判別) |
 | `GIT PULL` | `git pull --ff-only`。更新があれば KEY1 で UI を再起動 |
@@ -306,7 +306,7 @@ LCD 本体は未接続だが、以下は実機で確認済み:
   (017→1、018→2 …。飛び番があっても ID は詰める)
 - `socket` N = 配列インデックス N(P1〜P60、DeviceType 0x03)。鱗の無い
   ソケットは `0xFF`(非更新)
-- 色は `FW/FW_260917/260917_16_Color_Chart_ changed.xlsx` の表
+- 色は `FW/archive/FW_260917/260917_16_Color_Chart_ changed.xlsx` の表
   (**0x05 = 緑、0x06 = ターコイズ**)
 - **`0` は「穴なし」、白は `0x00`**。取り違えを防ぐため、map に鱗があるのに
   grid に色が無い(`0` や `-`)/grid に穴があるのに map に鱗が無い、は

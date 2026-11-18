@@ -21,22 +21,24 @@
 
 **試験 FW(ピンク)とイメージ解析(2026-11-18/19、main 99626d3 → 15d517f、未 push)**
 
-- **現在の最有力: `FW/FW_261119D/mcb_1118prog_pinks_no13_endalign.bin`(自作・TRIAL、15d517f)**。
+- **2026-11-20: UPDATE FW が出すのは 2 つだけ** ―― `FW/FW_260923`(既定)と `FW/FW_261119F/mcb_pinks_0a-purple_0c-red.bin`(自作・TRIAL、計画 D のピンクを色番表どおり 0x0A = ピンクパープル、0x0C = ピンクレッドに入れ替えたもの、未書き込み)。ほかのビルドはすべて `FW/archive/`(`tools/fw_waveform.py`・テスト・履歴用、UPDATE FW は見ない。`host/ota.py` のカタログは archive も読むので FW VERSION / BOARD INFO では名前が出る)
+
+- **現在の最有力: `FW/archive/FW_261119D/mcb_1118prog_pinks_no13_endalign.bin`(自作・TRIAL、15d517f)**。
   radxa-06 の基板 03 で、16 色とピンク 2 色が出て、色の終わるタイミングも揃うことを運用者が確認
   (経緯は下の計画 B → C → D)。radxa-06 は 15d517f、ほかの機体は変更なし
 
-- `FW/FW_261118/mcb_two_pinks(0a,0c).bin`: メーカー(Meris)の試作。色コード 0x0A / 0x0C をピンクに
+- `FW/archive/FW_261118/mcb_two_pinks(0a,0c).bin`: メーカー(Meris)の試作。色コード 0x0A / 0x0C をピンクに
   変えたもの。`TRIAL` フォルダ(UPDATE FW の LEFT/RIGHT で選べるが既定にならない)。
   **radxa-06 に配備済み(99626d3)**、色は運用者が radxa-06 で確認した。ただし**色替えの動きが
   本番と違う**: 表の共通長が 662 → 1197 単位になり、ほかの 14 色の冒頭の「揺れ」が
   ゆっくりした 5 回のスイングに置き換わった(ピンクとそれ以外の動きが揃わない)。Meris に質問中
-- 解析(事実は `FW/FW_261118B/TRIAL` と `tools/fw_waveform.py` の docstring): イメージは暗号化なしの
+- 解析(事実は `FW/archive/FW_261118B/TRIAL` と `tools/fw_waveform.py` の docstring): イメージは暗号化なしの
   STM32 イメージ、色の波形表の形式、試作はプログラムも FW_260923 と約 39 か所違い、
   プロトコル V1.4 に無いコマンド 0x2A を足している(用途不明、Meris に質問中)
 - `tools/fw_waveform.py`(新規): `dump` / `transplant`(`--total N` 付き)/ `retime --end-align`。
   `tests/test_fw_waveform.py`
 - 各イメージは reviewer と Codex のレビュー後に書いた(基板 03、radxa-06)
-- **計画 B `FW/FW_261118B/mcb_0923_pinks_no13.bin`(FW_260923 のプログラム + ピンク): 実機で失敗**。
+- **計画 B `FW/archive/FW_261118B/mcb_0923_pinks_no13.bin`(FW_260923 のプログラム + ピンク): 実機で失敗**。
   6 色の繰り返しでピンクが出ない。素の FW_260923 でも同じ基板は 6 色だった。原因(Codex の静的解読を
   計画 C の結果が裏づけ): FW_260923 のプログラムは、基板の SPI フラッシュに保存された波形
   (記録 `!TUL`、0x180000 + ID×0x2000)があれば内蔵の表より**そちらを優先**し、色コードを読み込んだ
@@ -44,10 +46,10 @@
   Meris の「先に wave を消す」はこれのこと。消去コマンドは 0x24 + 波形 ID(自前ツールに無い。
   0x15 / 0x05 は触らない ― 0x15 は試したが ACK_SUCCESS が約 1 秒で変化なし)。FW_260923 への
   OTA 復帰は成功(SWD なしで復旧できる)。FW_261118B は行き止まりとして記録だけ残す
-- **計画 C `FW/FW_261119/mcb_1118prog_seq0923_pinks_no13.bin`(2d3ac33、TRIAL)**: メーカーの
+- **計画 C `FW/archive/FW_261119/mcb_1118prog_seq0923_pinks_no13.bin`(2d3ac33、TRIAL)**: メーカーの
   FW_261118 のプログラムをそのまま + FW_260923 の 14 色と時間(共通長 662)+ 11/9 の No.13 ピンク
   (0x0A / 0x0C)。**実機で成功**(16 色とピンク 2 色)。`transplant --total N` を追加
-- **計画 D `FW/FW_261119D/mcb_1118prog_pinks_no13_endalign.bin`(15d517f、TRIAL)**: 計画 C で色ごとに
+- **計画 D `FW/archive/FW_261119D/mcb_1118prog_pinks_no13_endalign.bin`(15d517f、TRIAL)**: 計画 C で色ごとに
   終わる時刻が違った(最後の駆動の終わりが tick 454〜661、tick = 10 ms)ので、各色の末尾の休止を
   揺れの直後へ移して全色が同時に駆動を終えるようにした(`retime --end-align`)。
   **実機で確認済み**: タイミングが揃い、色は変わらない

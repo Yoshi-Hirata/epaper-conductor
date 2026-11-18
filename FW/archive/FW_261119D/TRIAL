@@ -25,6 +25,8 @@ well as the longer rest before the colour drive.
 Unproven on hardware: try it on a spare board first.
 Reproduce (from the repo root; it refuses while the .bin exists - delete
 it first or add --force):
-  python tools/fw_waveform.py retime --base FW/FW_261119/mcb_1118prog_seq0923_pinks_no13.bin --end-align --out FW/FW_261119D/mcb_1118prog_pinks_no13_endalign.bin
+  python tools/fw_waveform.py retime --base FW/archive/FW_261119/mcb_1118prog_seq0923_pinks_no13.bin --end-align --out FW/archive/FW_261119D/mcb_1118prog_pinks_no13_endalign.bin
 UPDATE FW offers it with LEFT/RIGHT, marked "(trial)", but never as the
 default image (ui/updater.py is_trial / find_firmware).
+Archived 2026-11-19: no longer offered by UPDATE FW (the "offers it" lines above
+describe the time it was written); see FW/archive/README.

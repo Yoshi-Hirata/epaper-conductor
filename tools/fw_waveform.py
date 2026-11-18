@@ -48,6 +48,16 @@ drive, only when the rest happens.
     python tools/fw_waveform.py retime --base IMAGE --end-align \
         [--after-step 9] [--shake-end N] --out OUT [--force]
 
+transplant also takes --end-align (and --after-step / --shake-end): the
+retime runs on the transplanted image in the same command, both self-checks
+pass before anything is written, and no intermediate file is left
+(2026-11-20, the final FW_261119F image: 0x0A = pink purple, 0x0C = pink
+red, as in the user's colour chart).
+
+Since 2026-11-20 only FW/FW_260923 and FW/FW_261119F are where UPDATE FW
+looks; the other builds (vendor and home-made) are kept under FW/archive/
+for this tool, the tests and history.
+
 Pure stdlib; no board or serial port involved.
 """
 from __future__ import annotations
@@ -632,6 +642,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                    metavar="COLOUR=DONOR:COLOUR")
     t.add_argument("--total", type=int, default=None,
                    help="rewrite the header total; every colour must then last it")
+    t.add_argument("--end-align", action="store_true",
+                   help="then retime --end-align the result, in the same command")
+    t.add_argument("--after-step", type=int, default=9)
+    t.add_argument("--shake-end", type=int, default=None)
     t.add_argument("--out", type=Path, required=True)
     t.add_argument("--force", action="store_true", help="overwrite --out")
     r = sub.add_parser("retime", help="move each colour's trailing rest after the shake")
@@ -654,7 +668,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         base = args.base.read_bytes()
         image, changes = transplant(
             base, [(c, p.read_bytes(), dc, p.name) for c, p, dc in args.sets], args.total)
-        write_atomic(args.out, image, args.force)
+        aligned = (retime(image, args.shake_end, args.after_step)
+                   if args.end_align else None)
+        write_atomic(args.out, aligned[0] if aligned else image, args.force)
     except (WaveformError, OSError) as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2
@@ -672,8 +688,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             dur = sum(step_duration(s) for s in steps)
             print(f"  {label:6s} {len(steps):2d} steps  total {dur:4d}  "
                   + " ".join(_fmt(s) for s in steps))
+    if aligned:
+        image, rows, shake_end = aligned
+        print("then retime --end-align:")
+        _print_retime(rows, shake_end, args)
     print(f"wrote {args.out}  {len(image)} B  crc16 0x{crc16_modbus(image):04X}  (self-check passed)")
     return 0
+
+
+def _print_retime(rows: Sequence[Retime], shake_end: int, args) -> None:
+    print(f"shake end {shake_end} (tick after step {args.after_step}"
+          + (", most common)" if args.shake_end is None else ", given)"))
+    odd = [f"{r.colour}: {r.shake_end}" for r in rows if r.shake_end != shake_end]
+    if odd:
+        print("colours whose own shake ends later: " + ", ".join(odd))
+    for line in retime_table(rows, args.after_step):
+        print(line)
 
 
 def _main_retime(args) -> int:
@@ -687,13 +717,7 @@ def _main_retime(args) -> int:
         return 2
     print(f"base  {args.base}  {len(base)} B  crc16 0x{crc16_modbus(base):04X}  "
           f"total {parse(base).total}")
-    print(f"shake end {shake_end} (tick after step {args.after_step}"
-          + (", most common)" if args.shake_end is None else ", given)"))
-    odd = [f"{r.colour}: {r.shake_end}" for r in rows if r.shake_end != shake_end]
-    if odd:
-        print("colours whose own shake ends later: " + ", ".join(odd))
-    for line in retime_table(rows, args.after_step):
-        print(line)
+    _print_retime(rows, shake_end, args)
     print(f"wrote {args.out}  {len(image)} B  crc16 0x{crc16_modbus(image):04X}  (self-check passed)")
     return 0
 

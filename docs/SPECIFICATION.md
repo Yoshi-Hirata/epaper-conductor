@@ -107,7 +107,7 @@ Conductor からは送らない。
 
 ### 3.1 色コード
 
-**現行 FW(16 色、FW_260917)** — `FW/FW_260917/260917_16_Color_Chart_ changed.xlsx`
+**現行 FW(16 色、FW_260917)** — `FW/archive/FW_260917/260917_16_Color_Chart_ changed.xlsx`
 (衣装デザイナーに渡してある色番表)。V1.1 仕様書 5.1.1 / FW_260903 では
 0x05 = 青緑・0x06 = 緑だったが、**FW_260917 で入れ替わり 0x05 = 緑・0x06 = 青緑**。
 コード・色名・参考 RGB は `host/epaper/pattern.py` の `COLOR_NAMES_16` / `COLOR_LABELS_16` /
@@ -1686,7 +1686,7 @@ radxa-05(Debian 11、SD/eMMC 上の ext4 `rw,relatime`)は 2026-10-01 に 2 回�
 
 ### 基板のクリア(CLEAR BOARD、2026-11-17)
 
-- 試験 FW(`FW/FW_261109`)の技術者の「maybe need to clear the wave first」を受けて、
+- 試験 FW(`FW/archive/FW_261109`)の技術者の「maybe need to clear the wave first」を受けて、
   V1.4 にある 2 つのクリアコマンドを**選んだ 1 枚の基板に**機体の LCD から送る
   (`ui/boardclear.py`、フレームは `commands.clear_all_colors` / `clear_autoplay`、
   どちらもデータ体なし):
@@ -1728,24 +1728,27 @@ radxa-05(Debian 11、SD/eMMC 上の ext4 `rw,relatime`)は 2026-10-01 に 2 回�
 
 ### UPDATE FW のイメージ選択と FW VERSION の `bundled:`(2026-11-19)
 
-- イメージは `FW/FW_*/**/*.bin`(`host/ota.py` のカタログも同じ範囲)。**既定**は
-  `TRIAL` ファイルを持たない最新フォルダのイメージ(`ui/updater.py` の `find_firmware()`、
-  今は `FW_260923`)。`TRIAL` のあるフォルダ(メーカーの試作 `FW_261109` / `FW_261118`、
-  自作の `FW_261118B` / `FW_261119` / `FW_261119D`)は LEFT/RIGHT で選べるが `TRIAL` と表示され、既定にならない。
-  カタログに全 `.bin` が入るので、試作を載せた基板も FW VERSION / BOARD INFO で名前が出る
+- イメージは `FW/FW_*/**/*.bin`。**既定**は `TRIAL` ファイルを持たない最新フォルダのイメージ
+  (`ui/updater.py` の `find_firmware()`、今は `FW_260923`)。`TRIAL` のあるフォルダは LEFT/RIGHT で
+  選べるが `TRIAL` と表示され、既定にならない。**2026-11-20 から出るのは 2 つだけ**:
+  `FW_260923/MCB_16_0923.bin`(既定)と `FW_261119F/mcb_pinks_0a-purple_0c-red.bin`(自作・TRIAL)。
+  ほかのビルド(メーカーの `FW_260903` / `FW_260917` / `FW_261109` / `FW_261118`、自作の
+  `FW_261118B` / `FW_261119` / `FW_261119D`)は `FW/archive/` に移した(UPDATE FW は見ない)。
+  `host/ota.py` のカタログは `FW/FW_*` と `FW/archive/FW_*` の全 `.bin` を読むので、試作や旧版を
+  載せた基板も FW VERSION / BOARD INFO で名前が出る
 - FW VERSION 画面上部の `bundled:` は**UPDATE FW が既定で書くイメージのフォルダ**
   (`ui/versions.py` の `bundled_folder()`、TRIAL 除く)。行は、そのフォルダ名と**完全に
   一致**する名前(ビルド名か `flashed FW_...` の記録)のときだけ緑
 - 試作イメージの解析・作成は `tools/fw_waveform.py`(`dump` = 色の波形表を表示、
   `transplant` = 別イメージから指定した色だけを移植、`--total N` で表の共通長も指定、
   `retime --end-align` = 各色の末尾の休止を揺れの直後へ移して全色が同時に駆動を終えるようにする)。
-  形式と事実は `FW/FW_261118B/TRIAL`、`FW/FW_261119/TRIAL`、`FW/FW_261119D/TRIAL` と
+  形式と事実は `FW/archive/FW_261118B/TRIAL`、`FW/archive/FW_261119/TRIAL`、`FW/archive/FW_261119D/TRIAL`、`FW/FW_261119F/TRIAL` と
   このツールの docstring を見ること(ここでは繰り返さない)。テスト: `tests/test_fw_waveform.py`
 - FW_260923 のプログラムは、基板の SPI フラッシュに保存された波形(記録 `!TUL`、
   0x180000 + ID×0x2000)があれば内蔵の表より優先して読み、色コードを読み込んだエントリ数で
   剰余にする。保存波形を持つ基板では、表だけ差し替えたイメージ(`FW_261118B`)を書いても反映されず、
   保存波形の色数で繰り返す。メーカーの 11/9 再送版と FW_261118 のプログラムはこの読み込みを
-  外してある。保存波形の消去は 0x24 + 波形 ID(自前ツールに無い)。詳細は `FW/FW_261119/TRIAL`
+  外してある。保存波形の消去は 0x24 + 波形 ID(自前ツールに無い)。詳細は `FW/archive/FW_261119/TRIAL`
 
 ### Wi-Fi の切り替え(WIFI と `/status` の `wifi`、2026-09-30)
 

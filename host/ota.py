@@ -134,14 +134,18 @@ def bundled_images(directory: Path) -> dict[tuple[int, int], str]:
 
     Images in vendor subfolders count too, named by their nearest FW_
     folder - ui/updater.py's rule, so the catalog name and the UPDATE FW
-    label never disagree (2026-11-19: FW_260923 keeps fw2029.09.23/MCB_16_0923.bin, which the
-    old FW_*/*.bin glob missed, so a board on the production image read
-    "build unknown" - and the FW_261118B trial has the very same size, so
-    only the CRC tells the two apart). Same glob as ui/updater.py
-    find_firmware_images."""
+    label never disagree (2026-11-19: FW_260923 keeps
+    fw2029.09.23/MCB_16_0923.bin, which the old FW_*/*.bin glob missed, so
+    a board on the production image read "build unknown" - and several
+    trials share a size, so only the CRC tells them apart). Same glob as
+    ui/updater.py find_firmware_images, plus FW/archive/FW_*."""
     directory = Path(directory)
     catalog: dict[tuple[int, int], str] = {}
-    for path in sorted(directory.glob("FW_*/**/*.bin")):
+    # FW/archive/ (2026-11-20) holds the builds UPDATE FW no longer offers;
+    # a board still running one of them is named all the same.
+    paths = (sorted(directory.glob("FW_*/**/*.bin"))
+             + sorted(directory.glob("archive/FW_*/**/*.bin")))
+    for path in paths:
         try:
             name = next(p.name for p in path.parents if p.name.startswith("FW_"))
             catalog[image_fingerprint(path.read_bytes())] = name

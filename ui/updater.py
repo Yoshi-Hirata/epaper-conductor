@@ -4,7 +4,9 @@ The images live in the repo (FW/FW_<yymmdd>/**/*.bin), so a `git pull`
 on the appliance is the whole "copy the firmware over" step. The newest
 folder is what the menu offers first; LEFT/RIGHT on the confirm screen
 step through every image in the tree, so a board can be taken back to
-an earlier build (FW_260917) when a new one misbehaves. The flashing itself is
+an earlier build when a new one misbehaves (since 2026-11-20 the tree
+offers only FW_260923 and the FW_261119F trial; older builds sit in
+FW/archive/, which the FW_* glob never reaches). The flashing itself is
 host/ota.py, unchanged; this module runs it in a worker thread and turns
 its log into screen state, the way DemoRunner does for the demos.
 
@@ -81,7 +83,8 @@ def find_firmware_images(directory: Path = FIRMWARE_DIR) -> list[Path]:
     FW_260903, MCB_e16_2029.09.17.bin in FW_260917, and from FW_260923 a
     subfolder: fw2029.09.23/MCB_16_0923.bin), so any .bin anywhere under
     the folder counts; the .hex beside it is for SWD burning and is never
-    offered.
+    offered. FW/archive/ (2026-11-20) does not match FW_*, so the builds
+    moved there are never offered.
     """
     return sorted(directory.glob("FW_*/**/*.bin"))
 

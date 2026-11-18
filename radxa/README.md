@@ -98,9 +98,10 @@ Pi のイメージと違い、このイメージのユーザは `adm` に入っ�
 FW イメージはリポジトリに同梱している(`FW/FW_<yymmdd>/*.bin`、ファイル名は
 メーカー配布のまま)ので、Radxa への配布は `git pull` だけでよい。UI はその中の
 **`TRIAL` ファイルを持たない最新フォルダ**の `.bin` をメニューの `UPDATE FW` 行に
-既定で出す(`.hex` は SWD 用で対象外)。メーカーの試作(`FW_261109`、`FW_261118`、
-自作の `FW_261118B` / `FW_261119` / `FW_261119D` など、フォルダに `TRIAL` ファイルがある)は LEFT/RIGHT で選べるが
-`TRIAL` と表示され、既定にはならない。`FW_*/**/*.bin` のサブフォルダも拾う。
+既定で出す(`.hex` は SWD 用で対象外)。`TRIAL` ファイルのあるフォルダは LEFT/RIGHT で選べるが
+`TRIAL` と表示され、既定にならない。`FW_*/**/*.bin` のサブフォルダも拾う。
+2026-11-20 から出るのは **`FW_260923`(既定)と `FW_261119F`(自作の最終候補、TRIAL)の 2 つだけ**。
+ほかのビルドは `FW/archive/` にあり、UPDATE FW には出ない(FW VERSION の名前付けには使う)。
 その `git pull` 自体もメニュー末尾の **`GIT PULL`** 行で LCD から実行できる(下記)。
 
 基板の消去は `UPDATE FW` の次の **`CLEAR BOARD`** 行(選んだ 1 枚に 0x15 = 色データ全消去、
@@ -172,7 +173,7 @@ fast-forward できない状態(機体側で編集した等)や `requirements.tx
 UI は 25 秒待って応答が無ければ `xhci-hcd` を unbind/bind して復旧を試みる
 (`sudo -n` が通ること = セットアップ手順 3)。不要なら `UI_ARGS` に
 `--no-usb-rebind` を足す。イメージを差し替えるときは `--firmware PATH`。
-CLI からは `host/ota.py FW/FW_260903/OTA_16c.bin --addr auto` で同じ
+CLI からは `host/ota.py FW/FW_260923/fw2029.09.23/MCB_16_0923.bin --addr auto` で同じ
 スキャンが使える(`--check --addr auto` で応答する基板の一覧だけ出す)。
 
 ## 10 台への複製(ゴールデンイメージ)
