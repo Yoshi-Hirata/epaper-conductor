@@ -21,13 +21,23 @@ The table, as decoded from the shipped images (FW_260903 .. FW_261118):
 In every shipped image the 16 entries last exactly the header's total, and
 step 0 is a padding step ([1, 0, a, x, b, 0, 0] in the donors) that makes
 them so. A transplanted entry therefore keeps the donor's steps, grows the
-donor's step 0 level-0 time to the base image's total, and is padded to
-the base entry's step count by splitting a plain hold in two (same drive,
-same bytes count), so nothing after it moves. The header is never touched.
+donor's step 0 level-0 time to the target total (an entry that already
+lasts it is copied untouched), and is padded to the base entry's step
+count by splitting a plain hold in two (same drive, same bytes count), so
+nothing after it moves. The header is never touched, except its total
+with --total N; then every colour must last N, so all 16 whose base entry
+does not must be given by --set.
+
+Plan C (2026-11-20): the FW_260923 program prefers a waveform saved in the
+board's SPI flash to its built-in table, so a table patched into that
+program may never be used (FW_261118B showed six colours on board 03, and
+so did plain FW_260923); the vendor's later trial programs ignore the saved
+wave. FW_261119 therefore keeps the vendor's FW_261118 program and carries
+FW_260923's table (total 662) with the two 11/9 pinks.
 
     python tools/fw_waveform.py dump IMAGE
     python tools/fw_waveform.py transplant --base IMAGE \
-        --set 10=DONOR:12 --set 12=DONOR:12 --out OUT [--force]
+        --set 10=DONOR:12 --set 12=DONOR:12 [--total N] --out OUT [--force]
 
 Pure stdlib; no board or serial port involved.
 """
@@ -161,16 +171,20 @@ def fit_step0(steps: Sequence[Step], total: int) -> List[Step]:
     """Grow the level-0 time of the padding step 0 so the entry lasts
     `total`; refuses a step 0 that is not [1, 0, a, x, b, 0, 0], and a
     donor that lasts longer than `total` (the pad is only ever made
-    longer, never eaten into)."""
+    longer, never eaten into). An entry that already lasts `total` is
+    returned untouched, whatever its step 0 (FW_260923 has forms like
+    [1, 6, 2, 0, 120, 0, 0] and [1, 0, 0, 0, 0, 6, 122])."""
     if not steps:
         raise WaveformError("donor entry has no steps")
+    donor_total = sum(step_duration(s) for s in steps)
+    if donor_total == total:
+        return list(steps)
+    if donor_total > total:
+        raise WaveformError(f"donor entry lasts {donor_total}, longer than the target "
+                            f"total {total}")
     s0 = steps[0]
     if not (s0[0] == 1 and s0[1] == 0 and s0[5] == 0 and s0[6] == 0):
         raise WaveformError(f"donor step 0 {list(s0)} is not of the form [1, 0, a, x, b, 0, 0]")
-    donor_total = sum(step_duration(s) for s in steps)
-    if donor_total > total:
-        raise WaveformError(f"donor entry lasts {donor_total}, longer than the base "
-                            f"total {total}")
     pad = s0[2] + total - donor_total
     if pad > 255:
         raise WaveformError(f"step 0 level-0 time {pad} does not fit a byte")
@@ -244,12 +258,30 @@ def validate(image: bytes, label: str) -> Table:
     return table
 
 
-def transplant(base: bytes, sets: Sequence[Tuple[int, bytes, int, str]]
-               ) -> Tuple[bytes, List[Change]]:
+def total_range(table: Table) -> Tuple[int, int]:
+    """File offsets [start, end) of the header's u16 total."""
+    return table.name - 7, table.name - 5
+
+
+def transplant(base: bytes, sets: Sequence[Tuple[int, bytes, int, str]],
+               total: int | None = None) -> Tuple[bytes, List[Change]]:
     """`sets` = (base colour, donor image, donor colour, donor name).
-    Returns the new image and what changed, after check()."""
+    `total` rewrites the header total; every colour of the result must
+    then last it, so the colours whose base entry does not must all be
+    in `sets`. Returns the new image and what changed, after check()."""
     table = validate(base, "base")
+    target_total = table.total if total is None else total
+    if not 0 < target_total <= 0xFFFF:
+        raise WaveformError(f"--total {target_total} does not fit the header's u16")
     out = bytearray(base)
+    if total is not None:
+        missing = [e.colour for e in table.entries
+                   if e.duration != total and e.colour not in {c for c, *_ in sets}]
+        if missing:
+            raise WaveformError(f"--total {total}: colours {missing} last {table.total} in "
+                                f"the base and are not given by --set")
+        start, end = total_range(table)
+        out[start:end] = total.to_bytes(2, "little")
     changes = []
     seen = set()
     for colour, donor, donor_colour, donor_name in sets:
@@ -260,7 +292,7 @@ def transplant(base: bytes, sets: Sequence[Tuple[int, bytes, int, str]]
         seen.add(colour)
         target = table.entries[colour]
         donor_steps = validate(donor, donor_name).entries[donor_colour].steps
-        steps = split_to(fit_step0(donor_steps, table.total), len(target.steps))
+        steps = split_to(fit_step0(donor_steps, target_total), len(target.steps))
         blob = encode(steps, table.key)
         if len(blob) != target.end - target.start:
             raise WaveformError(f"colour {colour} would take {len(blob)} bytes, "
@@ -269,20 +301,27 @@ def transplant(base: bytes, sets: Sequence[Tuple[int, bytes, int, str]]
         changes.append(Change(colour, donor_name, donor_colour, target.steps,
                               donor_steps, tuple(steps), target.start, target.end))
     image = bytes(out)
-    check(base, image, changes)
+    check(base, image, changes, total)
     return image, changes
 
 
-def check(base: bytes, image: bytes, changes: Sequence[Change]) -> None:
-    """The self-check run before anything is written."""
+def check(base: bytes, image: bytes, changes: Sequence[Change],
+          total: int | None = None) -> None:
+    """The self-check run before anything is written: only the replaced
+    entries, and with `total` the header's two total bytes, may differ."""
     if len(image) != len(base):
         raise WaveformError(f"size {len(image)} != base {len(base)}")
+    old = parse(base)
     ranges = [(c.start, c.end) for c in changes]
+    if total is not None:
+        ranges.append(total_range(old))
     for i, (a, b) in enumerate(zip(base, image)):
         if a != b and not any(s <= i < e for s, e in ranges):
-            raise WaveformError(f"byte 0x{i:X} changed outside the replaced entries")
-    old, new = parse(base), parse(image)
-    if (new.header, new.name, new.total, new.key) != (old.header, old.name, old.total, old.key):
+            raise WaveformError(f"byte 0x{i:X} changed outside the replaced entries"
+                                + (" and the total" if total is not None else ""))
+    new = parse(image)
+    want = old.total if total is None else total
+    if (new.header, new.name, new.total, new.key) != (old.header, old.name, want, old.key):
         raise WaveformError("table header moved or changed")
     for entry in new.entries:
         if entry.duration != new.total:
@@ -387,8 +426,10 @@ def _fmt(step: Sequence[int]) -> str:
 def dump(path: Path) -> str:
     image = path.read_bytes()
     t = parse(image)
+    start, _ = total_range(t)
     lines = [f"{path}  {len(image)} B  crc16 0x{crc16_modbus(image):04X}",
-             f"table at 0x{t.header:X}  date {t.date}  key {t.key.hex(' ')}  total {t.total}"]
+             f"table at 0x{t.header:X}  date {t.date}  key {t.key.hex(' ')}  "
+             f"total {t.total} (u16 at 0x{start:X})"]
     for e in t.entries:
         flag = "" if e.duration == t.total else "  <- != total"
         lines.append(f"colour {e.colour:2d} (0x{e.colour:02X})  steps {len(e.steps):2d}  "
@@ -419,6 +460,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     t.add_argument("--base", type=Path, required=True)
     t.add_argument("--set", dest="sets", type=_parse_set, action="append", required=True,
                    metavar="COLOUR=DONOR:COLOUR")
+    t.add_argument("--total", type=int, default=None,
+                   help="rewrite the header total; every colour must then last it")
     t.add_argument("--out", type=Path, required=True)
     t.add_argument("--force", action="store_true", help="overwrite --out")
     args = ap.parse_args(argv)
@@ -429,17 +472,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         check_out(args.out, [args.base] + [p for _, p, _ in args.sets], args.force)
         base = args.base.read_bytes()
         image, changes = transplant(
-            base, [(c, p.read_bytes(), dc, p.name) for c, p, dc in args.sets])
+            base, [(c, p.read_bytes(), dc, p.name) for c, p, dc in args.sets], args.total)
         write_atomic(args.out, image, args.force)
     except (WaveformError, OSError) as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2
-    total = parse(base).total
-    print(f"base  {args.base}  {len(base)} B  crc16 0x{crc16_modbus(base):04X}  total {total}")
-    for c in changes:
+    old = parse(base)
+    print(f"base  {args.base}  {len(base)} B  crc16 0x{crc16_modbus(base):04X}  total {old.total}")
+    if args.total is not None:
+        start, end = total_range(old)
+        print(f"header total {old.total} -> {args.total}  bytes 0x{start:X}-0x{end - 1:X}")
+    for c in sorted(changes, key=lambda c: c.colour):
         print(f"colour {c.colour} (0x{c.colour:02X}) <- {c.donor} colour {c.donor_colour}"
-              f"  bytes 0x{c.start:X}-0x{c.end - 1:X} ({c.end - c.start} B)")
-        for label, steps in (("before", c.before), ("donor", c.donor_steps), ("after", c.after)):
+              f"  bytes 0x{c.start:X}-0x{c.end - 1:X} ({c.end - c.start} B)"
+              + ("  copied as is" if c.after == c.donor_steps else ""))
+        rows = (("before", c.before), ("donor", c.donor_steps), ("after", c.after))
+        for label, steps in rows if c.after != c.donor_steps else rows[::2]:
             dur = sum(step_duration(s) for s in steps)
             print(f"  {label:6s} {len(steps):2d} steps  total {dur:4d}  "
                   + " ".join(_fmt(s) for s in steps))

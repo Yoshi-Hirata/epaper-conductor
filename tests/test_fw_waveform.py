@@ -291,7 +291,7 @@ def test_refuses_a_donor_longer_than_the_base_entry():
 def test_refuses_a_donor_that_lasts_longer_than_the_base_total():
     base = synth(base_entries(), 100)
     donor = synth([[(1, 0, 10, 0, 0, 0, 0), (1, 6, 100, 0, 0, 0, 0), HOLD]] * 16, 114)
-    with pytest.raises(fw.WaveformError, match="longer than the base total 100"):
+    with pytest.raises(fw.WaveformError, match="longer than the target total 100"):
         fw.transplant(base, [(0, donor, 0, "d")])
 
 
@@ -379,7 +379,7 @@ def test_a_donor_whose_colours_do_not_last_its_total_is_refused():
 def test_the_pad_is_never_shortened():
     # Donor lasts 110 against a base total of 100: shrinking its step-0
     # pad from 20 to 10 would fit, but the rule is lengthen only.
-    with pytest.raises(fw.WaveformError, match="lasts 110, longer than the base total 100"):
+    with pytest.raises(fw.WaveformError, match="lasts 110, longer than the target total 100"):
         fw.fit_step0([(1, 0, 20, 0, 0, 0, 0), (1, 6, 90, 0, 0, 0, 0)], 100)
     assert fw.fit_step0([(1, 0, 20, 0, 0, 0, 0), (1, 6, 80, 0, 0, 0, 0)], 100)[0] == (
         1, 0, 20, 0, 0, 0, 0)
@@ -534,3 +534,175 @@ def test_a_folder_that_cannot_be_made_is_refused(tmp_path, capsys):
     (tmp_path / "file.txt").write_text("x")
     assert fw.main(transplant_argv(tmp_path / "file.txt" / "sub" / "x.bin")) == 2
     assert capsys.readouterr().err.startswith("refused: ")
+
+
+# ---- --total and the plan C image FW_261119 (2026-11-20): the vendor's
+# FW_261118 program, which ignores a waveform saved in the board's SPI
+# flash, carrying FW_260923's table (total 662) and the 11/9 pinks ----
+
+PROG_1118 = TWO
+PLAN_C_OUT = FW_DIR / "FW_261119" / "mcb_1118prog_seq0923_pinks_no13.bin"
+PLAN_C_SHA256 = "364152af818e88ba1e000abfe12d915388fe75c27becc1aa6cc3be0defef7d50"
+PLAN_C_SETS = ([(c, BASE, c) for c in range(16) if c not in (10, 12)]
+               + [(10, RED, 12), (12, PURPLE, 12)])
+TOTAL_BYTES_C = (0xCAFB, 0xCAFD)           # the header's u16 total in FW_261118
+ENTRIES_C = (0xCB12, 0xD196)               # its 16 entries, count bytes included
+COMMON_C = ((26, 6, 2, 1, 2, 0, 0), (1, 6, 10, 0, 0, 0, 0), (5, 6, 2, 1, 2, 0, 0),
+            (1, 6, 10, 0, 0, 0, 0), (5, 6, 2, 1, 2, 0, 0), (1, 6, 10, 0, 0, 0, 0),
+            (3, 1, 4, 6, 4, 0, 0), (1, 6, 10, 0, 0, 0, 0), (3, 1, 4, 6, 4, 0, 0),
+            (1, 0, 4, 0, 0, 0, 0))
+STEPS_C = {
+    10: ((1, 0, 91, 1, 31, 0, 0),) + COMMON_C
+    + ((8, 6, 6, 0, 5, 3, 17), (12, 0, 0, 0, 0, 0, 6), (1, 0, 0, 0, 8, 0, 0)),
+    12: ((1, 0, 97, 1, 25, 0, 0),) + COMMON_C
+    + ((4, 6, 3, 0, 5, 3, 16), (12, 0, 0, 0, 6, 0, 11), (2, 0, 2, 0, 0, 0, 0)),
+}
+
+
+def make_plan_c_image(total=662):
+    return fw.transplant(PROG_1118.read_bytes(),
+                         [(c, p.read_bytes(), dc, p.name) for c, p, dc in PLAN_C_SETS],
+                         total)
+
+
+def table_here(image):
+    """(total, [(start, end, steps)] * 16) decoded without the tool."""
+    k = image.find(b"PDName1")
+    key = image[k - 5:k - 1]
+    mask = key + key[1:]
+    i, entries = k + 16, []
+    for _ in range(16):
+        count = image[i]
+        steps = tuple(tuple(image[i + 1 + 7 * n + j] ^ mask[j] for j in range(7))
+                      for n in range(count))
+        entries.append((i, i + 1 + 7 * count, steps))
+        i += 1 + 7 * count
+    return int.from_bytes(image[k - 7:k - 5], "little"), entries
+
+
+def test_the_base_program_tables_line_up_as_planned():
+    total, prog = table_here(PROG_1118.read_bytes())
+    assert total == 1197
+    assert [len(s) for _, _, s in prog] == [14, 15, 13, 25, 14, 17, 14, 17,
+                                            14, 13, 14, 13, 14, 12, 12, 15]
+    _, seq = table_here(BASE.read_bytes())
+    for c in range(16):
+        if c not in (10, 12):
+            assert len(seq[c][2]) == len(prog[c][2])
+    assert (prog[0][0], prog[15][1]) == ENTRIES_C
+
+
+def test_the_plan_c_image_is_pinned():
+    image, prog = PLAN_C_OUT.read_bytes(), PROG_1118.read_bytes()
+    assert len(image) == len(prog) == 63144
+    assert hashlib.sha256(image).hexdigest() == PLAN_C_SHA256
+    assert ota.crc16_modbus(image) == 0x0B6F and ota.crc16_modbus(prog) == 0xB567
+    diff = [i for i, (a, b) in enumerate(zip(prog, image)) if a != b]
+    assert len(diff) == 254 and (diff[0], diff[1]) == (0xCAFB, 0xCAFC)
+    assert all(TOTAL_BYTES_C[0] <= i < TOTAL_BYTES_C[1] or ENTRIES_C[0] <= i < ENTRIES_C[1]
+               for i in diff)
+    assert image[slice(*TOTAL_BYTES_C)] == (662).to_bytes(2, "little")
+    # Outside the table and the total: the FW_261118 bytes, program included.
+    assert image[:TOTAL_BYTES_C[0]] == prog[:TOTAL_BYTES_C[0]]
+    assert image[TOTAL_BYTES_C[1]:ENTRIES_C[0]] == prog[TOTAL_BYTES_C[1]:ENTRIES_C[0]]
+    assert image[ENTRIES_C[1]:] == prog[ENTRIES_C[1]:]
+    total, entries = table_here(image)
+    _, seq = table_here(BASE.read_bytes())
+    _, old = table_here(prog)
+    assert total == 662
+    for c, (start, end, steps) in enumerate(entries):
+        assert (start, end) == old[c][:2]                    # nothing moved
+        assert sum(r * (a + b + d) for r, _, a, _, b, _, d in steps) == 662
+        if c in (10, 12):
+            assert steps == STEPS_C[c]
+        else:
+            assert steps == seq[c][2]                        # FW_260923 steps, exactly
+
+
+def test_the_plan_c_image_is_what_the_tool_makes_now():
+    image, changes = make_plan_c_image()
+    assert PLAN_C_OUT.read_bytes() == image
+    copied = sorted(c.colour for c in changes if c.after == c.donor_steps)
+    assert copied == [c for c in range(16) if c not in (10, 12)]
+
+
+def test_plan_c_has_its_own_fingerprint_and_name():
+    prog, image = PROG_1118.read_bytes(), PLAN_C_OUT.read_bytes()
+    assert len(prog) == len(image)
+    assert ota.crc16_modbus(prog) != ota.crc16_modbus(image)
+    catalog = ota.bundled_images(FW_DIR)
+    assert catalog[ota.image_fingerprint(image)] == "FW_261119"
+    assert catalog[ota.image_fingerprint(prog)] == "FW_261118"
+
+
+def test_total_needs_every_colour_that_does_not_last_it():
+    sets = [(10, RED.read_bytes(), 12, "red"), (12, PURPLE.read_bytes(), 12, "purple")]
+    with pytest.raises(fw.WaveformError,
+                       match=r"colours \[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 14, 15\] "
+                             r"last 1197"):
+        fw.transplant(PROG_1118.read_bytes(), sets, 662)
+    with pytest.raises(fw.WaveformError, match="does not fit"):
+        make_plan_c_image(0x10000)
+    with pytest.raises(fw.WaveformError, match="longer than the target total 600"):
+        make_plan_c_image(600)
+
+
+def test_total_rewrites_the_header_total_pads_and_copies():
+    base = synth(base_entries(), 100)
+    # Already lasting 120, with a step 0 the padding rule would refuse:
+    at_n = [(1, 0, 0, 0, 0, 6, 10), (10, 1, 5, 2, 5, 0, 0), (1, 6, 10, 0, 0, 0, 0)]
+    padded = [(1, 0, 5, 1, 0, 0, 0), (10, 1, 5, 2, 5, 0, 0), (1, 6, 10, 0, 0, 0, 0)]
+    donor_a, donor_b = synth([at_n] * 16, 120), synth([padded] * 16, 115)
+    sets = [(0, donor_a, 0, "a")] + [(c, donor_b, c, "b") for c in range(1, 16)]
+    image, changes = fw.transplant(base, sets, 120)
+    t = fw.parse(image)
+    assert t.total == 120 and [e.duration for e in t.entries] == [120] * 16
+    assert t.entries[0].steps == tuple(at_n)
+    assert t.entries[1].steps[0] == (1, 0, 10, 1, 0, 0, 0)
+    start, end = fw.total_range(t)
+    assert image[start:end] == (120).to_bytes(2, "little")
+    assert image[:start] == base[:start] and image[end:t.entries[0].start] == \
+        base[end:t.entries[0].start]
+    # --total equal to the base total needs no extra colours.
+    same, _ = fw.transplant(base, [], 100)
+    assert same == base
+
+
+def test_an_entry_already_at_the_target_is_copied_untouched():
+    steps = [(1, 0, 0, 0, 0, 6, 122), (1, 6, 100, 0, 0, 0, 0)]
+    assert fw.fit_step0(steps, 222) == steps
+    with pytest.raises(fw.WaveformError, match="not of the form"):
+        fw.fit_step0(steps, 230)
+
+
+def test_check_with_total_allows_only_the_total_bytes_in_the_header():
+    prog = PROG_1118.read_bytes()
+    image, changes = make_plan_c_image()
+    t = fw.parse(prog)
+    for offset in (t.header, t.header + 3, t.header + 10, t.name - 8, t.name - 5,
+                   t.name - 1, t.name, ENTRIES_C[0] - 1, ENTRIES_C[1], 0x100):
+        bad = bytearray(image)
+        bad[offset] ^= 0x01
+        with pytest.raises(fw.WaveformError):
+            fw.check(prog, bytes(bad), changes, 662)
+    with pytest.raises(fw.WaveformError, match="outside the replaced entries"):
+        fw.check(prog, image, changes)                # total changed, not allowed
+    bad = bytearray(image)
+    bad[TOTAL_BYTES_C[0]] ^= 0x01                     # the total, but wrong
+    with pytest.raises(fw.WaveformError):
+        fw.check(prog, bytes(bad), changes, 662)
+
+
+def test_the_cli_takes_total(tmp_path, capsys):
+    out = tmp_path / "c.bin"
+    argv = ["transplant", "--base", str(PROG_1118), "--total", "662", "--out", str(out)]
+    for c, p, dc in PLAN_C_SETS:
+        argv += ["--set", f"{c}={p}:{dc}"]
+    assert fw.main(argv) == 0
+    assert out.read_bytes() == PLAN_C_OUT.read_bytes()
+    text = capsys.readouterr().out
+    assert "header total 1197 -> 662  bytes 0xCAFB-0xCAFC" in text
+    assert "copied as is" in text and "[1 0 91 1 31 0 0]" in text
+    short = argv[:5] + ["--out", str(tmp_path / "d.bin"), "--set", f"10={RED}:12"]
+    assert fw.main(short) == 2
+    assert "not given by --set" in capsys.readouterr().err

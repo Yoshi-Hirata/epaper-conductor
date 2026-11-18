@@ -103,6 +103,13 @@ def test_repo_catalog_names_subfolder_images_and_keeps_every_key_unique():
     assert prod[0] == trial[0] and prod != trial
     assert catalog[prod] == "FW_260923"
     assert catalog[trial] == "FW_261118B"
+    # Plan C (2026-11-20) has the same size as the FW_261118 program it keeps.
+    prog = ota.image_fingerprint(
+        (fw_dir / "FW_261118" / "mcb_two_pinks(0a,0c).bin").read_bytes())
+    plan_c = ota.image_fingerprint(
+        (fw_dir / "FW_261119" / "mcb_1118prog_seq0923_pinks_no13.bin").read_bytes())
+    assert prog[0] == plan_c[0] and prog[1] != plan_c[1]
+    assert (catalog[prog], catalog[plan_c]) == ("FW_261118", "FW_261119")
 
 
 def test_nested_fw_folders_are_named_like_the_updater_labels_them(tmp_path):

@@ -1,0 +1,31 @@
+Home-made trial image (2026-11-20) - NOT a vendor build.
+  mcb_1118prog_seq0923_pinks_no13.bin
+Made here with tools/fw_waveform.py ("plan C").
+Program: the vendor's FW_261118 trial program (mcb_two_pinks(0a,0c).bin),
+byte for byte. So it ignores a waveform saved in the board's SPI flash,
+and it carries the vendor's other changes too, including command 0x2A.
+How it behaves with Conductor shows and the 0x1F delay tables has not
+been checked here yet.
+Table: FW_260923's 14 other colours and timing (header total 662, steps
+copied exactly), plus the 11/9 "No.13" pinks:
+  colour 0x0A <- pink red No.13    (FW_261109/mcb_pink_red_0_16.bin, colour 12)
+  colour 0x0C <- pink purple No.13 (FW_261109/mcb_pink_purple_0_7.bin, colour 12)
+with only their step 0 level-0 time grown to reach 662 (no step split).
+Only the 16 table entries and the 2 header total bytes differ from
+FW_261118. The size and everything else (program, header date / mask /
+key / settings, tail) are FW_261118's.
+Why: FW_261118B (FW_260923's program with the pinks patched into its
+table) showed six colours on board 03, and so did plain FW_260923 on that
+board. Read from the program statically (not measured): the FW_260923
+program prefers a waveform saved in the board's SPI flash to its built-in
+table; the vendor's later trial programs do not read it. A board that
+holds such a saved waveform keeps it - flashed back to FW_260923 it shows
+six colours again until the saved waveform is erased (command 0x24, not
+in our tools yet).
+The table header keeps FW_261118's date stamp (2026-11-18).
+Unproven on hardware: try it on a spare board first.
+Reproduce (from the repo root; it refuses while the .bin exists - delete
+it first or add --force):
+  python tools/fw_waveform.py transplant --base "FW/FW_261118/mcb_two_pinks(0a,0c).bin" --total 662 --set 0=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:0 --set 1=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:1 --set 2=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:2 --set 3=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:3 --set 4=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:4 --set 5=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:5 --set 6=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:6 --set 7=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:7 --set 8=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:8 --set 9=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:9 --set 10=FW/FW_261109/mcb_pink_red_0_16.bin:12 --set 11=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:11 --set 12=FW/FW_261109/mcb_pink_purple_0_7.bin:12 --set 13=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:13 --set 14=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:14 --set 15=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:15 --out FW/FW_261119/mcb_1118prog_seq0923_pinks_no13.bin
+UPDATE FW offers it with LEFT/RIGHT, marked "(trial)", but never as the
+default image (ui/updater.py is_trial / find_firmware).
