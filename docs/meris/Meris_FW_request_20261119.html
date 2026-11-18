@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MCB firmware trial builds (2026-11-09 / 2026-11-18): test results, requests and questions</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  html { color-scheme: light; }
+  body { font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 11pt; line-height: 1.4; color: #111; background: #fff; margin: 0; }
+  .zh { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif; font-size: 9.5pt; line-height: 1.45; color: #444; }
+  h1 { font-size: 17pt; line-height: 1.25; margin: 0 0 4pt; }
+  h1 .zh { display: block; font-size: 12.5pt; font-weight: 700; margin-top: 3pt; }
+  h2 { font-size: 13.5pt; margin: 16pt 0 6pt; border-bottom: 1.5px solid #444; padding-bottom: 2pt; break-after: avoid; }
+  h2 .zh, h3 .zh { display: block; font-size: 10.5pt; font-weight: 700; }
+  h3 { font-size: 11.5pt; margin: 0 0 3pt; break-after: avoid; }
+  p { margin: 0 0 4pt; }
+  p.zh { margin: 0 0 6pt; }
+  div.zh, span.zh.blk { display: block; }
+  code, .m { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; }
+  .meta { margin: 0 0 10pt; }
+  .meta div { margin: 2pt 0; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0 10pt; font-size: 10pt; }
+  th, td { border: 0.6pt solid #666; padding: 3pt 5pt; text-align: left; vertical-align: top; }
+  th { background: #eee; }
+  td .zh, th .zh { display: block; font-size: 8.5pt; font-weight: 400; }
+  tr { break-inside: avoid; }
+  td.n, th.n { text-align: right; white-space: nowrap; }
+  .sec, .req { break-inside: avoid; margin: 0 0 9pt; }
+  .req { border: 0.6pt solid #888; padding: 5pt 8pt; }
+  .lbl { font-weight: 700; }
+  .summary { border: 1pt solid #444; padding: 6pt 9pt; margin: 8pt 0; break-inside: avoid; }
+  .summary ol { margin: 0 0 4pt 16pt; padding: 0; }
+  .summary li { margin-bottom: 2pt; }
+  ol.q li { margin-bottom: 7pt; break-inside: avoid; }
+  .legend { margin: 4pt 0 6pt; }
+  .legend div { margin: 1pt 0; }
+  .pb { break-before: page; }
+  h2.pb { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<h1>MCB firmware trial builds (2026-11-09 / 2026-11-18): test results, requests and questions
+<span class="zh">MCB 固件试作版（2026-11-09 / 2026-11-18）：测试结果、请求与问题</span></h1>
+
+<div class="meta">
+  <div>To: Firmware engineers, Meris<span class="zh blk">收件人：Meris 固件工程师</span></div>
+  <div>From: ______________________<span class="zh blk">发件人：______________________</span></div>
+  <div>Date: 2026-11-19<span class="zh blk">日期：2026-11-19</span></div>
+</div>
+
+<div class="summary">
+<p><span class="lbl">Summary.</span> Thank you for the trial builds. We tested them on our test board. In the builds that work on our board, both new pinks are displayed correctly. We now ask for <b>one corrected official build</b>. We also have some questions about the program. Our requests, in one line each:</p>
+<p class="zh"><b>摘要。</b>感谢你们提供试作版。我们在测试板上做了测试。在能在我们板子上正常工作的版本中，两种新粉色都显示正确。现在我们请求提供<b>一个修正后的正式版</b>。我们对程序也有一些问题。请求各用一行列出如下：</p>
+<ol>
+  <li><b>R1</b> Swap the two pinks (0x0A and 0x0C are the wrong way round).<span class="zh blk">交换两种粉色（0x0A 和 0x0C 放反了）。</span></li>
+  <li><b>R2</b> Keep the FW_260923 timing: 662 ticks and the original fast shake for all 16 colours.<span class="zh blk">保持 FW_260923 的时间：16 种颜色全部为 662 节拍，并使用原来的快速抖动。</span></li>
+  <li><b>R3</b> Use the 11/9 "No.13" pink waveforms, which fit in 662 ticks.<span class="zh blk">使用 11/9 的 "No.13" 粉色波形，它们可以放进 662 节拍。</span></li>
+  <li><b>R4</b> Let all colours finish together (move each colour's idle steps to just after the shake).<span class="zh blk">让所有颜色同时结束（把每种颜色的空闲步骤移到抖动之后）。</span></li>
+  <li><b>R5</b> Keep the built-in colour table authoritative (do not read a waveform saved in SPI flash).<span class="zh blk">以内置颜色表为准（不要读取保存在 SPI flash 中的波形）。</span></li>
+</ol>
+</div>
+
+<h2>1. Requests<span class="zh">1. 请求</span></h2>
+
+<div class="req">
+<h3>R1. Swap the two pinks<span class="zh">R1. 交换两种粉色</span></h3>
+<p><span class="lbl">Ask.</span> Please put pink purple No.13 in colour 0x0A and pink red No.13 in colour 0x0C.</p>
+<p class="zh"><b>请求。</b>请把紫粉 No.13 放在颜色 0x0A，把红粉 No.13 放在颜色 0x0C。</p>
+<p><span class="lbl">Why.</span> Our colour chart "261117_16_Color_Chart" asks for 0x0A = pink purple No.13 and 0x0C = pink red No.13.</p>
+<p class="zh"><b>原因。</b>我们的颜色表格 "261117_16_Color_Chart" 要求 0x0A = 紫粉 No.13，0x0C = 红粉 No.13。</p>
+<p><span class="lbl">Evidence.</span> In <code>mcb_two_pinks(0a,0c).bin</code> they are the other way round:</p>
+<p class="zh"><b>证据。</b>在 <code>mcb_two_pinks(0a,0c).bin</code> 中，两者正好相反：</p>
+<table>
+<tr><th>Entry<span class="zh">条目</span></th><th>Drive step in the 11/18 build<span class="zh">11/18 版中的驱动步骤</span></th><th>Which waveform it is<span class="zh">属于哪个波形</span></th></tr>
+<tr><td>0x0A</td><td class="m">[8,6,6,0,5,2,17]</td><td>pink-red family (see <code>mcb_pink_red_0_16.bin</code>)<span class="zh">红粉系列（见 <code>mcb_pink_red_0_16.bin</code>）</span></td></tr>
+<tr><td>0x0C</td><td class="m">[4,6,3,0,5,3,16]</td><td>pink purple, identical to No.13 of <code>mcb_pink_purple_0_7.bin</code><span class="zh">紫粉，与 <code>mcb_pink_purple_0_7.bin</code> 的 No.13 相同</span></td></tr>
+</table>
+</div>
+
+<div class="req">
+<h3>R2. Keep the FW_260923 timing<span class="zh">R2. 保持 FW_260923 的时间</span></h3>
+<p><span class="lbl">Ask.</span> Please use the 662-tick sequence with the original shake for all 16 colours.</p>
+<p class="zh"><b>请求。</b>请对 16 种颜色全部使用 662 节拍的序列，并保留原来的抖动。</p>
+<p><span class="lbl">Why.</span> The pinks (fast shake) and the other 14 colours (slow swings) do not change together in the 11/18 build.</p>
+<p class="zh"><b>原因。</b>在 11/18 版中，粉色（快速抖动）和其他 14 种颜色（缓慢摆动）不是同步变化的。</p>
+<p><span class="lbl">Evidence.</span></p>
+<p class="zh"><b>证据。</b></p>
+<table>
+<tr><th></th><th>MCB_16_0923.bin</th><th>11/18 build<span class="zh">11/18 版</span></th></tr>
+<tr><td>Length of every colour waveform<span class="zh">每种颜色波形的长度</span></td><td>662 ticks (6.62 s)<span class="zh">662 节拍（6.62 秒）</span></td><td>1197 ticks (11.97 s)<span class="zh">1197 节拍（11.97 秒）</span></td></tr>
+<tr><td>Shake of the 14 old colours<span class="zh">14 种旧颜色的抖动</span></td><td>fast shake (for example 26 x 2/2), 164 ticks<span class="zh">快速抖动（例如 26 x 2/2），164 节拍</span></td><td>five slow 60/60 swings, 600 ticks<span class="zh">5 次缓慢的 60/60 摆动，600 节拍</span></td></tr>
+<tr><td>Shake of the two pinks<span class="zh">两种粉色的抖动</span></td><td>fast shake<span class="zh">快速抖动</span></td><td>fast shake (unchanged)<span class="zh">快速抖动（未改变）</span></td></tr>
+</table>
+<p>1 tick = 10 ms nominal (about 11 ms measured on the panel, see R4).</p>
+<p class="zh">1 节拍 = 标称 10 ms（在面板上实测约 11 ms，见 R4）。</p>
+</div>
+
+<div class="req">
+<h3>R3. Use the 11/9 "No.13" pink waveforms<span class="zh">R3. 使用 11/9 的 "No.13" 粉色波形</span></h3>
+<p><span class="lbl">Ask.</span> Please use the No.13 pink waveforms of the 11/9 builds. They fit in 662 ticks.</p>
+<p class="zh"><b>请求。</b>请使用 11/9 版中的 No.13 粉色波形。它们可以放进 662 节拍。</p>
+<p><span class="lbl">Why.</span> In the 11/18 build the pinks were made longer, mainly by longer level-0 holds, and one level was changed in pink red.</p>
+<p class="zh"><b>原因。</b>在 11/18 版中，粉色被加长了，主要是延长了电平 0 保持，另外红粉中有一个电平被改变。</p>
+<table>
+<tr><th>Pink<span class="zh">粉色</span></th><th>11/9 No.13</th><th>11/18 build<span class="zh">11/18 版</span></th><th>Change<span class="zh">变化</span></th></tr>
+<tr><td>pink red, level-0 step<span class="zh">红粉，电平 0 步骤</span></td><td class="m">[12,0,0,0,0,0,6]</td><td class="m">[12,0,10,0,20,0,12]</td><td>72 -> 504 ticks<span class="zh">72 -> 504 节拍</span></td></tr>
+<tr><td>pink red, level change<span class="zh">红粉，电平变化</span></td><td class="m">[8,6,6,0,5,3,17]</td><td class="m">[8,6,6,0,5,2,17]</td><td>one level 3 -> 2<span class="zh">一个电平 3 -> 2</span></td></tr>
+<tr><td>pink purple, level-0 step<span class="zh">紫粉，电平 0 步骤</span></td><td class="m">[12,0,0,0,6,0,11]</td><td class="m">[12,0,30,0,10,0,11]</td><td>204 -> 612 ticks<span class="zh">204 -> 612 节拍</span></td></tr>
+</table>
+<p><span class="lbl">Question.</span> Why were the pinks made longer? Is the long hold needed for colour stability? In our test, the No.13 versions inside a 662-tick table showed the pinks correctly.</p>
+<p class="zh"><b>问题。</b>为什么要加长粉色？长时间保持是否是颜色稳定所必需的？在我们的测试中，放在 662 节拍表里的 No.13 版本，粉色显示正确。</p>
+</div>
+
+<div class="req">
+<h3>R4. Let all colours finish together<span class="zh">R4. 让所有颜色同时结束</span></h3>
+<p><span class="lbl">Ask.</span> Please build the official table so that every colour ends its drive at about the same tick. Or tell us if a level-0 hold at the very end is required.</p>
+<p class="zh"><b>请求。</b>请制作正式的表，使每种颜色在大致相同的节拍结束驱动。或者请告诉我们，最后是否必须有电平 0 保持。</p>
+<p><span class="lbl">Why.</span> With FW_260923 timing, the last drive pulse ends between tick 454 and tick 661, depending on the colour (see Appendix B). Each waveform has a different idle time at its end, so the colours finish at different moments on the panel.</p>
+<p class="zh"><b>原因。</b>按 FW_260923 的时间，最后一个驱动脉冲在第 454 到第 661 节拍之间结束，因颜色而异（见附录 B）。每个波形末尾的空闲时间不同，所以各颜色在面板上结束的时刻不同。</p>
+<p><span class="lbl">Evidence.</span> We moved each colour's trailing idle steps to directly after the shake (same steps, new order; for yellow, after its own longer shake). Result on the panel: all colours finish within 0.11 s, and the colours are unchanged. Measured on the panel, one tick takes about 11 ms, so the 662-tick sequence takes about 7.3 s.</p>
+<p class="zh"><b>证据。</b>我们把每种颜色末尾的空闲步骤移到抖动之后（步骤相同，只改变顺序；黄色则移到它自己较长的抖动之后）。面板上的结果：所有颜色在 0.11 秒内结束，颜色没有变化。在面板上实测，一个节拍约为 11 ms，所以 662 节拍的序列约需 7.3 秒。</p>
+</div>
+
+<div class="req">
+<h3>R5. Keep the built-in table authoritative<span class="zh">R5. 以内置颜色表为准</span></h3>
+<p><span class="lbl">Ask.</span> Please confirm our understanding below and keep the new behaviour.</p>
+<p class="zh"><b>请求。</b>请确认我们下面的理解，并保持新的行为。</p>
+<p><span class="lbl">What we saw.</span> One board showed only six colours repeating (codes 6-15 look like 0-5). This happened with the first 11/9 builds, with our test table on the FW_260923 program, and with plain <code>MCB_16_0923.bin</code>. With the re-sent 11/9 builds and the 11/18 build, the same board shows 16 colours.</p>
+<p class="zh"><b>我们看到的现象。</b>有一块板子只显示重复的 6 种颜色（代码 6-15 看起来和 0-5 一样）。使用最初的 11/9 版、使用在 FW_260923 程序上的我们的测试表、以及使用原版 <code>MCB_16_0923.bin</code> 时都出现了这个现象。使用重新发来的 11/9 版和 11/18 版时，同一块板子显示 16 种颜色。</p>
+<p><span class="lbl">Our understanding.</span> The FW_260923 program loads a waveform saved in the board's SPI flash in preference to the built-in table. The newer programs do not read it.</p>
+<p class="zh"><b>我们的理解。</b>FW_260923 程序会优先加载保存在板子 SPI flash 中的波形，而不是内置颜色表。较新的程序不读取它。</p>
+</div>
+
+<h2>2. Questions<span class="zh">2. 问题</span></h2>
+<ol class="q">
+<li><b>Q1. "Clear the wave".</b> Is it command <code>0x24</code> with a 1-byte waveform ID? Which ID should we use? Is it safe on boards in the field? Why does our test board hold a saved 6-colour waveform? Can other delivered boards hold one? How can we check a board without erasing it? (Command <code>0x15</code> "clear all colour data" answered ACK_SUCCESS but did not change the symptom.)
+<span class="zh blk"><b>Q1. “清除波形”。</b>它是命令 <code>0x24</code> 加 1 字节的波形 ID 吗？应使用哪个 ID？对现场使用的板子是否安全？为什么我们的测试板保存了 6 色波形？其他已交付的板子是否也可能保存有波形？如何在不擦除的情况下检查一块板子？（命令 <code>0x15</code> “清除全部颜色数据”返回了 ACK_SUCCESS，但现象没有改变。）</span></li>
+<li><b>Q2. New command 0x2A.</b> We see a 66-byte payload: index 0-29, flag, 64 data bytes. Please send its specification.
+<span class="zh blk"><b>Q2. 新命令 0x2A。</b>我们看到它的数据为 66 字节：索引 0-29、标志、64 字节数据。请提供它的规格说明。</span></li>
+<li><b>Q3. Other program changes.</b> What else changed between <code>MCB_16_0923.bin</code> and the 11/18 build? We noticed: the saved-colour slot limit changed from 0x13 to 0x1D; waveform upload <code>0x20</code> now answers with an error; the handling of persisted configuration changed. Is the segment-delay feature (<code>0x1F</code> save / <code>0x25</code> clear) unchanged in behaviour and timing?
+<span class="zh blk"><b>Q3. 程序的其他改动。</b>在 <code>MCB_16_0923.bin</code> 和 11/18 版之间还改了什么？我们注意到：已保存颜色的槽位上限从 0x13 改为 0x1D；波形上传命令 <code>0x20</code> 现在返回错误；持久化配置的处理方式改变了。段延时功能（<code>0x1F</code> 保存 / <code>0x25</code> 清除）的行为和时间是否没有变化？</span></li>
+<li><b>Q4. Protocol document.</b> Please send an updated protocol document that covers <code>0x20</code>, <code>0x24</code>, <code>0x2A</code> and the slot limit.
+<span class="zh blk"><b>Q4. 协议文档。</b>请提供更新后的协议文档，内容包括 <code>0x20</code>、<code>0x24</code>、<code>0x2A</code> 和槽位上限。</span></li>
+</ol>
+
+<h2>3. What we tested<span class="zh">3. 我们测试了什么</span></h2>
+<table>
+<tr><th>Image<span class="zh">镜像</span></th><th>What it is<span class="zh">内容</span></th><th>Result on the panel<span class="zh">面板上的结果</span></th></tr>
+<tr><td class="m">MCB_16_0923.bin</td><td>Production build<span class="zh">量产版</span></td><td>16 colours on normal boards. Six colours on the one board that holds a saved waveform.<span class="zh">正常板子上显示 16 种颜色。保存有波形的那一块板子只显示 6 种颜色。</span></td></tr>
+<tr><td>First 11/9 builds<span class="zh">最初的 11/9 版</span></td><td>Trial builds with pink candidates<span class="zh">带粉色候选的试作版</span></td><td>Six colours repeating on that board.<span class="zh">在那块板子上 6 种颜色重复。</span></td></tr>
+<tr><td class="m">mcb_pink_purple_0_7.bin<br>mcb_pink_red_0_16.bin</td><td>Re-sent 11/9 builds<span class="zh">重新发来的 11/9 版</span></td><td>Pink candidates shown correctly. We chose No.13 from each.<span class="zh">粉色候选显示正确。我们从每个中选择了 No.13。</span></td></tr>
+<tr><td class="m">mcb_two_pinks(0a,0c).bin</td><td>11/18 build<span class="zh">11/18 版</span></td><td>Pinks shown, but 0x0A / 0x0C are reversed and the sequence differs (see R1, R2).<span class="zh">粉色能显示，但 0x0A / 0x0C 反了，且序列不同（见 R1、R2）。</span></td></tr>
+<tr><td>Our evaluation table on the unchanged 11/18 program (14 colours of FW_260923 + No.13 pinks, total 662), tested with the pinks in the same positions as the 11/18 build (0x0A = pink red No.13, 0x0C = pink purple No.13)<span class="zh">我们的评估用表，运行在未改动的 11/18 程序上（FW_260923 的 14 种颜色 + No.13 粉色，总长 662），粉色的位置与 11/18 版相同（0x0A = 红粉 No.13，0x0C = 紫粉 No.13）</span></td><td>For evaluation only<span class="zh">仅用于评估</span></td><td>16 colours and both pinks correct.<span class="zh">16 种颜色和两种粉色都正确。</span></td></tr>
+<tr><td>Same, with end alignment (idle steps moved after the shake), pinks in the same positions as the 11/18 build<span class="zh">同上，并做了结束对齐（空闲步骤移到抖动之后），粉色位置与 11/18 版相同</span></td><td>For evaluation only<span class="zh">仅用于评估</span></td><td>Timing aligned. Colours unchanged.<span class="zh">时间对齐。颜色没有变化。</span></td></tr>
+</table>
+
+<h2>4. Reference table we evaluated<span class="zh">4. 我们评估过的参考表</span></h2>
+<p>For evaluation only, we replaced the colour table inside the 11/18 image. The program bytes are unchanged. The total is 662 ticks. The 14 colours are exactly as in <code>MCB_16_0923.bin</code>. The idle steps are moved after the shake. We tested this table with the pinks in the 11/18 positions (result: all 16 colours correct, timing aligned). The table we request (Appendix A) is the same table with the two pinks exchanged to match our colour chart: 0x0A = pink purple No.13, 0x0C = pink red No.13. We have prepared an image with exactly this table and can send the .bin file. We ask Meris to produce the official build with this table.</p>
+<p class="zh">仅用于评估，我们替换了 11/18 镜像内部的颜色表。程序字节没有改变。总长为 662 节拍。14 种颜色与 <code>MCB_16_0923.bin</code> 完全相同。空闲步骤已移到抖动之后。我们在粉色处于 11/18 位置的情况下测试了这张表（结果：16 种颜色全部正确，时间对齐）。我们请求的表（附录 A）是同一张表，只是为了符合我们的颜色表格，把两种粉色交换了：0x0A = 紫粉 No.13，0x0C = 红粉 No.13。我们已准备好带有这张表的镜像，可以发送 .bin 文件。我们请求 Meris 用这张表制作正式版。</p>
+<p>The decoded requested table is in Appendix A.</p>
+<p class="zh">解码后的请求表见附录 A。</p>
+
+<h2 class="pb">Appendix A - requested table (decoded steps)<span class="zh">附录 A - 请求的表（解码后的步骤）</span></h2>
+<div class="legend">
+  <div>step = [repeat, levelA, timeA, levelB, timeB, levelC, timeC]</div>
+  <div>duration = repeat x (timeA + timeB + timeC) ticks</div>
+  <div>1 tick = 10 ms; level 0 = idle</div>
+  <div class="zh">步骤 = [重复次数, 电平A, 时间A, 电平B, 时间B, 电平C, 时间C]；时长 = 重复次数 x (时间A + 时间B + 时间C) 节拍；1 节拍 = 10 ms；电平 0 = 空闲</div>
+</div>
+<!--APPENDIX_TABLE-->
+<table class="appx">
+<thead><tr><th>Colour<div class="zh">颜色</div></th><th>Steps<div class="zh">步骤数</div></th><th>Decoded steps, in order<div class="zh">解码后的步骤（按顺序）</div></th><th>Total ticks<div class="zh">总节拍</div></th></tr></thead>
+<tbody>
+<tr><td class="code">0x00<br>white<div class="zh">白</div></td><td class="num">14</td><td class="steps">[1,6,2,0,120,0,0] [26,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [2,0,9,0,7,0,0] [1,0,4,0,0,0,0] [4,6,3,0,5,3,6] [12,6,1,0,6,3,11]</td><td class="num">662</td></tr>
+<tr><td class="code">0x01<br>yellow<div class="zh">黄</div></td><td class="num">15</td><td class="steps">[1,0,98,1,24,0,0] [26,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,20,0,0,0,0] [1,1,4,6,4,0,0] [2,1,4,6,4,0,0] [1,0,2,0,82,0,0] [1,6,31,0,0,0,0] [8,1,3,4,15,0,0] [3,0,10,1,3,0,0]</td><td class="num">662</td></tr>
+<tr><td class="code">0x02<br>blue<div class="zh">蓝</div></td><td class="num">13</td><td class="steps">[1,6,11,0,111,0,0] [26,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,0,72,0,0,0,0] [10,2,13,6,3,0,0] [2,0,37,6,1,0,0]</td><td class="num">662</td></tr>
+<tr><td class="code">0x03<br>red<div class="zh">红</div></td><td class="num">25</td><td class="steps">[1,0,120,1,2,0,0] [26,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [3,1,4,6,4,0,0] [1,1,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,8,0,0,0,0] [1,0,8,4,20,0,0] [1,1,2,0,0,0,0] [1,0,8,4,20,0,0] [1,1,2,0,0,0,0] [1,0,8,4,20,0,0] [1,1,2,0,0,0,0] [1,0,8,4,20,0,0] [1,1,2,0,0,0,0] [1,0,8,4,20,0,0] [1,1,2,0,0,0,0] [1,0,8,4,20,0,0] [1,1,2,0,0,0,0] [8,0,4,4,7,1,1] [2,0,0,4,2,0,10]</td><td class="num">662</td></tr>
+<tr><td class="code">0x04<br>black<div class="zh">黑</div></td><td class="num">14</td><td class="steps">[1,0,67,1,55,0,0] [26,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,0,8,0,6,0,0] [16,1,2,0,2,4,11] [2,6,10,6,15,0,0] [1,6,4,0,0,0,0]</td><td class="num">662</td></tr>
+<tr><td class="code">0x05<br>green<div class="zh">绿</div></td><td class="num">17</td><td class="steps">[1,6,50,0,72,0,0] [26,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,1,10,0,0,0,0] [12,1,4,6,4,0,0] [1,0,3,0,0,0,0] [3,2,2,5,8,0,0] [3,0,1,2,4,0,0] [16,2,5,5,3,0,1] [1,2,9,0,2,5,4] [1,2,10,0,0,5,4] [1,0,1,5,6,0,8]</td><td class="num">662</td></tr>
+<tr><td class="code">0x06<br>turquoise<div class="zh">青绿</div></td><td class="num">14</td><td class="steps">[1,6,22,0,100,0,0] [26,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,1,10,0,0,0,0] [12,1,4,6,4,0,0] [3,2,2,5,8,0,0] [3,0,0,2,4,0,0] [16,2,3,5,4,0,4] [1,2,11,5,4,0,3]</td><td class="num">662</td></tr>
+<tr><td class="code">0x07<br>almond<div class="zh">杏色</div></td><td class="num">17</td><td class="steps">[1,0,42,1,80,0,0] [26,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,1,10,0,0,0,0] [12,1,4,6,4,0,0] [1,0,3,0,0,0,0] [3,6,2,3,8,0,0] [3,0,1,6,4,0,0] [16,6,5,3,3,0,1] [1,6,9,0,2,2,4] [1,6,10,0,0,2,4] [1,0,1,3,3,0,11]</td><td class="num">662</td></tr>
+<tr><td class="code">0x08<br>light pink<div class="zh">浅粉</div></td><td class="num">14</td><td class="steps">[1,0,61,1,61,0,0] [26,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [12,0,1,0,4,0,6] [1,0,4,0,0,0,16] [1,0,4,0,0,0,0] [8,6,6,0,5,3,8]</td><td class="num">662</td></tr>
+<tr><td class="code">0x09<br>sky blue<div class="zh">天蓝</div></td><td class="num">13</td><td class="steps">[1,6,13,0,109,0,0] [26,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [2,0,32,0,1,0,0] [1,0,72,0,0,0,0] [10,2,13,6,3,0,1]</td><td class="num">662</td></tr>
+<tr><td class="code">0x0A<br>pink purple No.13<div class="zh">紫粉 No.13</div></td><td class="num">14</td><td class="steps">[1,0,97,1,25,0,0] [26,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [12,0,0,0,6,0,11] [2,0,2,0,0,0,0] [1,0,4,0,0,0,0] [4,6,3,0,5,3,16]</td><td class="num">662</td></tr>
+<tr><td class="code">0x0B<br>yellow-green<div class="zh">黄绿</div></td><td class="num">13</td><td class="steps">[1,6,92,0,30,0,0] [26,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [2,0,9,0,9,0,12] [4,6,1,2,13,0,0] [12,6,1,2,15,0,0]</td><td class="num">662</td></tr>
+<tr><td class="code">0x0C<br>pink red No.13<div class="zh">红粉 No.13</div></td><td class="num">14</td><td class="steps">[1,0,91,1,31,0,0] [26,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [12,0,0,0,0,0,6] [1,0,0,0,8,0,0] [1,0,4,0,0,0,0] [8,6,6,0,5,3,17]</td><td class="num">662</td></tr>
+<tr><td class="code">0x0D<br>brown<div class="zh">棕</div></td><td class="num">12</td><td class="steps">[1,6,5,0,117,0,0] [26,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [16,2,5,4,14,0,0] [2,2,1,0,1,0,0]</td><td class="num">662</td></tr>
+<tr><td class="code">0x0E<br>dark brown<div class="zh">深棕</div></td><td class="num">12</td><td class="steps">[1,0,106,1,16,0,0] [26,6,2,1,2,0,0] [1,6,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,1,10,0,0,0,0] [3,1,4,6,4,0,0] [16,4,13,1,3,0,2] [1,0,8,4,5,0,7]</td><td class="num">662</td></tr>
+<tr><td class="code">0x0F<br>smoky blue<div class="zh">烟蓝</div></td><td class="num">15</td><td class="steps">[1,6,121,0,1,0,0] [26,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [5,6,2,1,2,0,0] [1,1,10,0,0,0,0] [3,1,4,6,4,0,0] [1,6,10,0,0,0,0] [3,1,4,6,4,0,0] [1,0,8,0,0,0,0] [16,4,2,0,2,2,11] [1,0,6,0,0,0,0] [2,0,10,0,15,0,0] [1,6,2,0,2,0,0]</td><td class="num">662</td></tr>
+</tbody></table>
+<p class="small">Header total: 662 ticks. Every entry keeps the byte length of the same entry in mcb_two_pinks(0a,0c).bin, so the table has the same size as in the 11/18 build.</p>
+<p class="zh">表头总长：662 节拍。每个条目的字节长度与 mcb_two_pinks(0a,0c).bin 中相同条目一致，因此波形表的大小与 11/18 版相同。</p>
+<style>table.appx td.steps{font-family:Consolas,'Courier New',monospace;font-size:7.6pt;line-height:1.35;word-break:break-word}table.appx td.code{white-space:nowrap}table.appx td.num{text-align:right}table.appx tr{break-inside:avoid}.small{font-size:9pt}</style>
+<!--/APPENDIX_TABLE-->
+
+<div class="sec">
+<h2>Appendix B - when each colour finishes<span class="zh">附录 B - 各颜色何时结束</span></h2>
+<p>Tick at which the last drive pulse ends (1 tick = 10 ms).</p>
+<p class="zh">最后一个驱动脉冲结束时的节拍（1 节拍 = 10 ms）。</p>
+<table>
+<tr><th>Colour<span class="zh">颜色</span></th><th class="n">FW_260923 timing (ticks / s)<span class="zh">FW_260923 时间（节拍 / 秒）</span></th><th class="n">Requested timing (ticks / s)<span class="zh">请求的时间（节拍 / 秒）</span></th></tr>
+<tr><td>0x00 white<span class="zh">白</span></td><td class="n">630 / 6.30</td><td class="n">662 / 6.62</td></tr>
+<tr><td>0x01 yellow<span class="zh">黄</span></td><td class="n">578 / 5.78</td><td class="n">662 / 6.62</td></tr>
+<tr><td>0x02 blue<span class="zh">蓝</span></td><td class="n">590 / 5.90</td><td class="n">662 / 6.62</td></tr>
+<tr><td>0x03 red<span class="zh">红</span></td><td class="n">652 / 6.52</td><td class="n">652 / 6.52</td></tr>
+<tr><td>0x04 black<span class="zh">黑</span></td><td class="n">648 / 6.48</td><td class="n">662 / 6.62</td></tr>
+<tr><td>0x05 green<span class="zh">绿</span></td><td class="n">654 / 6.54</td><td class="n">654 / 6.54</td></tr>
+<tr><td>0x06 turquoise<span class="zh">青绿</span></td><td class="n">659 / 6.59</td><td class="n">659 / 6.59</td></tr>
+<tr><td>0x07 almond<span class="zh">杏色</span></td><td class="n">651 / 6.51</td><td class="n">651 / 6.51</td></tr>
+<tr><td>0x08 light pink<span class="zh">浅粉</span></td><td class="n">510 / 5.10</td><td class="n">662 / 6.62</td></tr>
+<tr><td>0x09 sky blue<span class="zh">天蓝</span></td><td class="n">595 / 5.95</td><td class="n">661 / 6.61</td></tr>
+<tr><td>0x0A pink purple No.13<span class="zh">紫粉 No.13</span></td><td class="n">454 / 4.54</td><td class="n">662 / 6.62</td></tr>
+<tr><td>0x0B yellow-green<span class="zh">黄绿</span></td><td class="n">602 / 6.02</td><td class="n">662 / 6.62</td></tr>
+<tr><td>0x0C pink red No.13<span class="zh">红粉 No.13</span></td><td class="n">582 / 5.82</td><td class="n">662 / 6.62</td></tr>
+<tr><td>0x0D brown<span class="zh">棕</span></td><td class="n">661 / 6.61</td><td class="n">661 / 6.61</td></tr>
+<tr><td>0x0E dark brown<span class="zh">深棕</span></td><td class="n">655 / 6.55</td><td class="n">655 / 6.55</td></tr>
+<tr><td>0x0F smoky blue<span class="zh">烟蓝</span></td><td class="n">660 / 6.60</td><td class="n">660 / 6.60</td></tr>
+</table>
+<p>Notes. Colour codes are as in the requested table. In the "FW_260923 timing" column, 0x0A and 0x0C mean the No.13 pinks placed in a 662-tick table without end alignment. The shake ends at tick 354 for 12 colours, at tick 364 for yellow, and at tick 426 for green, turquoise and almond.</p>
+<p class="zh"><b>备注。</b>颜色代码按请求的表。在“FW_260923 时间”一列中，0x0A 和 0x0C 指放在 662 节拍表中、没有做结束对齐的 No.13 粉色。抖动在第 354 节拍结束的有 12 种颜色，黄色在第 364 节拍结束，绿、青绿、杏色在第 426 节拍结束。</p>
+</div>
+
+</body>
+</html>
