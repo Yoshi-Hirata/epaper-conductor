@@ -140,6 +140,9 @@ def test_any_press_wakes_the_screen_and_is_consumed():
     assert not app.blanked
     assert not app.display.asleep
     assert runner.starts == before
+    app.handle("key1")             # a second one at once: still the wake
+    assert runner.starts == before
+    app._alert_woke_at -= 2.0      # WAKE_GUARD_S (1.5 s) has passed
     app.handle("key1")             # now it acts
     assert len(runner.starts) == len(before) + 1
 

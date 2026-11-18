@@ -44,6 +44,23 @@ BUTTON_PINS = {
 # therefore reported on release rather than on the press.
 KEY1_HOLD_S = 1.0
 HOLD_EVENTS = {"key1": KEY1_HOLD_S, "key3": KEY1_HOLD_S}
+# After ANY wake of a dark screen - a press, an alert, a result or an
+# error lighting it - every SHORT press within this long only counts as
+# the wake (ui/app.py, App._wake_guard). A little longer than a hold,
+# because people double-tap "did it wake?" within about a second
+# (2026-11-20 review: KEY2 0.3 s after a press-wake stopped a running
+# show, once every garment unit went dark after 30 s).
+WAKE_GUARD_S = 1.5
+# A HOLD (key1_hold / key3_hold) is only the wake if it went down before
+# the screen was lit, or within this reaction allowance after: a full
+# 1 s hold begun on a visibly lit screen is deliberate - radxa-05's
+# EXHIBITION STOP is "wake, then hold KEY1 straight away" (re-review,
+# 2026-11-20: 1.5 s for holds too made that STOP take 3.5-4 s).
+WAKE_HOLD_GRACE_S = 0.3
+# A fault seen again (the same text, digits aside) lights a dark screen
+# at most once per this long - a flapping "no serial port" must not
+# undo a deliberate KEY3 blank during a show over and over.
+ATTENTION_REWAKE_S = 60.0
 EVENTS = tuple(BUTTON_PINS) + ("key1_hold", "key3_hold")
 
 # --- UI behaviour ---
@@ -54,20 +71,20 @@ FRAME_INTERVAL_S = 0.1
 LOG_LINES = 6            # log rows visible on the running screen
 LOG_HISTORY = 200        # lines kept in memory
 
-# Blank the backlight after this long without a button press; 0 disables
-# it. Off by default - an operator wants to glance at the panel state
-# without touching anything, and a dark screen reads as "it died". Turn
-# it on for battery work with `--blank-after 10`, worth roughly 20-40 mA
-# (docs/POWER.md). The demo keeps running either way, and any press wakes
-# the screen without changing anything else.
-BLANK_AFTER_S = 0.0
-# ...except on the unit the exhibition Conductor runs on (radxa-05: a
-# Conductor answers on 127.0.0.1, Exhibition.present()), which blanks
-# after this long without a press on any screen - chosen automatically,
-# no service-file change; `--blank-after SEC` overrides it on every unit
-# (`--blank-after 0`: never). An alert there (speaker LOST, a unit newly
-# missing, a verdict) wakes the screen without a press and keeps it lit
-# for another BLANK_AFTER_CONDUCTOR_S (ui/app.py, _watch_alerts).
+# Blank the backlight after this long without a button press, on every
+# unit (2026-11-20, the user: 30 s everywhere, without touching each
+# unit's /etc/default/epaper-ui; it used to be 0 = never on a garment
+# unit). `--blank-after SEC` overrides it, `--blank-after 0` disables it.
+# Worth roughly 20-40 mA (docs/POWER.md). The demo keeps running either
+# way, any press only wakes the screen, and the screen is never blanked
+# while a flash / clear / pull / scan runs or before a result or an
+# error has been seen (ui/app.py, _keep_lit).
+BLANK_AFTER_S = 30.0
+# The unit the exhibition Conductor runs on (radxa-05: a Conductor answers
+# on 127.0.0.1, Exhibition.present()) uses this one - the same 30 s since
+# 2026-11-20, kept apart because an alert there (speaker LOST, a unit
+# newly missing, a verdict) wakes the screen without a press and keeps it
+# lit for another BLANK_AFTER_CONDUCTOR_S (ui/app.py, _watch_alerts).
 BLANK_AFTER_CONDUCTOR_S = 30.0
 
 # Show lock. Locked, the buttons do nothing, so a knock during a show

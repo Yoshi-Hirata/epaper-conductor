@@ -1,5 +1,5 @@
 Firmware builds kept for tools/fw_waveform.py, the tests and history (2026-11-20).
 UPDATE FW never offers anything here: ui/updater.py looks only at FW/FW_*/**/*.bin,
-so the units see FW_260923 (default) and FW_261119F (trial) alone.
+so the units see FW_261119F (the default since 2026-11-20) and FW_260923 (the way back) alone.
 host/ota.py still reads these for FW VERSION / BOARD INFO, so a board running
 one of them is named, not "unknown". Contents are as delivered or as built.

@@ -440,8 +440,10 @@ def test_the_output_in_fw_needs_a_trial_folder(tmp_path, monkeypatch, capsys):
     assert fw.main(transplant_argv(tmp_path / "elsewhere.bin")) == 0
     # The real FW/ tree: the shipped image's folder has its TRIAL.
     fw.check_out(ARCHIVE / "FW_261118B" / "new.bin", [BASE], False, REPO / "FW")
-    fw.check_out(REPO / "FW" / "FW_261119F" / "new.bin", [BASE], False, REPO / "FW")
-    for no_trial in (ARCHIVE / "new.bin", ARCHIVE / "FW_260917" / "new.bin"):
+    # FW_261119F is released (2026-11-20): no TRIAL, so nothing more is
+    # written there - its reproduction goes outside FW/ (its NOTES file).
+    for no_trial in (ARCHIVE / "new.bin", ARCHIVE / "FW_260917" / "new.bin",
+                     REPO / "FW" / "FW_261119F" / "new.bin"):
         with pytest.raises(fw.WaveformError, match="TRIAL"):
             fw.check_out(no_trial, [BASE], False, REPO / "FW")
     with pytest.raises(fw.WaveformError, match="TRIAL"):
@@ -933,17 +935,29 @@ def test_transplant_end_align_does_both_steps_in_one_command(tmp_path, capsys):
 
 
 def test_every_trial_note_reproduces_its_image(tmp_path):
-    # The reproduce line of each TRIAL note, run with --out redirected:
-    # the archived images still come out byte for byte from their new paths.
+    # The reproduce line of each note, run with --out redirected: the
+    # archived images still come out byte for byte from their new paths.
+    # The released FW_261119F keeps its note in NOTES (not the TRIAL
+    # marker) and reproduces outside FW/, to be compared with cmp.
     import shlex
     import subprocess
-    for folder, image in ((ARCHIVE / "FW_261118B", SHIPPED), (ARCHIVE / "FW_261119", PLAN_C_OUT),
-                          (ARCHIVE / "FW_261119D", PLAN_D_OUT), (FW_DIR / "FW_261119F", FINAL_OUT)):
-        line = next(l for l in (folder / "TRIAL").read_text().splitlines()
+    notes = ((ARCHIVE / "FW_261118B" / "TRIAL", SHIPPED),
+             (ARCHIVE / "FW_261119" / "TRIAL", PLAN_C_OUT),
+             (ARCHIVE / "FW_261119D" / "TRIAL", PLAN_D_OUT),
+             (FW_DIR / "FW_261119F" / "NOTES", FINAL_OUT))
+    assert not (FW_DIR / "FW_261119F" / "TRIAL").exists()
+    for note, image in notes:
+        line = next(l for l in note.read_text().splitlines()
                     if l.startswith("  python tools/fw_waveform.py"))
         args = shlex.split(line)[1:]
         i = args.index("--out")
-        assert (REPO / args[i + 1]).resolve() == image.resolve()
+        out = (REPO / args[i + 1]).resolve()
+        if note.name == "TRIAL":
+            assert out == image.resolve()
+        else:
+            assert FW_DIR.resolve() not in out.parents and out.name == image.name
+            assert f"  cmp {args[i + 1]} {image.relative_to(REPO).as_posix()}" in \
+                note.read_text().splitlines()
         args[i + 1] = str(tmp_path / image.name)
         subprocess.run([sys.executable] + args, cwd=REPO, check=True,
                        capture_output=True)

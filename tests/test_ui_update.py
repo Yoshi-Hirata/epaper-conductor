@@ -175,18 +175,34 @@ def test_vendor_named_image_in_a_newer_folder_wins(tmp_path):
     assert image.name == "MCB_e16_2029.09.17.bin"
 
 
-def test_repo_ships_the_fw_260923_image_and_the_one_before_it():
+def test_repo_ships_the_released_image_and_fw_260923_to_go_back_to():
     # The whole "copy the firmware to the appliance" step is git pull,
-    # which only works if the images are in the tree. FW_260923 keeps
-    # the vendor's subfolder. Since 2026-11-20 the units are offered
-    # exactly two images; every other build sits in FW/archive/.
+    # which only works if the images are in the tree. Since 2026-11-20 the
+    # units are offered exactly two images (every other build sits in
+    # FW/archive/), neither a trial: FW_261119F, released as the fleet
+    # default, and FW_260923 (vendor subfolder kept) as the way back.
     image = updater_mod.find_firmware()
     assert image is not None
-    # The FW_261119F trial is newer but never the default.
-    assert updater_mod.firmware_label(image) == "FW_260923/MCB_16_0923.bin"
+    assert updater_mod.firmware_label(image) == "FW_261119F/mcb_pinks_0a-purple_0c-red.bin"
     assert 0 < image.stat().st_size <= ota.MAX_IMAGE_SIZE
-    labels = [updater_mod.firmware_label(p) for p in updater_mod.find_firmware_images()]
+    images = updater_mod.find_firmware_images()
+    labels = [updater_mod.firmware_label(p) for p in images]
     assert labels == ["FW_260923/MCB_16_0923.bin", "FW_261119F/mcb_pinks_0a-purple_0c-red.bin"]
+    assert not any(updater_mod.is_trial(p) for p in images)
+    assert all(0 < p.stat().st_size <= ota.MAX_IMAGE_SIZE for p in images)
+
+
+def test_the_default_is_2_of_2_and_left_right_reaches_fw_260923():
+    images = updater_mod.find_firmware_images()
+    updater, _ = make_updater(updater_mod.find_firmware(), images=images,
+                              bus=FakeOtaBus(answers={20}))
+    assert updater.image_choice == "2/2"
+    assert updater.firmware_label == "FW_261119F/mcb_pinks_0a-purple_0c-red.bin"
+    updater.select_image(1)                     # RIGHT wraps, LEFT goes back
+    assert updater.image_choice == "1/2"
+    assert updater.firmware_label == "FW_260923/MCB_16_0923.bin"   # no "(trial)"
+    updater.select_image(-1)
+    assert updater.image_choice == "2/2"
 
 
 def test_the_archive_is_never_offered(tmp_path):
@@ -202,16 +218,13 @@ def test_the_archive_is_never_offered(tmp_path):
     assert updater_mod.find_firmware_images(tmp_path) == [tmp_path / "FW_260923" / "a.bin"]
 
 
-def test_the_trial_builds_are_offered_but_not_by_default():
+def test_no_trial_build_is_offered_any_more():
+    # 2026-11-20: FW_261119F was released (its TRIAL file became NOTES)
+    # and the earlier trials (FW_261109 .. FW_261119D) are in FW/archive/.
     images = updater_mod.find_firmware_images()
-    trial = [updater_mod.firmware_label(p) for p in images if updater_mod.is_trial(p)]
-    # The final home-made image (2026-11-20, tools/fw_waveform.py): the
-    # earlier trials (FW_261109 .. FW_261119D) are in FW/archive/.
-    assert trial == ["FW_261119F/mcb_pinks_0a-purple_0c-red.bin"]
-    assert updater_mod.firmware_label(updater_mod.find_firmware()) == "FW_260923/MCB_16_0923.bin"
-    for p in images:
-        if updater_mod.is_trial(p):
-            assert 0 < p.stat().st_size <= ota.MAX_IMAGE_SIZE
+    assert [p for p in images if updater_mod.is_trial(p)] == []
+    folder = updater_mod.FIRMWARE_DIR / "FW_261119F"
+    assert (folder / "NOTES").is_file() and not (folder / updater_mod.TRIAL_MARKER).exists()
 
 
 def test_a_trial_folder_is_listed_marked_and_never_the_default(tmp_path):
@@ -727,3 +740,31 @@ def test_verify_reopens_until_the_board_answers():
                     settle_s=0.0)
     assert ok
     assert len(opened) == 2
+
+
+def test_two_presses_after_a_wake_never_start_a_flash(tmp_path):
+    # 2026-11-20 review: dark after 30 s, then KEY1 to wake and KEY1 /
+    # a KEY1 hold "again" 0.3 s and 0.9 s later must not flash.
+    from tests.test_ui_blank_lock import Clock
+    image = make_image(tmp_path)
+    for wake in ("press", "attention"):
+        for second in ("key1", "key1_hold"):
+            updater, _ = make_updater(image, bus=FakeOtaBus(answers={20}))
+            app, runner = make_app(updater)
+            clock = Clock()
+            app._clock = clock
+            app.select("update")
+            app.handle("key1")                  # the confirm screen
+            assert wait_until(lambda: not updater.busy)
+            clock.advance(5.0)
+            app.handle("key3")
+            if wake == "press":
+                app.handle("key1")
+            else:
+                runner.error = "no serial port"
+                app._idle_tasks()
+            clock.advance(0.3)
+            app.handle(second)
+            clock.advance(0.6)
+            app.handle(second)
+            assert updater.phase == IDLE and app.screen is Screen.UPDATE, (wake, second)

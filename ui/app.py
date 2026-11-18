@@ -146,17 +146,28 @@ only KEY2 is heard. Like EXHIBITION it is never left by the follow
 while the Conductor is local - and "local" survives a missed probe
 (Exhibition.present()) - and KEY2 leaves the session alone.
 
-The screen also blanks itself after BLANK_AFTER_S without input (never,
-by default) - and on the unit whose Conductor is local (radxa-05) after
-BLANK_AFTER_CONDUCTOR_S (30 s) on any screen, chosen automatically;
-`--blank-after` overrides both. Any press wakes it and does nothing
-else - waking must never move the state machine, or a blind press in a
-dark room could stop a running show. On radxa-05 an alert also wakes it,
-without a press: the speaker LOST, a unit newly missing or left out, a
-new verdict on EXHIBITION; it then stays lit for another 30 s, a press
-within a hold's length of that wake still only counts as the wake, and
-the screen never goes dark while a command waits for its verdict
-(_watch_alerts, _keep_lit).
+The screen also blanks itself after 30 s without input on every unit
+(BLANK_AFTER_S since 2026-11-20; BLANK_AFTER_CONDUCTOR_S on the unit whose
+Conductor is local, radxa-05); `--blank-after` overrides both, 0 never.
+Any press wakes it and does nothing else - waking must never move the
+state machine, or a blind press in a dark room could stop a running show.
+It never goes dark while a worker holds the port or the network (a
+flash, a clear, a pull, a FW VERSION / BOARD INFO scan, a reboot, a
+Wi-Fi switch, a speaker request) nor while a finished UPDATE FW / CLEAR
+BOARD / GIT PULL result or a runner error ("no serial port", "no boards
+answering", ...) has not been seen: a new one of those lights a dark
+screen without a press and keeps it lit until the next press; the timer
+starts again when the work ends (_attention, _keep_lit). On radxa-05 an
+alert also wakes it: the speaker LOST, a unit newly missing or left
+out, a new verdict on EXHIBITION; it then stays lit for another 30 s.
+After ANY wake - a press, an alert, a result or an error - a short
+press within WAKE_GUARD_S (1.5 s) only counts as the wake, so a "did it
+wake?" double press cannot act; a hold only counts as the wake if it
+went down before the screen was lit or within WAKE_HOLD_GRACE_S (0.3 s)
+after, so a hold begun in the dark never acts but "wake, then hold KEY1"
+(radxa-05's STOP) does (_wake_guard); a fault family lights a dark screen at most once per
+ATTENTION_REWAKE_S. The screen never goes dark while a command waits for
+its verdict (_watch_alerts, _keep_lit).
 
 No button quits. This runs as a service on a headless appliance, so a
 button that ended the process would leave the screen dark until someone
@@ -211,6 +222,7 @@ returns by itself after RELOCK_AFTER_S of quiet.
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -218,6 +230,7 @@ from enum import Enum
 from . import notify, render
 from .config import (BLANK_AFTER_CONDUCTOR_S, BLANK_AFTER_S,
                      FRAME_INTERVAL_S, KEY1_HOLD_S, LOG_LINES,
+                     ATTENTION_REWAKE_S, WAKE_GUARD_S, WAKE_HOLD_GRACE_S,
                      RELOCK_AFTER_S, UNLOCK_SEQUENCE, UNLOCK_WINDOW_S,
                      WATCHDOG_PERIOD_S)
 from .exhibition import BACKUPS as EX_BACKUPS
@@ -380,9 +393,9 @@ class App:
         self.exit_message = ("stopped", "service ended")
         self.blanked = False
         self.locked = locked
-        # None: automatic - BLANK_AFTER_S (never) on a garment unit,
-        # BLANK_AFTER_CONDUCTOR_S where the Conductor is local (radxa-05);
-        # a number (--blank-after) is used on every unit as given.
+        # None: automatic - BLANK_AFTER_S (30 s) on a garment unit,
+        # BLANK_AFTER_CONDUCTOR_S (30 s) where the Conductor is local
+        # (radxa-05); a number (--blank-after) is used as given, 0 never.
         self.blank_after = blank_after
         self.relock_after = relock_after
         # The alert wake (_watch_alerts): when the screen was last lit by
@@ -390,6 +403,14 @@ class App:
         # last seen, and whether a press since then may act yet.
         self._lit_at = clock()
         self._alert_woke_at: "float | None" = None
+        # What needs reading (_attention) and since when: a result or an
+        # error keeps the screen lit until a press after it appeared.
+        self._attention_key: "str | None" = None
+        self._attention_at = clock()
+        # Results already seen (by screen), and when each fault family
+        # last lit a dark screen (ATTENTION_REWAKE_S).
+        self._seen_results: "set[str]" = set()
+        self._attention_woke: "dict[str, float]" = {}
         self._alert_seen: "tuple | None" = None
         self._clock = clock
         # Only a device that started locked re-locks itself; unlocking an
@@ -437,22 +458,18 @@ class App:
         now = self._clock()
         if self.blanked:
             # Any press wakes the screen and is consumed doing so, so a
-            # blind press cannot also change what is running.
+            # blind press cannot also change what is running - and it
+            # opens the same guard window as any other wake, so a
+            # "did it wake?" second press cannot either.
             self.blanked = False
             self.display.wake()
             self._dirty = True
             self._last_input = now
-            self._alert_woke_at = None
+            self._alert_woke_at = now
             return
-        if (self._alert_woke_at is not None
-                and now - self._alert_woke_at < KEY1_HOLD_S):
-            # An alert lit the screen just now: a press (or a hold begun
-            # in the dark) landing within a hold's length was made blind,
-            # so it only counts as the wake it would have been.
-            self._alert_woke_at = None
+        if self._wake_guard(event, now):
             self._last_input = now
             return
-        self._alert_woke_at = None
         self._last_input = now
 
         if self.locked:
@@ -1814,8 +1831,8 @@ class App:
     def blank_timeout(self) -> float:
         """Seconds without a press before the backlight goes off (0:
         never): `blank_after` as given, else automatic - 30 s on the unit
-        whose Conductor is local (radxa-05, on any screen), never on a
-        garment unit (BLANK_AFTER_S, today's behaviour)."""
+        whose Conductor is local (radxa-05, BLANK_AFTER_CONDUCTOR_S) and
+        30 s on a garment unit too (BLANK_AFTER_S, since 2026-11-20)."""
         if self.blank_after is not None:
             return self.blank_after
         if self._local_conductor():
@@ -1823,10 +1840,114 @@ class App:
         return BLANK_AFTER_S
 
     def _keep_lit(self) -> bool:
-        """A command to the local Conductor is on its way: its verdict is
-        what the operator waits for (a restore takes minutes), so the
-        screen does not go dark under it."""
-        return self._local_conductor() and self.exhibition.busy
+        """The screen must not go dark now (2026-11-20, 30 s blanking on
+        every unit): a command to the local Conductor is on its way (its
+        verdict is what the operator waits for - a restore takes
+        minutes); a worker holds the port or the network (a flash, a
+        clear, a pull, a FW VERSION / BOARD INFO scan, a reboot, a Wi-Fi
+        switch, a speaker request); or a result or an error that needs
+        reading (_attention) has not been followed by a press yet."""
+        if self._local_conductor() and self.exhibition.busy:
+            return True
+        if any(worker is not None and worker.busy
+               for worker in (self.updater, self.clearer, self.puller,
+                              self.versions, self.boardinfo, self.rebooter,
+                              self.wifi, self.speaker)):
+            return True
+        return (self._attention_key is not None
+                and self._last_input < self._attention_at)
+
+    def _wake_guard(self, event: str, now: float) -> bool:
+        """True while a press still only counts as the wake of the last
+        wake (a press, an alert, a result or an error lighting the screen
+        - _alert_woke_at):
+
+        * a SHORT press within WAKE_GUARD_S of it - the blind "did it
+          wake?" double tap (KEY2 stop / release, KEY1 pause / start,
+          KEY3 blank, the joystick). The plain buttons report on the
+          press; KEY1 / KEY3 short presses on release, which stands in
+          for the press (a tap - anything longer is a hold);
+        * a HOLD that went DOWN before the screen was lit or within
+          WAKE_HOLD_GRACE_S after - a hold is reported KEY1_HOLD_S after
+          its press, so its press time is known. One begun later, on a
+          lit screen, is deliberate and acts (radxa-05's EXHIBITION STOP
+          is "wake, hold KEY1").
+
+        The window stays open for every swallowed press, and closes once
+        a press acts (a hold included)."""
+        woke = self._alert_woke_at
+        if woke is None:
+            return False
+        if event.endswith("_hold"):
+            swallowed = now - KEY1_HOLD_S < woke + WAKE_HOLD_GRACE_S
+        else:
+            swallowed = now < woke + WAKE_GUARD_S
+        if swallowed:
+            return True
+        self._alert_woke_at = None
+        return False
+
+    @staticmethod
+    def _fault_family(key: str) -> str:
+        """What counts as the same fault for ATTENTION_REWAKE_S: the text
+        after the last ': ' (the label in front changes - "q05: gave up
+        after 3", "q06: ..."), digits aside."""
+        return re.sub(r"\d+", "#", key.rsplit(": ", 1)[-1])
+
+    def _attention(self) -> "str | None":
+        """What must be read before the screen may go dark, as a key that
+        changes when something new needs reading, else None: a finished
+        UPDATE FW, CLEAR BOARD or GIT PULL on its screen (DONE or FAILED,
+        the operator decides what next), and a runner error - "no serial
+        port", "no boards answering" - on any screen (the menu's status
+        line and the RUNNING screen show it). A FW VERSION result is a
+        list to look at, not a verdict, so it only blanks after its 30 s."""
+        for screen, worker in ((Screen.UPDATE, self.updater),
+                               (Screen.CLEAR, self.clearer),
+                               (Screen.PULL, self.puller)):
+            if worker is None:
+                continue
+            if not getattr(worker, "finished", False):
+                # A new run: its result will be news again.
+                self._seen_results.discard(screen.value)
+                continue
+            if self.screen is screen and screen.value not in self._seen_results:
+                return f"{screen.value}:{worker.phase}"
+        error = getattr(self.runner, "error", None)
+        return f"error:{error}" if error else None
+
+    def _watch_attention(self, now: float) -> None:
+        """A new _attention() key: note when it appeared and, if the
+        screen is dark, light it without a press - like an alert on
+        radxa-05, a press within WAKE_GUARD_S of that still only wakes.
+
+        A result once seen (a press after it) is not raised again when
+        its screen is left and entered while it still shows; a new run
+        makes the next one news. A fault lights a dark screen at most
+        once per ATTENTION_REWAKE_S per _fault_family(): a flapping
+        "no serial port", or "gave up" under a new label each time, is
+        still kept lit until seen but cannot undo a deliberate KEY3
+        blank more than once a minute."""
+        key = self._attention_key
+        if (key is not None and not key.startswith("error:")
+                and self._last_input >= self._attention_at):
+            self._seen_results.add(key.split(":", 1)[0])
+        key = self._attention()
+        if key == self._attention_key:
+            return
+        self._attention_key = key
+        if key is None:
+            return
+        self._attention_at = now
+        self._lit_at = now
+        family = self._fault_family(key)
+        last = self._attention_woke.get(family)
+        if self.blanked and (last is None or now - last >= ATTENTION_REWAKE_S):
+            self._attention_woke[family] = now
+            self.blanked = False
+            self.display.wake()
+            self._dirty = True
+            self._alert_woke_at = now
 
     def _watch_alerts(self, now: float) -> None:
         """Where the Conductor is local, what the operator must see lights
@@ -1873,11 +1994,15 @@ class App:
             self._last_demo_poll = now
             self.refresh_demos()
         self._watch_alerts(now)
+        self._watch_attention(now)
         idle = now - self._last_input
-        if (not self.blanked
+        if self._keep_lit():
+            # The timeout counts from when the work ends or the result
+            # was seen, not from the last press before a 2-minute flash.
+            self._lit_at = now
+        elif (not self.blanked
                 and 0 < self.blank_timeout() <= now - max(self._last_input,
-                                                          self._lit_at)
-                and not self._keep_lit()):
+                                                          self._lit_at)):
             self._blank()
         if (self._locks_itself and not self.locked
                 and 0 < self.relock_after <= idle):

@@ -1,0 +1,40 @@
+Released as the fleet default on 2026-11-20 - home-made, NOT a vendor build.
+  mcb_pinks_0a-purple_0c-red.bin
+This folder has no TRIAL file on purpose: UPDATE FW writes this image by
+default (ui/updater.py find_firmware: the newest FW_ folder without a TRIAL
+marker). FW_260923 stays offered as the way back.
+
+Made here with tools/fw_waveform.py (transplant --total 662 --end-align).
+Program: the vendor's FW_261118 trial program, byte for byte
+(FW/archive/FW_261118/mcb_two_pinks(0a,0c).bin).
+Table: FW_260923's 14 other colours and timing (header total 662), plus
+the 11/9 "No.13" pinks as in the user's colour chart:
+  colour 0x0A <- pink purple No.13 (FW/archive/FW_261109/mcb_pink_purple_0_7.bin, colour 12)
+  colour 0x0C <- pink red No.13    (FW/archive/FW_261109/mcb_pink_red_0_16.bin, colour 12)
+with only their step 0 level-0 time grown to reach 662. Each colour's
+trailing rest is then moved to just after the shake, so all colours finish
+switching together (as in plan D, FW/archive/FW_261119D).
+This is plan D with the two pinks the other way round: the vendor's 11/18
+build and our plans B/C/D had 0x0A = pink red, 0x0C = pink purple.
+
+Verification:
+- this exact image was flashed and confirmed on board 03 on 2026-11-19:
+  16 colours, 0x0A = pink purple, 0x0C = pink red, all colours finish
+  switching together (plan D, the same drive with the pinks the other way
+  round, had been confirmed on the same board the same day);
+- still to be checked: Conductor shows with 0x1F delay sweeps, autoplay /
+  persisted settings on this program, and the other boards.
+
+Going back: UPDATE FW, LEFT/RIGHT to FW_260923/MCB_16_0923.bin, KEY1.
+A board that holds a waveform saved in its SPI flash shows six colours
+under FW_260923 (its program prefers the saved wave; this program ignores
+it) - see FW/archive/FW_261119/TRIAL.
+
+Reproduce (from the repo root). tools/fw_waveform.py only writes into FW/
+next to a TRIAL file, and this folder has none, so write the copy outside
+FW/ and compare it with the released image:
+  python tools/fw_waveform.py transplant --base "FW/archive/FW_261118/mcb_two_pinks(0a,0c).bin" --total 662 --end-align --set 0=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:0 --set 1=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:1 --set 2=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:2 --set 3=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:3 --set 4=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:4 --set 5=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:5 --set 6=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:6 --set 7=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:7 --set 8=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:8 --set 9=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:9 --set 10=FW/archive/FW_261109/mcb_pink_purple_0_7.bin:12 --set 11=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:11 --set 12=FW/archive/FW_261109/mcb_pink_red_0_16.bin:12 --set 13=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:13 --set 14=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:14 --set 15=FW/FW_260923/fw2029.09.23/MCB_16_0923.bin:15 --out repro/mcb_pinks_0a-purple_0c-red.bin
+  cmp repro/mcb_pinks_0a-purple_0c-red.bin FW/FW_261119F/mcb_pinks_0a-purple_0c-red.bin
+(sha256 2f666df70c6badcfa80600f1a208c3485e1edb0a8af259afd189d740b4cccab7;
+delete repro/ afterwards; tests/test_fw_waveform.py runs this line with
+its own --out and compares the bytes.)

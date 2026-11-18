@@ -4209,3 +4209,128 @@ def test_a_long_burn_keeps_the_master_off_its_autoplay(keep_away):
     said = [l for l in runner.recent(200) if "keep-away stop (" in l]
     assert len(said) == runner.keep_away_sent
 
+
+
+# ---- the post-fire STOP keeps the FIRED cue's latched floor (2026-11-20) ----
+#
+# Codex: _guard_after_fire() is read after the landing check, when the
+# session may already hold the NEXT cue (ui/showplay.py arms it on FIRED).
+# A 30 s sweep fires, a flat cue is armed, HOLD disarms it: the idle STOP
+# was put at the FLAT cue's deadline while the sweep was still repainting.
+
+from types import SimpleNamespace  # noqa: E402
+
+
+def _fired(span, refresh, guard_delay=30.0, at=1000.0):
+    """A runner as _fire_at() leaves it after sending a cue at `at`."""
+    runner = make_runner(FakeBus(), guard_delay=guard_delay)
+    cue = SimpleNamespace(span_s=span, refresh_s=refresh)
+    runner._last_show_at = at
+    runner._guard_hold_s = runner._guard_for(cue)
+    runner._guard_floor = at + runner._guard_hold_s
+    return runner, cue
+
+
+def _old_rule(runner, session):
+    return runner._last_show_at + runner._guard_for(session)
+
+
+@pytest.mark.parametrize("refresh", [7.0, 7.3])
+def test_a_flat_cue_armed_after_a_sweep_does_not_shorten_its_stop(refresh):
+    runner, _ = _fired(30.0, refresh)
+    flat = SimpleNamespace(span_s=None, refresh_s=None)     # armed, then HOLD
+    assert _old_rule(runner, flat) == 1030.0                # what it was
+    # refresh + span 30 + margin 23: 1060.0 (legacy 7.0) / 1060.3 (7.3)
+    assert runner._guard_after_fire(flat) == pytest.approx(1000.0 + refresh + 30.0 + 23.0)
+
+
+def test_sweep_then_sweep_takes_the_later_of_the_two():
+    runner, _ = _fired(30.0, 7.3)
+    shorter = SimpleNamespace(span_s=10.0, refresh_s=7.3)
+    longer = SimpleNamespace(span_s=50.0, refresh_s=7.3)
+    assert runner._guard_after_fire(shorter) == pytest.approx(1060.3)   # was 1040.3
+    assert runner._guard_after_fire(longer) == pytest.approx(1080.3)    # as before
+
+
+def test_flat_then_sweep_is_not_made_longer_than_before():
+    runner, _ = _fired(None, None)                          # a flat cue fired
+    sweep = SimpleNamespace(span_s=30.0, refresh_s=7.3)
+    assert runner._guard_after_fire(sweep) == _old_rule(runner, sweep)
+    flat = SimpleNamespace(span_s=None, refresh_s=None)
+    assert runner._guard_after_fire(flat) == _old_rule(runner, flat) == 1030.0
+
+
+@pytest.mark.parametrize("span, refresh", [(None, None), (0.0, 7.0), (0.0, 7.3),
+                                           (3.0, None), (30.0, 7.0), (30.0, 7.3),
+                                           (250.0, 7.3)])
+def test_the_ordinary_fire_keeps_exactly_its_old_deadline(span, refresh):
+    runner, cue = _fired(span, refresh)
+    assert runner._guard_after_fire(cue) == _old_rule(runner, cue)
+    # ...and after a landing-check re-send, which moves both together.
+    runner._last_show_at = 1001.5
+    runner._guard_floor = 1001.5 + runner._guard_hold_s
+    assert runner._guard_after_fire(cue) == _old_rule(runner, cue)
+
+
+def test_resume_after_hold_takes_the_new_cues_floor():
+    runner, _ = _fired(30.0, 7.3)
+    # RESUME arms and fires a flat cue at 1100: _fire_at() latches anew.
+    flat = SimpleNamespace(span_s=None, refresh_s=None)
+    runner._last_show_at = 1100.0
+    runner._guard_hold_s = runner._guard_for(flat)
+    runner._guard_floor = 1100.0 + runner._guard_hold_s
+    assert runner._guard_after_fire(flat) == 1130.0
+
+
+def test_the_worker_does_not_stop_inside_the_sweep_after_hold(monkeypatch):
+    """The scenario end to end, scaled down: a 0.8 s sweep fires, the
+    landing check sees the next (flat) cue armed, HOLD drops it; the
+    STOP must wait for the sweep, not the flat 0.1 s guard."""
+    bus = StampedBus()
+    runner = make_runner(bus, guard_delay=0.1)
+    session = RemoteSession(runner)
+    verify = runner._verify_landing
+
+    def next_cue_armed_during_the_check(*args, **kwargs):
+        verify(*args, **kwargs)
+        session.arm("c2", 2)                                # flat, no fire time
+    monkeypatch.setattr(runner, "_verify_landing", next_cue_armed_during_the_check)
+    session.arm("c1", 1, span_s=0.6, refresh_s=0.2)
+    assert wait_until(lambda: session.phase == READY)
+    session.fire("c1", time.monotonic() + 0.05)
+    assert wait_until(lambda: session.cue_id == "c2")
+    fired = runner._last_show_at
+    session.cancel()                                        # HOLD
+    assert wait_until(lambda: any(t > fired for t in bus.broadcast_stops), timeout=5.0)
+    assert min(t for t in bus.broadcast_stops if t > fired) >= fired + 0.78
+    runner.stop()
+
+
+def test_two_presses_after_a_wake_keep_a_garment_in_its_remote_show():
+    # 2026-11-20 review: KEY2 to wake, KEY2 again 0.3 s / 0.9 s later must
+    # not drop the unit out of the PC's show.
+    from tests.test_ui_blank_lock import Clock
+    session, runner, bus = make_session()
+    clock = Clock()
+    app = make_app(session, runner, clock=clock)
+    try:
+        session.prepare("c1", {1: array(1)})
+        app.tick(wait=0.0)
+        assert app.screen is Screen.REMOTE
+        for wake in ("press", "attention"):
+            clock.advance(5.0)
+            app.handle("key3")
+            assert app.blanked
+            if wake == "press":
+                app.handle("key2")
+            else:
+                runner.error = f"no serial port {wake}"
+                app._idle_tasks()
+                runner.error = None
+            for gap in (0.3, 0.6):
+                clock.advance(gap)
+                app.handle("key2")
+                app.handle("key1_hold")
+            assert app.screen is Screen.REMOTE and session.active, wake
+    finally:
+        runner.stop()

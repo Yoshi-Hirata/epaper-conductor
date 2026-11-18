@@ -871,6 +871,7 @@ def test_a_plain_key3_blanks_and_a_held_key3_elsewhere_still_blanks():
     assert not app.blanked and app.screen is Screen.SPEAKER
     speaker.join(0.2)
     assert fake.posts() == []
+    app._alert_woke_at -= 3.0                    # past WAKE_GUARD_S
     app.handle("key2")
     app.handle("key3_hold")
     assert app.blanked

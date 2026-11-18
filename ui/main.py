@@ -551,9 +551,9 @@ def main() -> int:
                          "itself after a minute of no input)")
     ap.add_argument("--blank-after", type=float, default=None, metavar="SEC",
                     help="blank the backlight after this idle time "
-                         "(0 disables; default: never on a garment unit, "
-                         "30 s where the exhibition Conductor answers on "
-                         "127.0.0.1 - radxa-05)")
+                         "(0 disables; default 30 s on every unit; never "
+                         "while a flash, clear, pull or scan runs or a "
+                         "result or error is still unread)")
     ap.add_argument("--no-standby", action="store_true",
                     help="do not white out the panels at startup; leave "
                          "whatever they are showing (the factory autoplay "

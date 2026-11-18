@@ -2165,7 +2165,15 @@ class DemoRunner:
         base = self._last_show_at
         if base is None:
             base = time.monotonic()
-        return base + self._guard_for(session)
+        due = base + self._guard_for(session)
+        # Never before the floor latched at the fire: by the time this is
+        # read the landing check has run and the session may already hold
+        # the NEXT cue (armed on FIRED) - a flat one, then disarmed by
+        # HOLD, put the STOP 30 s into a 37 s sweep (Codex, 2026-11-20).
+        # Equal on the ordinary path; never earlier than before.
+        if self._guard_floor is not None:
+            due = max(due, self._guard_floor)
+        return due
 
     # ---- did the broadcast land? (see VERIFY_AFTER_S) ----
 

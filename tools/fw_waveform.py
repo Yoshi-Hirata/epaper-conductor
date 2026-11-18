@@ -56,7 +56,9 @@ red, as in the user's colour chart).
 
 Since 2026-11-20 only FW/FW_260923 and FW/FW_261119F are where UPDATE FW
 looks; the other builds (vendor and home-made) are kept under FW/archive/
-for this tool, the tests and history.
+for this tool, the tests and history. FW_261119F is the released default
+(no TRIAL file), so the output guard below no longer writes there: its
+NOTES reproduce it outside FW/ and compare the bytes.
 
 Pure stdlib; no board or serial port involved.
 """

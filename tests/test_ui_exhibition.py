@@ -1449,18 +1449,20 @@ def test_the_conductor_unit_blanks_after_30_s_on_any_screen():
         assert app.blanked and app.display.asleep
 
 
-def test_a_garment_unit_never_blanks():
+def test_a_garment_unit_blanks_after_30_s_too():
+    # 2026-11-20: 30 s on every unit (it was never on a garment unit).
     ex, fake = make_exhibition()
     fake.down = True                    # nothing answers on 127.0.0.1
     ex.poll()
     app, clock = clocked_app(ex)
-    assert app.blank_timeout() == 0
-    clock.advance(3600)
+    assert app.blank_timeout() == 30.0
     app.tick(wait=0)
-    assert not app.blanked
-    # ...nor a unit without the EXHIBITION row at all.
+    clock.advance(30.1)
+    app.tick(wait=0)
+    assert app.blanked
+    # ...and a unit without the EXHIBITION row at all.
     bare = App(NullDisplay(), ScriptedInput(()), FakeRunner(), clock=clock)
-    assert bare.blank_timeout() == 0
+    assert bare.blank_timeout() == 30.0
 
 
 def test_blank_after_on_the_command_line_overrides_the_automatic_30_s():
@@ -1530,7 +1532,9 @@ def test_a_press_after_the_alert_wake_acts_normally():
     fake.connection = "disconnected"
     ex.poll()
     app.tick(wait=0)
-    clock.advance(2.0)
+    # A hold reports KEY1_HOLD_S after it went down; down 2.0 s after the
+    # wake is past WAKE_GUARD_S (1.5 s, 2026-11-20), so it is meant.
+    clock.advance(3.0)
     app.handle("key3_hold")             # LOOP on, seen and meant
     ex.join(2.0)
     assert fake.posts() == [("/api/loop", {"on": True})]
@@ -1603,3 +1607,39 @@ def test_never_dark_while_a_command_waits_for_its_verdict():
     clock.advance(1.5)
     app.tick(wait=0)
     assert app.blanked
+
+
+def test_wake_then_hold_key1_stops_the_run():
+    # Re-review 2026-11-20: the emergency STOP on radxa-05 is "wake, hold
+    # KEY1 straight away". A hold that went down >= WAKE_HOLD_GRACE_S
+    # (0.3 s) after the screen lit acts; one down before it or within
+    # the allowance is only the wake.
+    for wake in ("press", "alert"):
+        ex, fake = make_exhibition()
+        present(fake, UNITS, {})
+        fake.run = {"t0": 0.0, "state": "running", "now": -8.0}
+        ex.poll()
+        app, clock = clocked_app(ex)
+        enter(app)
+        assert ex.active
+        app.tick(wait=0)                    # the alerts' baseline
+        clock.advance(31)
+        app.tick(wait=0)
+        assert app.blanked
+        if wake == "press":
+            app.handle("down")              # lit at t
+        else:
+            fake.connection = "disconnected"
+            ex.poll()
+            app.tick(wait=0)
+        assert not app.blanked
+        clock.advance(0.8)                  # down at t-0.2
+        app.handle("key1_hold")
+        clock.advance(0.4)                  # down at t+0.2
+        app.handle("key1_hold")
+        ex.join(1.0)
+        assert fake.posts() == [], wake
+        clock.advance(0.3)                  # down at t+0.5: STOP
+        app.handle("key1_hold")
+        assert wait_until(lambda: ex.phase == DONE), wake
+        assert fake.posts() == [("/api/fleet/stop", {})], wake

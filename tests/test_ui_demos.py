@@ -1369,3 +1369,38 @@ def test_a_save_whose_sidecar_fails_leaves_nothing_behind(tmp_path, monkeypatch)
     assert list(tmp_path.glob("*.json")) == []     # whole or not at all
     assert store.list() == []
 
+
+
+def test_two_presses_after_a_wake_keep_a_demo_playing(tmp_path):
+    # 2026-11-20 review: KEY2 / a KEY1 hold 0.3 s and 0.9 s after a wake
+    # must not stop a playing demo.
+    from tests.test_ui_blank_lock import Clock
+    session, runner, bus = make_session()
+    clock = Clock()
+    app, player, demos = make_app(tmp_path, session, runner, clock=clock)
+    try:
+        slug = demos.save("DEMO PARIS", make_show(sents=(-REFRESH, 0.6), duration=5))
+        app.refresh_demos()
+        app.select(f"demo:{slug}")
+        app.handle("key1")
+        assert app.screen is Screen.DEMO and player.is_demo
+        for wake in ("press", "attention"):
+            clock.advance(5.0)
+            app.handle("key3")
+            assert app.blanked
+            if wake == "press":
+                app.handle("key2")
+            else:
+                app._attention_key = None
+                app._attention_woke.clear()
+                runner.error = f"no serial port {wake}"
+                app._idle_tasks()
+                runner.error = None
+            for gap in (0.3, 0.6):
+                clock.advance(gap)
+                app.handle("key2")
+                app.handle("key1_hold")
+            assert app.screen is Screen.DEMO and player.is_demo, wake
+    finally:
+        player.stop()
+        runner.stop()

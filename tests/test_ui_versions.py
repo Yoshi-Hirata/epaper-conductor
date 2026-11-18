@@ -409,17 +409,21 @@ def test_a_v1_4_board_whose_record_is_older_is_flagged(tmp_path):
 # ---- "bundled" = the image UPDATE FW writes by default (2026-11-19) ----
 
 def test_bundled_is_the_update_fw_default_not_the_newest_trial():
+    # 2026-11-20: the released FW_261119F is the UPDATE FW default, so it
+    # is "bundled" and its rows are green; FW_260923 (the way back) not.
     from ui import versions as versions_mod
-    assert versions_mod.bundled_folder() == "FW_260923"     # the real FW tree
+    assert versions_mod.bundled_folder() == "FW_261119F"    # the real FW tree
     v = BoardVersions(catalog={}, echo_log=False)
-    assert v.bundled == "FW_260923"
-    assert render.runs_bundled("FW_260923", v.bundled)
-    assert render.runs_bundled("V1.4 16-color (FW_260923+), flashed FW_260923 09-24 10:00",
+    assert v.bundled == "FW_261119F"
+    assert render.runs_bundled("FW_261119F", v.bundled)
+    assert render.runs_bundled("V1.4 16-color (FW_260923+), flashed FW_261119F 11-20 10:00",
                                v.bundled)
-    for other in ("FW_261118", "FW_261118B", "FW_261118B RECEIVING",
+    for other in ("FW_260923", "FW_261119", "FW_261119D",
+                  "V1.4 16-color (FW_260923+), flashed FW_260923 09-24 10:00",
                   "V1.4 16-color (FW_260923+), no flash record here",
                   "V1.1 16-color, flashed FW_261118B 11-19 12:00"):
         assert not render.runs_bundled(other, v.bundled)
+    assert render.runs_bundled("FW_261119F RECEIVING", v.bundled)
 
 
 def test_bundled_matches_whole_folder_names_only(tmp_path):

@@ -601,3 +601,30 @@ def test_blanking_the_screen_disarms():
     app.handle("key1_hold")                      # arms again, sends nothing
     settle(clearer)
     assert cleared_frames(bus) == []
+
+
+def test_two_presses_after_a_wake_never_arm_or_send():
+    # 2026-11-20 review: armed, blanked (which disarms), then holds 0.3 s
+    # and 0.9 s after the wake neither arm again nor send.
+    from tests.test_ui_blank_lock import Clock
+    for wake in ("press", "attention"):
+        clearer, bus, _ = make_clearer(answers=(1,))
+        app, runner = make_app(clearer)
+        clock = Clock()
+        app._clock = clock
+        enter(app)
+        app.handle("key1_hold")
+        assert clearer.armed_text()
+        clock.advance(5.0)
+        app.handle("key3")
+        assert clearer.armed_text() == ""
+        if wake == "press":
+            app.handle("key1")
+        else:
+            runner.error = "no serial port"
+            app._idle_tasks()
+        for gap in (0.3, 0.6):
+            clock.advance(gap)
+            app.handle("key1_hold")
+        settle(clearer)
+        assert clearer.armed_text() == "" and cleared_frames(bus) == [], wake
