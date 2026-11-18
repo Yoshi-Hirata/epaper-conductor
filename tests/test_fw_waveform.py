@@ -706,3 +706,143 @@ def test_the_cli_takes_total(tmp_path, capsys):
     short = argv[:5] + ["--out", str(tmp_path / "d.bin"), "--set", f"10={RED}:12"]
     assert fw.main(short) == 2
     assert "not given by --set" in capsys.readouterr().err
+
+
+# ---- retime --end-align: plan D, FW_261119D (2026-11-20) - plan C with
+# each colour's trailing rest moved to right after the shake ----
+
+PLAN_D_OUT = FW_DIR / "FW_261119D" / "mcb_1118prog_pinks_no13_endalign.bin"
+PLAN_D_SHA256 = "c07909b5fad5e6fdbd3a00efd119d569ef649c5b28726a981df8041f6ab7e067"
+MOVED_D = {0: 1, 1: 1, 2: 1, 4: 1, 8: 2, 9: 1, 10: 2, 11: 1, 12: 2}   # colour: steps
+INSERT_D = {c: 10 for c in MOVED_D}
+INSERT_D[1] = 11                    # yellow: its shake ends after step 10, at 364
+# Tick where the last non-zero drive ends, colour 0..15 (10 ms ticks).
+LAST_DRIVE_C = [630, 578, 590, 652, 648, 654, 659, 651, 510, 595, 582, 602, 454, 661, 655, 660]
+LAST_DRIVE_D = [662, 662, 662, 652, 662, 654, 659, 651, 662, 661, 662, 662, 662, 661, 655, 660]
+
+
+def last_drive_here(steps):
+    """Independent of the tool: end tick of the last non-zero level."""
+    t = last = 0
+    for rep_, a, ta, b, tb, c, tc in steps:
+        for _ in range(rep_):
+            for level, time in ((a, ta), (b, tb), (c, tc)):
+                if time and level:
+                    last = t + time
+                t += time
+    return last
+
+
+def test_the_last_drive_ends_as_measured_before_and_after():
+    _, c_entries = table_here(PLAN_C_OUT.read_bytes())
+    _, d_entries = table_here(PLAN_D_OUT.read_bytes())
+    assert [last_drive_here(s) for _, _, s in c_entries] == LAST_DRIVE_C
+    assert [last_drive_here(s) for _, _, s in d_entries] == LAST_DRIVE_D
+
+
+def test_the_plan_d_image_is_pinned():
+    image, plan_c = PLAN_D_OUT.read_bytes(), PLAN_C_OUT.read_bytes()
+    assert len(image) == len(plan_c) == 63144
+    assert hashlib.sha256(image).hexdigest() == PLAN_D_SHA256
+    assert ota.crc16_modbus(image) == 0xC9A1
+    diff = [i for i, (a, b) in enumerate(zip(plan_c, image)) if a != b]
+    assert len(diff) == 156 and (diff[0], diff[-1]) == (0xCB59, 0xD081)
+    _, c_entries = table_here(plan_c)
+    _, d_entries = table_here(image)
+    assert image[:ENTRIES_C[0]] == plan_c[:ENTRIES_C[0]]          # program, header
+    assert image[ENTRIES_C[1]:] == plan_c[ENTRIES_C[1]:]
+    for c, ((start, end, old), (start2, end2, new)) in enumerate(zip(c_entries, d_entries)):
+        assert (start, end) == (start2, end2)
+        assert sorted(new) == sorted(old)                         # a permutation
+        assert sum(r * (a + b + d) for r, _, a, _, b, _, d in new) == 662
+        if c not in MOVED_D:
+            assert image[start:end] == plan_c[start:end]          # byte-identical
+            continue
+        n, at = MOVED_D[c], INSERT_D[c]
+        assert new[at:at + n] == old[len(old) - n:]               # the trailing rest
+        assert new[:at] + new[at + n:] == old[:len(old) - n]      # the rest, in order
+        assert all(level == 0 for step in new[at:at + n]
+                   for level, time in zip(step[1::2], step[2::2]) if time)
+        ends = [sum(r * (a + b + d) for r, _, a, _, b, _, d in new[:i + 1])
+                for i in range(len(new))]
+        assert ends[at - 1] == (364 if c == 1 else 354)
+
+
+def test_the_plan_d_image_is_what_the_tool_makes_now():
+    image, rows, shake_end = fw.retime(PLAN_C_OUT.read_bytes())
+    assert image == PLAN_D_OUT.read_bytes() and shake_end == 354
+    assert {r.colour: r.moved for r in rows if r.moved} == MOVED_D
+    assert {r.colour: r.insert_at for r in rows if r.moved} == INSERT_D
+    assert [r.shake_end for r in rows] == [354, 364, 354, 354, 354, 426, 426, 426,
+                                           354, 354, 354, 354, 354, 354, 354, 354]
+    assert [r.rest for r in rows] == [32, 84, 72, 0, 14, 0, 0, 0, 152, 66, 80, 60, 208,
+                                      0, 0, 0]
+
+
+def test_plan_d_has_its_own_fingerprint_and_name():
+    catalog = ota.bundled_images(FW_DIR)
+    prints = [ota.image_fingerprint(p.read_bytes()) for p in (PROG_1118, PLAN_C_OUT, PLAN_D_OUT)]
+    assert len({size for size, _ in prints}) == 1 and len({crc for _, crc in prints}) == 3
+    assert [catalog[f] for f in prints] == ["FW_261118", "FW_261119", "FW_261119D"]
+
+
+def test_rest_suffix_and_end_align_rules():
+    drive, rest = (3, 1, 4, 6, 4, 0, 0), (1, 0, 9, 0, 7, 0, 0)
+    assert fw.is_rest((12, 0, 0, 0, 0, 0, 6)) and fw.is_rest((2, 6, 0, 0, 3, 0, 0))
+    assert not fw.is_rest((2, 0, 0, 4, 2, 0, 10))     # red's: rest inside a drive step
+    assert fw.rest_suffix([drive, drive]) == 2           # none
+    assert fw.rest_suffix([drive, rest, drive, rest, rest]) == 3
+    steps = [(1, 0, 10, 0, 0, 0, 0), drive, (1, 6, 7, 0, 0, 0, 0), rest]
+    assert fw.end_align(steps, 34) == ([steps[0], drive, rest, steps[2]], 2, 1)
+    assert fw.end_align(steps, 20) == ([steps[0], drive, rest, steps[2]], 2, 1)
+    assert fw.end_align([drive, drive], 10) == ([drive, drive], 2, 0)
+    with pytest.raises(fw.WaveformError, match="at or after the trailing rest"):
+        fw.end_align(steps, 40)                          # reached at step 2 = just before it
+    with pytest.raises(fw.WaveformError, match="at or after the trailing rest"):
+        fw.end_align(steps, 999)
+    with pytest.raises(fw.WaveformError, match="rest only"):
+        fw.end_align([rest, rest], 5)
+
+
+def test_the_common_shake_end_needs_a_majority():
+    a = [(1, 0, 10, 0, 0, 0, 0), (10, 1, 5, 2, 5, 0, 0), (1, 6, 10, 0, 0, 0, 0)]
+    b = [(1, 0, 10, 0, 0, 0, 0), (10, 1, 4, 2, 5, 0, 0), (1, 6, 20, 0, 0, 0, 0)]
+    with pytest.raises(fw.WaveformError, match="no single most common shake end"):
+        fw.retime(synth([a] * 8 + [b] * 8, 120), after_step=1)
+    image, rows, end = fw.retime(synth([a] * 9 + [b] * 7, 120), after_step=1)
+    assert end == 110 and image == synth([a] * 9 + [b] * 7, 120)   # nothing to move
+
+
+def test_check_retime_catches_reordered_drive_and_outside_bytes():
+    plan_c = PLAN_C_OUT.read_bytes()
+    image, rows, end = fw.retime(plan_c)
+    t = fw.parse(image)
+    e = t.entries[0]
+    steps = list(e.steps)
+    steps[11], steps[12] = steps[12], steps[11]          # two driving steps swapped
+    bad = bytearray(image)
+    bad[e.start:e.end] = fw.encode(steps, t.key)
+    with pytest.raises(fw.WaveformError):
+        fw.check_retime(plan_c, bytes(bad), rows, end)
+    for offset in (0x100, t.header + 10, ENTRIES_C[1]):
+        bad = bytearray(image)
+        bad[offset] ^= 0x01
+        with pytest.raises(fw.WaveformError):
+            fw.check_retime(plan_c, bytes(bad), rows, end)
+    with pytest.raises(fw.WaveformError):
+        fw.check_retime(plan_c, image, rows, 300)        # not right after this end
+
+
+def test_the_cli_retimes(tmp_path, capsys):
+    out = tmp_path / "d.bin"
+    argv = ["retime", "--base", str(PLAN_C_OUT), "--end-align", "--out", str(out)]
+    assert fw.main(argv) == 0
+    assert out.read_bytes() == PLAN_D_OUT.read_bytes()
+    text = capsys.readouterr().out
+    assert "shake end 354 (tick after step 9, most common)" in text
+    assert "colours whose own shake ends later: 1: 364, 5: 426, 6: 426, 7: 426" in text
+    assert "454 -> 662" in text and "untouched, no trailing rest" in text
+    assert fw.main(argv) == 2                            # exists
+    assert "exists" in capsys.readouterr().err
+    assert fw.main(argv + ["--force", "--shake-end", "999"]) == 2
+    assert "at or after the trailing rest" in capsys.readouterr().err

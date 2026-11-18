@@ -35,9 +35,18 @@ so did plain FW_260923); the vendor's later trial programs ignore the saved
 wave. FW_261119 therefore keeps the vendor's FW_261118 program and carries
 FW_260923's table (total 662) with the two 11/9 pinks.
 
+Plan D (2026-11-20): on plan C the colours finish switching up to 2 s
+apart, because each entry ends with its own level-0 rest. `retime
+--end-align` moves each colour's trailing pure-rest steps to just after
+the shake, so the shake stays synchronous and every colour then waits its
+rest first and finishes driving at the end. Same steps, same order of the
+drive, only when the rest happens.
+
     python tools/fw_waveform.py dump IMAGE
     python tools/fw_waveform.py transplant --base IMAGE \
         --set 10=DONOR:12 --set 12=DONOR:12 [--total N] --out OUT [--force]
+    python tools/fw_waveform.py retime --base IMAGE --end-align \
+        [--after-step 9] [--shake-end N] --out OUT [--force]
 
 Pure stdlib; no board or serial port involved.
 """
@@ -45,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections import Counter
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -341,6 +351,166 @@ def check(base: bytes, image: bytes, changes: Sequence[Change],
             raise WaveformError(f"colour {c.colour} step 0 differs from the donor's beyond timeA")
 
 
+# ---- retime --end-align (plan D, 2026-11-20) ----
+
+def _pairs(step: Step):
+    return ((step[1], step[2]), (step[3], step[4]), (step[5], step[6]))
+
+
+def is_rest(step: Step) -> bool:
+    """Every (level, time) pair that takes time is level 0."""
+    return all(level == 0 for level, time in _pairs(step) if time)
+
+
+def rest_suffix(steps: Sequence[Step]) -> int:
+    """Index where the maximal suffix of whole pure-rest steps starts
+    (len(steps) when the entry ends driving)."""
+    k = len(steps)
+    while k > 0 and is_rest(steps[k - 1]):
+        k -= 1
+    return k
+
+
+def drive_span(steps: Sequence[Step], start: int = 0) -> Tuple[int | None, int | None]:
+    """(first tick at or after `start` where a non-zero level is driven,
+    tick where the last non-zero drive ends) - ticks of 10 ms."""
+    t, first, last = 0, None, None
+    for step in steps:
+        for _ in range(step[0]):
+            for level, time in _pairs(step):
+                if time and level:
+                    if first is None and t >= start:
+                        first = t
+                    last = t + time
+                t += time
+    return first, last
+
+
+def cumulative(steps: Sequence[Step]) -> List[int]:
+    """Tick at the end of each step."""
+    out, t = [], 0
+    for step in steps:
+        t += step_duration(step)
+        out.append(t)
+    return out
+
+
+@dataclass(frozen=True)
+class Retime:
+    colour: int
+    shake_end: int               # this colour's tick after --after-step
+    moved: int                   # steps moved (0: entry untouched)
+    rest: int                    # ticks moved
+    insert_at: int               # index the moved steps now start at
+    insert_tick: int             # tick they now start at
+    before: Tuple[Step, ...]
+    after: Tuple[Step, ...]
+    start: int
+    end: int
+
+
+def common_shake_end(table: Table, after_step: int) -> int:
+    """The most common tick at the end of step `after_step` (354 in plan
+    C: 12 colours; yellow 348 mid-shake, green/turquoise/almond 426)."""
+    ends = Counter(cumulative(e.steps)[after_step] for e in table.entries
+                   if len(e.steps) > after_step)
+    if not ends:
+        raise WaveformError(f"no colour has a step {after_step}")
+    (best, n), *rest = ends.most_common()
+    if rest and rest[0][1] == n:
+        raise WaveformError(f"no single most common shake end after step {after_step}: "
+                            f"{dict(ends)}; give --shake-end")
+    return best
+
+
+def end_align(steps: Sequence[Step], shake_end: int) -> Tuple[List[Step], int, int]:
+    """(steps, insert index, moved count): the trailing pure-rest steps
+    moved, in order, to right after the first step whose end reaches
+    `shake_end`. Untouched when there is no rest suffix; refuses when
+    that point is at or after the suffix itself."""
+    k = rest_suffix(steps)
+    if k == len(steps):
+        return list(steps), k, 0
+    if k == 0:
+        raise WaveformError("the entry is rest only")
+    cum = cumulative(steps)
+    j = next((i for i, t in enumerate(cum) if t >= shake_end), None)
+    if j is None or j + 1 >= k:
+        raise WaveformError(f"the shake end {shake_end} is reached at step {j}, at or after "
+                            f"the trailing rest starting at step {k}")
+    return list(steps[:j + 1]) + list(steps[k:]) + list(steps[j + 1:k]), j + 1, len(steps) - k
+
+
+def retime(base: bytes, shake_end: int | None = None, after_step: int = 9
+           ) -> Tuple[bytes, List[Retime], int]:
+    """End-align every colour of `base`; returns (image, rows, shake end
+    used), after check_retime()."""
+    table = validate(base, "base")
+    if shake_end is None:
+        shake_end = common_shake_end(table, after_step)
+    out = bytearray(base)
+    rows = []
+    for e in table.entries:
+        steps, at, moved = end_align(e.steps, shake_end)
+        blob = encode(steps, table.key)
+        if len(blob) != e.end - e.start:
+            raise WaveformError(f"colour {e.colour} changed size")
+        out[e.start:e.end] = blob
+        # This colour's own shake end: the end of its first step reaching
+        # the common one (yellow 364, green/turquoise/almond 426 in plan C).
+        own_end = next((t for t in cumulative(e.steps) if t >= shake_end), -1)
+        rest = sum(step_duration(x) for x in e.steps[len(e.steps) - moved:]) if moved else 0
+        rows.append(Retime(e.colour, own_end, moved, rest, at,
+                           own_end if moved else -1, e.steps, tuple(steps), e.start, e.end))
+    image = bytes(out)
+    check_retime(base, image, rows, shake_end)
+    return image, rows, shake_end
+
+
+def check_retime(base: bytes, image: bytes, rows: Sequence[Retime], shake_end: int) -> None:
+    """The self-check run before anything is written."""
+    if len(image) != len(base):
+        raise WaveformError(f"size {len(image)} != base {len(base)}")
+    old, new = parse(base), parse(image)
+    ranges = [(e.start, e.end) for e in old.entries]
+    for i, (a, b) in enumerate(zip(base, image)):
+        if a != b and not any(s <= i < e for s, e in ranges):
+            raise WaveformError(f"byte 0x{i:X} changed outside the table entries")
+    if (new.header, new.name, new.total, new.key) != (old.header, old.name, old.total, old.key):
+        raise WaveformError("table header moved or changed")
+    for row, o, n in zip(rows, old.entries, new.entries):
+        if (n.start, n.end) != (o.start, o.end) or n.steps != row.after:
+            raise WaveformError(f"colour {o.colour} does not read back as written")
+        if sorted(n.steps) != sorted(o.steps) or n.duration != o.duration:
+            raise WaveformError(f"colour {o.colour} is not a permutation of its steps")
+        k = len(o.steps) - row.moved
+        kept = n.steps[:row.insert_at] + n.steps[row.insert_at + row.moved:]
+        if kept != o.steps[:k] or n.steps[row.insert_at:row.insert_at + row.moved] != o.steps[k:]:
+            raise WaveformError(f"colour {o.colour} moved more than its trailing rest")
+        if row.moved:
+            cum = cumulative(n.steps)
+            before = cum[row.insert_at - 2] if row.insert_at >= 2 else 0
+            if not (cum[row.insert_at - 1] >= shake_end > before):
+                raise WaveformError(f"colour {o.colour} rest is not right after the shake end")
+
+
+def retime_table(rows: Sequence[Retime], after_step: int) -> List[str]:
+    lines = [f"colour  shake-end  moved  rest  insert@tick  last-drive-end  "
+             f"first-drive-start (after the insert point)"]
+    for r in rows:
+        if r.moved:
+            fb, lb = drive_span(r.before, r.insert_tick)
+            fa, la = drive_span(r.after, r.insert_tick)
+            lines.append(f"{r.colour:2d} 0x{r.colour:02X}  {r.shake_end:9d}  {r.moved:5d}  "
+                         f"{r.rest:4d}  {r.insert_at:2d}@{r.insert_tick:<8d}  {lb:4d} -> {la:<4d}"
+                         f"      {fb:4d} -> {fa}")
+        else:
+            _, last = drive_span(r.before)
+            lines.append(f"{r.colour:2d} 0x{r.colour:02X}  {r.shake_end:9d}      0     0  "
+                         f"-            {last:4d} (untouched, no trailing rest)")
+    return lines
+
+
 def crc16_modbus(data: bytes) -> int:
     """Same CRC as host/ota.py's image fingerprint (0x26 / 0x29)."""
     crc = 0xFFFF
@@ -464,7 +634,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                    help="rewrite the header total; every colour must then last it")
     t.add_argument("--out", type=Path, required=True)
     t.add_argument("--force", action="store_true", help="overwrite --out")
+    r = sub.add_parser("retime", help="move each colour's trailing rest after the shake")
+    r.add_argument("--base", type=Path, required=True)
+    r.add_argument("--end-align", action="store_true", required=True)
+    r.add_argument("--after-step", type=int, default=9,
+                   help="step that ends the common shake (default 9)")
+    r.add_argument("--shake-end", type=int, default=None,
+                   help="tick of the shake end (default: the most common after --after-step)")
+    r.add_argument("--out", type=Path, required=True)
+    r.add_argument("--force", action="store_true", help="overwrite --out")
     args = ap.parse_args(argv)
+    if args.cmd == "retime":
+        return _main_retime(args)
     try:
         if args.cmd == "dump":
             print(dump(args.image))
@@ -491,6 +672,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             dur = sum(step_duration(s) for s in steps)
             print(f"  {label:6s} {len(steps):2d} steps  total {dur:4d}  "
                   + " ".join(_fmt(s) for s in steps))
+    print(f"wrote {args.out}  {len(image)} B  crc16 0x{crc16_modbus(image):04X}  (self-check passed)")
+    return 0
+
+
+def _main_retime(args) -> int:
+    try:
+        check_out(args.out, [args.base], args.force)
+        base = args.base.read_bytes()
+        image, rows, shake_end = retime(base, args.shake_end, args.after_step)
+        write_atomic(args.out, image, args.force)
+    except (WaveformError, OSError) as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+    print(f"base  {args.base}  {len(base)} B  crc16 0x{crc16_modbus(base):04X}  "
+          f"total {parse(base).total}")
+    print(f"shake end {shake_end} (tick after step {args.after_step}"
+          + (", most common)" if args.shake_end is None else ", given)"))
+    odd = [f"{r.colour}: {r.shake_end}" for r in rows if r.shake_end != shake_end]
+    if odd:
+        print("colours whose own shake ends later: " + ", ".join(odd))
+    for line in retime_table(rows, args.after_step):
+        print(line)
     print(f"wrote {args.out}  {len(image)} B  crc16 0x{crc16_modbus(image):04X}  (self-check passed)")
     return 0
 

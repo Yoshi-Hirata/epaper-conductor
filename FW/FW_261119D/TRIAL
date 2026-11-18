@@ -1,0 +1,30 @@
+Home-made trial image (2026-11-20) - NOT a vendor build.
+  mcb_1118prog_pinks_no13_endalign.bin
+"Plan D": plan C (FW_261119/mcb_1118prog_seq0923_pinks_no13.bin) with each
+colour's trailing rest moved to just after the shake, so all colours finish
+switching together. Made here with tools/fw_waveform.py retime --end-align.
+Program: still the vendor's FW_261118 trial program, byte for byte.
+Table: the same steps as plan C in every colour (header total 662). The
+drive pulses and their order are unchanged; only WHEN the rest happens.
+Each colour's trailing whole steps of pure level-0 rest now sit right after
+its shake, so it waits first and then drives, finishing at tick ~662
+(10 ms ticks) instead of anywhere from 454 (0x0C) to 661 (0x0D).
+The shake ends at tick 354 in 12 colours. Yellow (1) has a shake 10 ticks
+longer (ends at 364) and gets its rest there. Green (5), turquoise (6) and
+almond (7) shake until 426 but have no trailing rest, so they are untouched,
+like red (3), brown (13), dark brown (14) and smoky blue (15). A rest inside
+a colour's last driving step cannot be moved and stays where it is.
+Unknown: whether a longer rest between shake and colour drive (up to ~2 s
+for 0x0C, 1.5 s for light pink) changes the resulting colours - compare
+the colours against plan C by eye.
+A second unknown: eight colours (0x00, 0x01, 0x02, 0x04, 0x08, 0x0A, 0x0B,
+0x0C) now drive until the very last tick with no level-0 hold after it.
+FW_260923 never does that (FW_260903 did, in seven colours). If colours
+look wrong right at the end, or edges / ghosting appear, suspect this as
+well as the longer rest before the colour drive.
+Unproven on hardware: try it on a spare board first.
+Reproduce (from the repo root; it refuses while the .bin exists - delete
+it first or add --force):
+  python tools/fw_waveform.py retime --base FW/FW_261119/mcb_1118prog_seq0923_pinks_no13.bin --end-align --out FW/FW_261119D/mcb_1118prog_pinks_no13_endalign.bin
+UPDATE FW offers it with LEFT/RIGHT, marked "(trial)", but never as the
+default image (ui/updater.py is_trial / find_firmware).

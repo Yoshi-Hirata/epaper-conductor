@@ -110,6 +110,11 @@ def test_repo_catalog_names_subfolder_images_and_keeps_every_key_unique():
         (fw_dir / "FW_261119" / "mcb_1118prog_seq0923_pinks_no13.bin").read_bytes())
     assert prog[0] == plan_c[0] and prog[1] != plan_c[1]
     assert (catalog[prog], catalog[plan_c]) == ("FW_261118", "FW_261119")
+    # Plan D (2026-11-20): the third image of that size.
+    plan_d = ota.image_fingerprint(
+        (fw_dir / "FW_261119D" / "mcb_1118prog_pinks_no13_endalign.bin").read_bytes())
+    assert plan_d[0] == prog[0] and len({prog[1], plan_c[1], plan_d[1]}) == 3
+    assert catalog[plan_d] == "FW_261119D"
 
 
 def test_nested_fw_folders_are_named_like_the_updater_labels_them(tmp_path):
