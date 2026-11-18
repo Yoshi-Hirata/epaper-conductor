@@ -1726,6 +1726,21 @@ radxa-05(Debian 11、SD/eMMC 上の ext4 `rw,relatime`)は 2026-10-01 に 2 回�
   絵に触れないので断らない。走査・送信中は `remote.busy` が真で、PC のセッションは
   ポートを取らない
 
+### UPDATE FW のイメージ選択と FW VERSION の `bundled:`(2026-11-19)
+
+- イメージは `FW/FW_*/**/*.bin`(`host/ota.py` のカタログも同じ範囲)。**既定**は
+  `TRIAL` ファイルを持たない最新フォルダのイメージ(`ui/updater.py` の `find_firmware()`、
+  今は `FW_260923`)。`TRIAL` のあるフォルダ(メーカーの試作 `FW_261109` / `FW_261118`、
+  自作の `FW_261118B`)は LEFT/RIGHT で選べるが `TRIAL` と表示され、既定にならない。
+  カタログに全 `.bin` が入るので、試作を載せた基板も FW VERSION / BOARD INFO で名前が出る
+- FW VERSION 画面上部の `bundled:` は**UPDATE FW が既定で書くイメージのフォルダ**
+  (`ui/versions.py` の `bundled_folder()`、TRIAL 除く)。行は、そのフォルダ名と**完全に
+  一致**する名前(ビルド名か `flashed FW_...` の記録)のときだけ緑
+- 試作イメージの解析・作成は `tools/fw_waveform.py`(`dump` = 色の波形表を表示、
+  `transplant` = 別イメージから指定した色だけを移植)。形式と事実は
+  `FW/FW_261118B/TRIAL` とこのツールの docstring を見ること(ここでは繰り返さない)。
+  テスト: `tests/test_fw_waveform.py`
+
 ### Wi-Fi の切り替え(WIFI と `/status` の `wifi`、2026-09-30)
 
 - 会場では各機はルータの SSID `yoshihirock.net_5G` に乗る。ルータも PC も無い展示では

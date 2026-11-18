@@ -1,6 +1,6 @@
 # 現在地と再開手順
 
-最終更新: 2026-10-23
+最終更新: 2026-11-19
 
 **この文書は「次に何をするか」だけを書く。** 経緯は
 [DEVELOPMENT.md](DEVELOPMENT.md)、20 枚構成の検討は [SCALING.md](SCALING.md)、
@@ -18,6 +18,26 @@
   test_conductor_exhibition_pc の 2 件だけ環境要因で失敗する ―― §3.0)
 
 ## 2. 直近で完成したもの
+
+**試験 FW(ピンク)とイメージ解析(2026-11-18/19、main 99626d3 → 4d2ad1d、未 push)**
+
+- `FW/FW_261118/mcb_two_pinks(0a,0c).bin`: メーカー(Meris)の試作。色コード 0x0A / 0x0C をピンクに
+  変えたもの。`TRIAL` フォルダ(UPDATE FW の LEFT/RIGHT で選べるが既定にならない)。
+  **radxa-06 に配備済み(99626d3)**、色は運用者が radxa-06 で確認した。ただし**色替えの動きが
+  本番と違う**: 表の共通長が 662 → 1197 単位になり、ほかの 14 色の冒頭の「揺れ」が
+  ゆっくりした 5 回のスイングに置き換わった(ピンクとそれ以外の動きが揃わない)。Meris に質問中
+- 解析(事実は `FW/FW_261118B/TRIAL` と `tools/fw_waveform.py` の docstring): イメージは暗号化なしの
+  STM32 イメージ、色の波形表の形式、試作はプログラムも FW_260923 と約 39 か所違い、
+  プロトコル V1.4 に無いコマンド 0x2A を足している(用途不明、Meris に質問中)
+- `tools/fw_waveform.py`(新規): `dump` / `transplant`。`tests/test_fw_waveform.py`
+- `FW/FW_261118B/mcb_0923_pinks_no13.bin`(**自作・TRIAL**): FW_260923 のうち色 0x0A / 0x0C だけを
+  メーカーの 11/9 の「No.13」ピンク候補に差し替え。同サイズ、52 バイト差、表の長さは本番どおり 662。
+  reviewer と Codex のレビュー済み、**実機は未試験**(4d2ad1d はどの機体にも未配備)
+- `host/ota.py` のカタログが `FW_*/**/*.bin` を読む ― FW_260923 の基板が FW VERSION / BOARD INFO で
+  「unknown build」でなく名前で出る。FW VERSION の `bundled:` は UPDATE FW の既定イメージ
+  (TRIAL 除く、今は FW_260923)で、行はフォルダ名の完全一致のときだけ緑
+- 文書: [SPECIFICATION.md](SPECIFICATION.md) 5 章「UPDATE FW のイメージ選択と FW VERSION の `bundled:`」、
+  `radxa/README.md`「基板ファームウェアのアップデート」
 
 **日本展示の再実施(2026-10-19〜)**
 
@@ -3299,6 +3319,19 @@ ID:1 と ID:20 は **0.5 秒以内の同時リフレッシュ**(deaf 窓 0.7-17.
 - 既知の割り切り: **一時停止中**の抜き差しは KEY1 で再開するまで復帰しない
 
 ## 3. 次にやること / 保留
+
+### 3.0a 2026-11-19 時点の保留(試験 FW)
+
+1. **`FW_261118B`(mcb_0923_pinks_no13.bin)を予備の基板で試す**: 先に SWD 復旧イメージ
+   `FW/FW_260923/fw2029.09.23/MCB_16_0923.hex` を用意し、書いたあと FW_260923 へ OTA で一度戻して
+   復旧できることを確かめる。色が合い、動きが本番と揃うかを見る。通るまで本番機には載せない
+2. **Meris の回答待ち**: ① 11/18 の試作で色替えの動き(表の共通長 662 → 1197、ほかの 14 色の
+   「揺れ」が 5 回のスイング)が変わった理由、② コマンド 0x2A(V1.4 に無い)の用途、
+   ③ プログラムが FW_260923 と約 39 か所違う理由
+3. **push 待ち**: 99626d3 と 4d2ad1d(radxa-06 には 99626d3 を配備済み、4d2ad1d はどの機体にも未配備)
+4. **失敗する既存テスト 3 件**(main で未修正): `tests/test_conductor_exhibition_pc.py` の 2 件
+   (2712adc がヘッダの h1 を変えたため)と `tests/test_designer_build.py::test_starter_is_current`
+   (starter のファイルが古い)
 
 ### 3.0 2026-10-23 時点の保留(別の PC で再開する人へ)
 
