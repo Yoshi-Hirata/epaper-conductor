@@ -194,7 +194,10 @@ def test_the_trial_builds_are_offered_but_not_by_default():
     trial = [updater_mod.firmware_label(p) for p in images if updater_mod.is_trial(p)]
     assert trial == ["FW_261109/mcb_pink_purple_0_7.bin",
                      "FW_261109/mcb_pink_red_0_16.bin",
-                     "FW_261118/mcb_two_pinks(0a,0c).bin"]
+                     "FW_261118/mcb_two_pinks(0a,0c).bin",
+                     # Home-made, not the vendor's (2026-11-19, tools/fw_waveform.py).
+                     "FW_261118B/mcb_0923_pinks_no13.bin"]
+    assert updater_mod.firmware_label(updater_mod.find_firmware()) == "FW_260923/MCB_16_0923.bin"
     for p in images:
         if updater_mod.is_trial(p):
             assert 0 < p.stat().st_size <= ota.MAX_IMAGE_SIZE
@@ -228,7 +231,8 @@ def test_the_update_screen_shows_the_whole_image_name():
     assert render._image_parts("FW_260923/MCB_16_0923.bin") == (
         "FW_260923", "MCB_16_0923.bin", False)
     for name in ("mcb_pink_purple_0_7.bin", "mcb_pink_red_0_16.bin",
-                 "MCB_16_0923.bin", "MCB_e16_2029.09.17.bin"):
+                 "MCB_16_0923.bin", "MCB_e16_2029.09.17.bin",
+                 "mcb_0923_pinks_no13.bin"):
         lines, _ = render._name_lines(name, render.WIDTH - 16)
         assert lines == [name]                 # today's names fit whole
     long = "a_very_long_vendor_firmware_name_v2_final_release.bin"
@@ -238,6 +242,14 @@ def test_the_update_screen_shows_the_whole_image_name():
                                   63672, 3, "idle", "", 0, ["a"] * 8,
                                   image_choice="3/4")
     assert screen.size == (render.WIDTH, render.WIDTH)
+    # FW_261118B (the 2026-11-19 home-made trial): the folder still fits
+    # beside TRIAL and the "< n/m >" choice without being ellipsized.
+    choice_w = int(render.FONT_S.getlength("< 10/10 >")) + 6
+    trial_w = int(render.FONT_S.getlength("TRIAL")) + 8
+    room = render.WIDTH - 52 - 8 - choice_w - trial_w
+    assert render._ellipsize("FW_261118B", render.FONT_S, room) == "FW_261118B"
+    render.update_screen("FW_261118B/mcb_0923_pinks_no13.bin (trial)",
+                         64328, 3, "idle", "", 0, [], image_choice="8/8")
 
 
 def test_only_trial_builds_still_give_a_default(tmp_path):

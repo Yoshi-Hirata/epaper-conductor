@@ -127,13 +127,24 @@ def image_fingerprint(image: bytes) -> tuple[int, int]:
 
 
 def bundled_images(directory: Path) -> dict[tuple[int, int], str]:
-    """{(size, crc): folder name} for every FW_<yymmdd>/*.bin in the repo,
-    so a board's 0x29 answer can be named after the image it was flashed
-    with. A folder with several .bin files contributes all of them."""
+    """{(size, crc): folder name} for every .bin under an FW_<yymmdd>
+    folder in the repo, so a board's 0x29 answer can be named after the
+    image it was flashed with. A folder with several .bin files
+    contributes all of them.
+
+    Images in vendor subfolders count too, named by their nearest FW_
+    folder - ui/updater.py's rule, so the catalog name and the UPDATE FW
+    label never disagree (2026-11-19: FW_260923 keeps fw2029.09.23/MCB_16_0923.bin, which the
+    old FW_*/*.bin glob missed, so a board on the production image read
+    "build unknown" - and the FW_261118B trial has the very same size, so
+    only the CRC tells the two apart). Same glob as ui/updater.py
+    find_firmware_images."""
+    directory = Path(directory)
     catalog: dict[tuple[int, int], str] = {}
-    for path in sorted(Path(directory).glob("FW_*/*.bin")):
+    for path in sorted(directory.glob("FW_*/**/*.bin")):
         try:
-            catalog[image_fingerprint(path.read_bytes())] = path.parent.name
+            name = next(p.name for p in path.parents if p.name.startswith("FW_"))
+            catalog[image_fingerprint(path.read_bytes())] = name
         except OSError:
             continue
     return catalog

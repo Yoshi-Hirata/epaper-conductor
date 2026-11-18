@@ -1,0 +1,26 @@
+Home-made trial image (2026-11-19) - NOT a vendor build.
+  mcb_0923_pinks_no13.bin
+Made here with tools/fw_waveform.py from the production image FW_260923
+(fw2029.09.23/MCB_16_0923.bin) and the vendor's 11/9 candidates:
+  colour 0x0A <- pink red No.13    (FW_261109/mcb_pink_red_0_16.bin, colour 12)
+  colour 0x0C <- pink purple No.13 (FW_261109/mcb_pink_purple_0_7.bin, colour 12)
+These are the 11/9 "No.13" pinks, NOT the 11/18 ones: for FW_261118 the
+vendor retuned the two pinks AND changed the other colours' timing (the
+whole table went from 662 to 1197).
+Only those two entries of the colour waveform table differ from FW_260923
+(step 0 padded to FW_260923's total of 662, one level-0 hold of 4 split in
+two to keep the byte count); size and every other byte are FW_260923's.
+The 4 table-header bytes at image offset 0xCF7A..0xCF7D (c9 99 cc 5c) are
+left as in FW_260923. Static reading of the firmware shows they are a
+transfer mask: the MCU sends them to the display controller with command
+0xA4 and then XORs every 32-byte waveform transfer (command 0x10) with the
+same 4 bytes; nothing is read back after 0xA4, and no rule ties their value
+to the table's contents (CRC/sum searches over every vendor table found
+none). Keeping the base's value keeps every controller register payload
+identical to FW_260923. Not proven on hardware.
+Unproven on hardware: try it on a spare board first.
+Reproduce (from the repo root; it refuses while the .bin exists - delete
+it first or add --force):
+  python tools/fw_waveform.py transplant --base FW/FW_260923/fw2029.09.23/MCB_16_0923.bin --set 10=FW/FW_261109/mcb_pink_red_0_16.bin:12 --set 12=FW/FW_261109/mcb_pink_purple_0_7.bin:12 --out FW/FW_261118B/mcb_0923_pinks_no13.bin
+UPDATE FW offers it with LEFT/RIGHT, marked "(trial)", but never as the
+default image (ui/updater.py is_trial / find_firmware).

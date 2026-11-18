@@ -41,11 +41,25 @@ from epaper.transport import Bus, find_port, port_serial
 
 from . import flashlog
 from .config import LOG_HISTORY
-from .updater import FIRMWARE_DIR, MenuEntry
+from .updater import FIRMWARE_DIR, MenuEntry, find_firmware
 
 IDLE = "idle"              # nothing scanned yet (only before the first scan)
 SCANNING = "scanning"
 DONE = "done"
+
+
+def bundled_folder(firmware_dir: Path = FIRMWARE_DIR) -> str:
+    """The FW_ folder of the image UPDATE FW offers first
+    (updater.find_firmware), "none" without one. 2026-11-19: it used to
+    be the newest folder in the catalog, which made a trial build
+    (FW_261118, then the home-made FW_261118B) "bundled" and left boards
+    on the production FW_260923 uncoloured; a TRIAL folder is "bundled"
+    now only when there is nothing else, as in find_firmware."""
+    image = find_firmware(firmware_dir)
+    if image is None:
+        return "none"
+    return next((p.name for p in image.parents if p.name.startswith("FW_")),
+                image.parent.name)
 
 
 def fw_family(v14: "bool | None") -> str:
@@ -85,6 +99,7 @@ class BoardVersions:
         self._v14 = v14
         self.catalog = (catalog if catalog is not None
                         else ota.bundled_images(firmware_dir))
+        self._bundled = bundled_folder(firmware_dir)
         self._echo_log = echo_log
 
         self.phase = IDLE
@@ -110,9 +125,9 @@ class BoardVersions:
 
     @property
     def bundled(self) -> str:
-        """The newest bundled image's folder, for the screen's footer."""
-        names = sorted(set(self.catalog.values()))
-        return names[-1] if names else "none"
+        """The folder of the image UPDATE FW writes by default, for the
+        "bundled:" line at the top of the screen and the green rows."""
+        return self._bundled
 
     def recent(self, count: int) -> list[str]:
         with self._lock:

@@ -46,6 +46,7 @@ def make_versions(tmp_path, bus=None, boards=(1, 2, 7, 20), **kwargs):
     kwargs.setdefault("locate", lambda: "/dev/fake")
     kwargs.setdefault("echo_log", False)
     kwargs.setdefault("catalog", make_catalog(tmp_path))
+    kwargs.setdefault("firmware_dir", tmp_path)   # "bundled" from the same tree
     kwargs.setdefault("scan", lambda b, boards, progress=None: ota.scan(
         b, boards, timeout=0.02, progress=progress))
     return BoardVersions(boards=list(boards), **kwargs)
@@ -85,6 +86,43 @@ def test_bundled_images_are_keyed_by_size_and_crc(tmp_path):
 def test_repo_catalog_names_both_shipped_images():
     catalog = ota.bundled_images(Path(__file__).resolve().parents[1] / "FW")
     assert {"FW_260903", "FW_260917"} <= set(catalog.values())
+
+
+def test_repo_catalog_names_subfolder_images_and_keeps_every_key_unique():
+    # 2026-11-19: FW_260923's image sits in the vendor subfolder
+    # fw2029.09.23/ and was missing; FW_261118B (home-made trial) has the
+    # same size, so the two must still get their own (size, crc) keys.
+    fw_dir = Path(__file__).resolve().parents[1] / "FW"
+    catalog = ota.bundled_images(fw_dir)
+    images = sorted(fw_dir.glob("FW_*/**/*.bin"))
+    assert len(catalog) == len(images)                  # no key collides
+    prod = ota.image_fingerprint(
+        (fw_dir / "FW_260923" / "fw2029.09.23" / "MCB_16_0923.bin").read_bytes())
+    trial = ota.image_fingerprint(
+        (fw_dir / "FW_261118B" / "mcb_0923_pinks_no13.bin").read_bytes())
+    assert prod[0] == trial[0] and prod != trial
+    assert catalog[prod] == "FW_260923"
+    assert catalog[trial] == "FW_261118B"
+
+
+def test_nested_fw_folders_are_named_like_the_updater_labels_them(tmp_path):
+    from ui import updater as updater_mod
+    nested = tmp_path / "FW_261201" / "FW_261202" / "sub"
+    nested.mkdir(parents=True)
+    (nested / "x.bin").write_bytes(b"\x07" * 40)
+    catalog = ota.bundled_images(tmp_path)
+    assert catalog == {ota.image_fingerprint(b"\x07" * 40): "FW_261202"}
+    label = updater_mod.firmware_label(nested / "x.bin")
+    assert label.split("/")[0] == "FW_261202"
+
+
+def test_subfolder_images_are_named_by_their_fw_folder(tmp_path):
+    (tmp_path / "FW_260923" / "fw2029.09.23").mkdir(parents=True)
+    (tmp_path / "FW_260923" / "fw2029.09.23" / "MCB_16_0923.bin").write_bytes(b"\x03" * 50)
+    (tmp_path / "FW_260923" / "fw2029.09.23" / "MCB_16_0923.hex").write_bytes(b":00")
+    catalog = make_catalog(tmp_path)
+    assert catalog[ota.image_fingerprint(b"\x03" * 50)] == "FW_260923"
+    assert len(catalog) == 3
 
 
 def test_identify_names_the_firmware_from_the_0x29_answer(tmp_path):
@@ -333,3 +371,59 @@ def test_a_v1_4_board_whose_record_is_older_is_flagged(tmp_path):
     assert wait_until(lambda: versions.phase == DONE)
     label = versions.rows[0][1]
     assert label.startswith("V1.4") and "FW_260917" in label and "older than the board" in label
+
+
+# ---- "bundled" = the image UPDATE FW writes by default (2026-11-19) ----
+
+def test_bundled_is_the_update_fw_default_not_the_newest_trial():
+    from ui import versions as versions_mod
+    assert versions_mod.bundled_folder() == "FW_260923"     # the real FW tree
+    v = BoardVersions(catalog={}, echo_log=False)
+    assert v.bundled == "FW_260923"
+    assert render.runs_bundled("FW_260923", v.bundled)
+    assert render.runs_bundled("V1.4 16-color (FW_260923+), flashed FW_260923 09-24 10:00",
+                               v.bundled)
+    for other in ("FW_261118", "FW_261118B", "FW_261118B RECEIVING",
+                  "V1.4 16-color (FW_260923+), no flash record here",
+                  "V1.1 16-color, flashed FW_261118B 11-19 12:00"):
+        assert not render.runs_bundled(other, v.bundled)
+
+
+def test_bundled_matches_whole_folder_names_only(tmp_path):
+    from ui import updater as updater_mod
+    from ui import versions as versions_mod
+    (tmp_path / "FW_261118").mkdir()
+    (tmp_path / "FW_261118" / "a.bin").write_bytes(b"a")
+    (tmp_path / "FW_261118B").mkdir()
+    (tmp_path / "FW_261118B" / "b.bin").write_bytes(b"b")
+    (tmp_path / "FW_261118B" / updater_mod.TRIAL_MARKER).write_text("")
+    assert versions_mod.bundled_folder(tmp_path) == "FW_261118"
+    assert render.runs_bundled("FW_261118", "FW_261118")
+    assert render.runs_bundled("V1.1 16-color, flashed FW_261118 11-18 09:00", "FW_261118")
+    assert not render.runs_bundled("FW_261118B", "FW_261118")
+    assert not render.runs_bundled("V1.1 16-color, flashed FW_261118B 11-19 12:00",
+                                   "FW_261118")
+
+
+def test_bundled_falls_back_to_the_newest_trial_and_to_none(tmp_path):
+    from ui import updater as updater_mod
+    from ui import versions as versions_mod
+    assert versions_mod.bundled_folder(tmp_path) == "none"
+    for folder in ("FW_261109", "FW_261118B"):
+        (tmp_path / folder / "sub").mkdir(parents=True)
+        (tmp_path / folder / "sub" / "t.bin").write_bytes(b"t")
+        (tmp_path / folder / updater_mod.TRIAL_MARKER).write_text("")
+    assert versions_mod.bundled_folder(tmp_path) == "FW_261118B"
+    v = make_versions(tmp_path)          # make_catalog adds FW_260903/260917
+    assert v.bundled == "FW_260917"
+
+
+def test_the_versions_screen_greens_only_the_bundled_rows():
+    def green(label):
+        image = render.versions_screen([(1, label)], "", "done", "FW_260923")
+        colours = image.convert("RGB").getcolors(maxcolors=1 << 16)
+        return sum(n for n, rgb in colours if rgb == render.OK)
+    base = green("V1.1 16-color, no flash record here")
+    assert green("FW_260923") > base
+    assert green("FW_261118B") == base
+    assert green("V1.4 16-color (FW_260923+), no flash record here") == base

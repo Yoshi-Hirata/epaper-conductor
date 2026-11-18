@@ -6,6 +6,8 @@ be snapshot-tested and previewed as PNGs long before the LCD arrives.
 
 from __future__ import annotations
 
+import re
+
 from PIL import Image, ImageDraw, ImageFont
 
 from .config import HEIGHT, LOG_LINES, WIDTH
@@ -581,6 +583,18 @@ VERSION_ROWS = 5
 _VERSION_LINE_H = 15
 
 
+_FW_NAME = re.compile(r"(?<![\w+])FW_[0-9A-Za-z]+(?![\w+])")
+
+
+def runs_bundled(label: str, bundled: str) -> bool:
+    """Whether a FW VERSION row names exactly the bundled folder - as
+    the build itself ("FW_260923") or in the flash record ("flashed
+    FW_260923 09-24 10:00"). Whole names only, 2026-11-19: the old
+    substring test let "FW_261118" match a board on "FW_261118B", and
+    the family hint "(FW_260923+)" is not a build."""
+    return bundled in _FW_NAME.findall(label)
+
+
 def versions_screen(rows: list[tuple[int, str]], status: str, phase: str,
                     bundled: str, offset: int = 0, locked: bool = False,
                     host: str | None = None) -> Image.Image:
@@ -622,7 +636,7 @@ def versions_screen(rows: list[tuple[int, str]], status: str, phase: str,
         # A board on the bundled image (or recorded as flashed with it)
         # is the good case; anything else is what the operator wants
         # to see.
-        fill = OK if bundled in label else FG
+        fill = OK if runs_bundled(label, bundled) else FG
         for line in lines:
             draw.text((34, y), line, font=FONT_S, fill=fill)
             y += _VERSION_LINE_H
