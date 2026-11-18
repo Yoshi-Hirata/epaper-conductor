@@ -1,6 +1,6 @@
 # 現在地と再開手順
 
-最終更新: 2026-11-19
+最終更新: 2026-11-19(2026-11-20 の全機展開に向けて)
 
 **この文書は「次に何をするか」だけを書く。** 経緯は
 [DEVELOPMENT.md](DEVELOPMENT.md)、20 枚構成の検討は [SCALING.md](SCALING.md)、
@@ -14,18 +14,55 @@
 | Raspberry Pi Zero 2 W `r2@192.168.50.25` | 予備機。パネル未接続 | `epaper-ui` active。ポート待ちのまま待機 |
 
 - 両機とも同じコードで、差分は `ui/boards.py` のプロファイルのみ
-- テスト約 1,910 件(2026-10-23 Windows で全通過。本番 Conductor を 8765 で起動したままだと
+- テスト約 1,910 件(2026-10-23 Windows で全通過。その後、main に**別セッションの無関係な失敗が
+  3 件**ある(2026-11-19 時点)。本番 Conductor を 8765 で起動したままだと
   test_conductor_exhibition_pc の 2 件だけ環境要因で失敗する ―― §3.0)
 
 ## 2. 直近で完成したもの
 
-**試験 FW(ピンク)とイメージ解析(2026-11-18/19、main 99626d3 → 15d517f、未 push)**
+**2026-11-20 全機展開(リリース)― 手順は [ROLLOUT_20261120.md](ROLLOUT_20261120.md)**
 
-- **2026-11-20: UPDATE FW が出すのは 2 つだけ** ―― `FW/FW_260923`(既定)と `FW/FW_261119F/mcb_pinks_0a-purple_0c-red.bin`(自作・TRIAL、計画 D のピンクを色番表どおり 0x0A = ピンクパープル、0x0C = ピンクレッドに入れ替えたもの、未書き込み)。ほかのビルドはすべて `FW/archive/`(`tools/fw_waveform.py`・テスト・履歴用、UPDATE FW は見ない。`host/ota.py` のカタログは archive も読むので FW VERSION / BOARD INFO では名前が出る)
+- **最終 FW が UPDATE FW の既定になった**: `FW/FW_261119F/mcb_pinks_0a-purple_0c-red.bin`
+  (0x0A = ピンクパープル No.13、0x0C = ピンクレッド No.13。メーカー FW_261118 のプログラムをバイト単位で
+  そのまま + FW_260923 の 14 色と時間、共通長 662 tick、各色の末尾の休止を揺れの直後へ移して全色が
+  同時に終わる)。**2026-11-19 に基板 03 へ書いて運用者が確認**。フォルダは `TRIAL` でなく `NOTES`
+  を持つので、UPDATE FW は `< 2/2 >` でこれを開き、LEFT/RIGHT で `FW_260923/MCB_16_0923.bin`
+  (`< 1/2 >`)へ戻れる。FW VERSION の `bundled:` は `FW_261119F`、これの行が緑。ほかのビルド(計画 B / C / D
+  とメーカーの試作)はすべて `FW/archive/`(UPDATE FW は見ない。FW VERSION / BOARD INFO では名前が出る)。
+  保存波形を持つ基板は FW_260923 では 6 色(基板 03 がそう。消去コマンド 0x24 は自前ツールに無い)。
+  新しい色の作成は保留(Codex の実現性調査: 限定付きで可能、彩度の高い紫・マゼンタはこのパネルで出たことがない)
+- **LCD は全機 30 秒で消灯**(`--blank-after 0` で無効。以前はガーメント機は消えなかった)。UPDATE FW /
+  CLEAR BOARD / GIT PULL / FW VERSION / BOARD INFO / REBOOT / WIFI / SPEAKER の作業中は消えず、書き込み・
+  消去・pull の結果とランナーのエラーは点灯して押すまで保つ(同じ障害の再点灯は 1 分に 1 回まで)。
+  点灯から 1.5 秒以内の短押しは点灯扱い、長押しは点いた画面で押し始めたものが効く(0.3 秒以降)。
+  暗い画面からの停止は radxa-05 = 「何か押す → KEY1 長押し約 1.5 秒」、ガーメント機 = 「押して約 1.5 秒待って KEY2」
+- **ランナー修正**: 発火後の STOP は、発火したキュー自身のガード下限より前には予約されない
+  (以前は 30 秒の掃引のあと HOLD で平らなキューを構えると、発火の 30 秒後 = 掃引の最中に STOP)。
+  **未修正の既知事項**(以前からのもの、次の機会に): 途中参加の機体が遅れたキューを発火した直後に探りの STOP を
+  送りうる(最初の絵が途中で切れる。次のキューから正常)/ SHOW 書き込み中の同じ ID の再 arm でガードが
+  短くなりうる / セッションをまたいだ `_guard_owed`・`_picture_done_at` の古い値
+- **Conductor のパネル書き換えモデルは 7.3 秒**(0054260。7.0 から。実測 662 tick × 11 ms = 7.28 秒):
+  掃引キューの完成が 0.3 秒遅く、1 台の最短送信間隔が +0.3 秒、掃引付きプリセットは 0.3 秒早く送られる。
+  `refresh 7.0` の古いショーは機体に 7.3 を伝えるので Upload し直す。展示のショー(exhibition-data、radxa-03)は
+  同じバイト列にコンパイルされる。**PC の `showdata` は 2 キュー(2:08 と 3:40、radxa-09 の AZ271SD1307)が
+  直前の送信の 28.0 秒後で、28.3 秒が要るため、0.3 秒以上動かすまで Upload が断られる**(運用者の判断待ち、
+  ショーのデータは未変更)。間隔の下限はミリ秒で比べ、重なりの文言は小数第 1 位(`1:08.3`)
+- **Conductor・設計者用シミュレーターに `Panel firmware` セレクタ**(既定 FW_261119F、FW_260923 も選べる。
+  ブラウザにだけ保存、機体にもショーにも影響しない)。書き換えは実機パネルを撮った動画の測定カーブ
+  (`conductor/web/sim/refresh_capture_planD.json` → `tools/make_panelfw.py` → `conductor/web/sim/panelfw.js`、
+  Python 側 `conductor/panelfw.py`、3D 書き出しは `?fw=`)。推定値: 2 色のピンクの RGB(`(est.)`)、非白からの
+  導入部、FW_260923 の橙・オリーブグレー(合成)。`dist/az27ss-simulator.html` 再生成済み(746 KB。音源入りは
+  `python tools/build_designer.py --music auto`)。**動いている Conductor は再起動しないとセレクタが出ない**。
+  [SPECIFICATION.md](SPECIFICATION.md) 5 章「パネルファームのプロファイル」、
+  [SIMULATOR_FOR_DESIGNERS.md](SIMULATOR_FOR_DESIGNERS.md) 4.2a
+- **メーカー向け文書** `docs/meris/Meris_FW_request_20261119.pdf`(英語 + 中国語): 依頼 R1〜R5 と質問 Q1〜Q4。
+  リポジトリの記録では**まだ送っていない**
 
-- **現在の最有力: `FW/archive/FW_261119D/mcb_1118prog_pinks_no13_endalign.bin`(自作・TRIAL、15d517f)**。
-  radxa-06 の基板 03 で、16 色とピンク 2 色が出て、色の終わるタイミングも揃うことを運用者が確認
-  (経緯は下の計画 B → C → D)。radxa-06 は 15d517f、ほかの機体は変更なし
+**試験 FW(ピンク)とイメージ解析の経緯(2026-11-18/19、main 99626d3 → 15d517f。以下は履歴)**
+
+- 計画 D(`FW/archive/FW_261119D/mcb_1118prog_pinks_no13_endalign.bin`、自作・TRIAL、15d517f)が上の最終版の
+  元で、ピンクの 0x0A / 0x0C が逆(0x0A = ピンクレッド)。radxa-06 の基板 03 で、16 色とピンク 2 色が出て、
+  色の終わるタイミングも揃うことを運用者が確認(経緯は下の計画 B → C → D)
 
 - `FW/archive/FW_261118/mcb_two_pinks(0a,0c).bin`: メーカー(Meris)の試作。色コード 0x0A / 0x0C をピンクに
   変えたもの。`TRIAL` フォルダ(UPDATE FW の LEFT/RIGHT で選べるが既定にならない)。
@@ -58,7 +95,7 @@
   3 ファイルを radxa-06 の `~/.epaper/show-aside-20261119/` へ退避した(戻せば復元)
 - `host/ota.py` のカタログが `FW_*/**/*.bin` を読む ― FW_260923 の基板が FW VERSION / BOARD INFO で
   「unknown build」でなく名前で出る。FW VERSION の `bundled:` は UPDATE FW の既定イメージ
-  (TRIAL 除く、今は FW_260923)で、行はフォルダ名の完全一致のときだけ緑
+  (TRIAL 除く、2026-11-20 から FW_261119F)で、行はフォルダ名の完全一致のときだけ緑
 - 文書: [SPECIFICATION.md](SPECIFICATION.md) 5 章「UPDATE FW のイメージ選択と FW VERSION の `bundled:`」、
   `radxa/README.md`「基板ファームウェアのアップデート」
 
@@ -66,8 +103,8 @@
 
 - radxa-05 に **新しい Bose Flex 2 SoundLink** をペアリング(古い Bose は BlueZ から削除)。
   展示の START は**つながっている衣装だけで始まり**、足りない衣装は radxa-05 の LCD に
-  `units 1/7 · missing 01 02 …` と出る。radxa-05 の LCD は **30 秒で消灯**する
-  (マージ 6404875、1243d5d、2026-10-19 ― radxa-05 に配布済み)
+  `units 1/7 · missing 01 02 …` と出る。LCD は 30 秒で消灯する(radxa-05 は 2026-10-19、
+  マージ 6404875、1243d5d で配布済み。**2026-11-20 からは全機が 30 秒**)
 - 見えた障害: ① 輸送で radxa と親基板の間の **USB ケーブルが緩んだ**(radxa-04 が
   「no serial port」。差し直せば直る、再起動は不要)。② **Bose がスタンバイに入ると、
   ケーブル給電でも radxa-05 が再接続できない** ― Bose 本体の電源ボタンを押すと直る
@@ -3343,18 +3380,29 @@ ID:1 と ID:20 は **0.5 秒以内の同時リフレッシュ**(deaf 窓 0.7-17.
 
 ## 3. 次にやること / 保留
 
-### 3.0a 2026-11-19 時点の保留(試験 FW)
+### 3.0a 2026-11-20 全機展開の残り(試験 FW の保留を更新)
 
-1. **11/18 プログラム上の確認(未)**: ① Conductor のショーで 0x1F の遅延スイープ、② 電源を入れ直した
-   後の autoplay と保存設定(スロット上限 0x13 → 0x1D、設定パスの変更)。通るまで本番機には載せない
-2. **ほかの基板**: 基板 03 以外にも保存済み波形があるか不明。計画 D を載せて試す(FW_260923 への
-   OTA 復帰で戻せる)
-3. **Meris に聞くこと**: ① 基板 03 に 6 エントリの保存波形がある理由、② 消去コマンド 0x24 と
-   コマンド 0x2A(V1.4 に無い)の用途、③ 11/18 でピンクが長くなった(共通長 662 → 1197)理由
-4. **push 待ち**: 99626d3..15d517f(radxa-06 は 15d517f、ほかの機体は変更なし)
-5. **失敗する既存テスト 3 件**(main で未修正): `tests/test_conductor_exhibition_pc.py` の 2 件
-   (2712adc がヘッダの h1 を変えたため)と `tests/test_designer_build.py::test_starter_is_current`
+**手順は [ROLLOUT_20261120.md](ROLLOUT_20261120.md)。**
+
+1. **11/18 プログラム上の確認(2026-11-20 の展開の前か最中に)**: ① Conductor のショーで 0x1F の遅延
+   スイープ、② 電源を入れ直した後の autoplay と保存設定(スロット上限 0x13 → 0x1D、設定パスの変更)。
+   1 台目で確かめてから 2 台目以降へ進む
+2. **ほかの基板**: 基板 03 以外にも保存済み波形があるか不明。最終版は保存波形を読まないので
+   FW_261119F では影響しない(FW_260923 に戻すと 6 色になる基板がありうる)
+3. **Meris の回答待ち**: `docs/meris/Meris_FW_request_20261119.pdf`(R1〜R5、Q1〜Q4)は未送付。
+   基板 03 の保存波形の理由、消去 0x24 とコマンド 0x2A の用途など
+4. **PC の `showdata` の 2 キュー**(2:08 と 3:40、radxa-09 の AZ271SD1307)は直前の送信の 28.0 秒後で、
+   7.3 秒モデルでは 28.3 秒が要る。0.3 秒以上動かすまで Upload が断られる(運用者の判断待ち)
+5. **失敗する既存テスト 3 件**(main で未修正、別セッション): `tests/test_conductor_exhibition_pc.py` の
+   2 件(2712adc がヘッダの h1 を変えたため)と `tests/test_designer_build.py::test_starter_is_current`
    (starter のファイルが古い)
+6. **ランナーの既知事項**(未修正、§2 の 2026-11-20 の項): 途中参加の機体の探り STOP、同じ ID の再 arm、
+   セッションをまたぐ `_guard_owed` / `_picture_done_at`
+7. **各機の `/etc/default/epaper-ui`** に `--firmware` や `--blank-after 0` が残っているかは PC から
+   見えない(展開の 1 台目と各機で `grep -E -- '--firmware|--blank-after' /etc/default/epaper-ui`)
+8. **展開後の片付け**: PC の `fleet.json` の機体アドレス上書き(`showdata`: radxa-09 → `10.42.0.109:8787`、
+   `exhibition-data`: radxa-03 → `10.42.0.103:8787`)と、PC の第 2 アドレス `192.168.51.40`(本番ルーターに
+   戻ったら外す)。radxa-06 の古い PC ショー記録は `~/.epaper/show-aside-20261119/` に退避済み(戻さなくてよい、運用者)
 
 ### 3.0 2026-10-23 時点の保留(別の PC で再開する人へ)
 
@@ -3435,6 +3483,8 @@ ID:1 と ID:20 は **0.5 秒以内の同時リフレッシュ**(deaf 窓 0.7-17.
 - **セグメント番号は基板世代で異なる**: 本番 = 1〜60、初代 = 2〜61(+1)。
   コードは本番番号に切替済み(2026-08-14)。初代基板に戻す場合は
   `host/epaper/pattern.py` と `geometry.py` の 2 箇所を +1 に戻すこと
+- **2026-11-20 展開の未解決**: §3.0a(Meris の回答待ち、`showdata` の 2 キュー、ランナーの既知事項、
+  `fleet.json` の上書きと PC の第 2 アドレスの片付け)
 - 省電力対策([POWER.md](POWER.md) 3 章)は未適用
 - **電源投入時のデモ自動開始は実装しない**(明示的な非採用)
 - セクター数の食い違い: 本機は 1 枚 **54** セクター。1200 を満たすには

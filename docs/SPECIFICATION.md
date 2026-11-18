@@ -351,18 +351,27 @@ Conductor からは送らない。
   ショーファイルの各キューが `span_s`(スイープの span。ショーファイルでは
   既存の `span` キー)と `refresh_s` を持ち、機体は
   **`発火時刻 + refresh_s + span_s + 余裕`** でガードを送る。余裕は
-  `guard_delay − 7 秒`(既定の 30 秒なら 23 秒。`--guard-delay` を
+  `guard_delay − 7 秒`(この 7 秒は機体側の定数 `GUARD_REFRESH_S` で、Conductor のモデル
+  `PANEL_REPAINT_S`(2026-11-19 から 7.3 秒)とは別物。変えていない)(既定の 30 秒なら 23 秒。`--guard-delay` を
   変えるとこの余裕も一緒に動く。ガード自体も `guard_delay` を下限とする)
   (`ui/runner.py` の `_guard_for()`)。span の上限をわざわざ縛る必要は
   ないのはこのため ― ガードのほうが span に追従する
 - **ショーファイルの各キューの `refresh_s` は
   `conductor/timeline.py` の `panel_refresh()`**
-  = `max(PANEL_REPAINT_S, そのキューの実効 refresh)`(2026-09-26 以降。
+  = `max(PANEL_REPAINT_S, そのキューの実効 refresh)`(`PANEL_REPAINT_S` は 2026-11-19 から **7.3 秒**
+  = 測定 662 tick × 11 ms = 7.28 秒。掃引キューの完成は 0.3 秒遅く、1 台の最短送信間隔は 0.3 秒増え、
+  掃引付きプリセットは 0.3 秒早く送られる。旧 `refresh_s: 7.0` のショーは機体に 7.3 を伝えるので
+  Upload し直す。間隔の下限はミリ秒で比べ、重なりの文言は小数第 1 位 `1:08.3`)(2026-09-26 以降。
   ショー設定の `refresh_s` は「演出込みのモデル上の refresh」= 既定 8 秒に
   なったが、機体に渡すのは**物理リフレッシュを下回らない値**)。既定では
   8.0 秒なので、ガードは `8 + 1 + 5 = 14 秒` ― 絵の本当の完成
-  (7 + 1 = 8 秒)より確実に後。遅いファームの基板にキュー個別の
+  (7.3 + 1 = 8.3 秒)より確実に後。遅いファームの基板にキュー個別の
   `refresh_s`(16 秒など)を付けた場合もその値がそのまま届く
+- **発火後の STOP は、発火したキュー自身のガード下限より前には予約されない**(2026-11-20。以前は、
+  30 秒の掃引のあとに HOLD で平らなキューを構えると、発火の 30 秒後 = 掃引の最中に STOP が落ちた)。
+  未修正の既知事項(以前からのもの): 途中参加の機体が遅れたキューを発火すると、その直後に探りの STOP を
+  送りうる(最初の絵が途中で切れる。次のキューからは正常)/ SHOW 書き込み中の同じ ID の再 arm でガードが
+  短くなりうる / セッションをまたいだ `_guard_owed`・`_picture_done_at` の古い値
 - ガードは**次のキューの送信より前には落ちない**(固定下限 12 秒 > 1 台の
   最短間隔 9 秒)。落ちる必要もない ― **発火ごとに期限が上書きされる**ので、
   キューが続いているあいだ STOP はそもそも出ず、基板をオートプレイから
@@ -1729,26 +1738,53 @@ radxa-05(Debian 11、SD/eMMC 上の ext4 `rw,relatime`)は 2026-10-01 に 2 回�
 ### UPDATE FW のイメージ選択と FW VERSION の `bundled:`(2026-11-19)
 
 - イメージは `FW/FW_*/**/*.bin`。**既定**は `TRIAL` ファイルを持たない最新フォルダのイメージ
-  (`ui/updater.py` の `find_firmware()`、今は `FW_260923`)。`TRIAL` のあるフォルダは LEFT/RIGHT で
-  選べるが `TRIAL` と表示され、既定にならない。**2026-11-20 から出るのは 2 つだけ**:
-  `FW_260923/MCB_16_0923.bin`(既定)と `FW_261119F/mcb_pinks_0a-purple_0c-red.bin`(自作・TRIAL)。
-  ほかのビルド(メーカーの `FW_260903` / `FW_260917` / `FW_261109` / `FW_261118`、自作の
+  (`ui/updater.py` の `find_firmware()`、2026-11-20 から `FW_261119F`)。`TRIAL` のあるフォルダは
+  LEFT/RIGHT で選べるが `TRIAL` と表示され、既定にならない。**2026-11-20 から出るのは 2 つだけ**:
+  `FW_261119F/mcb_pinks_0a-purple_0c-red.bin`(**既定**、確認画面 `< 2/2 >`。自作の最終版で、
+  0x0A = ピンクパープル No.13、0x0C = ピンクレッド No.13。メーカー FW_261118 のプログラムを
+  バイト単位でそのまま + FW_260923 の 14 色と時間(共通長 662 tick)+ 各色の末尾の休止を揺れの
+  直後へ移して全色が同時に終わる。2026-11-19 に基板 03 へ書いて運用者が確認。フォルダは
+  `TRIAL` でなく `NOTES` を持つ)と、戻す先の `FW_260923/MCB_16_0923.bin`(LEFT/RIGHT、`< 1/2 >`)。
+  保存波形を持つ基板(基板 03 など)は FW_260923 では 6 色になる(下記)。ほかのビルド(メーカーの `FW_260903` / `FW_260917` / `FW_261109` / `FW_261118`、自作の
   `FW_261118B` / `FW_261119` / `FW_261119D`)は `FW/archive/` に移した(UPDATE FW は見ない)。
   `host/ota.py` のカタログは `FW/FW_*` と `FW/archive/FW_*` の全 `.bin` を読むので、試作や旧版を
   載せた基板も FW VERSION / BOARD INFO で名前が出る
 - FW VERSION 画面上部の `bundled:` は**UPDATE FW が既定で書くイメージのフォルダ**
-  (`ui/versions.py` の `bundled_folder()`、TRIAL 除く)。行は、そのフォルダ名と**完全に
+  (`ui/versions.py` の `bundled_folder()`、TRIAL 除く。今は `FW_261119F`)。行は、そのフォルダ名と**完全に
   一致**する名前(ビルド名か `flashed FW_...` の記録)のときだけ緑
 - 試作イメージの解析・作成は `tools/fw_waveform.py`(`dump` = 色の波形表を表示、
   `transplant` = 別イメージから指定した色だけを移植、`--total N` で表の共通長も指定、
   `retime --end-align` = 各色の末尾の休止を揺れの直後へ移して全色が同時に駆動を終えるようにする)。
-  形式と事実は `FW/archive/FW_261118B/TRIAL`、`FW/archive/FW_261119/TRIAL`、`FW/archive/FW_261119D/TRIAL`、`FW/FW_261119F/TRIAL` と
+  形式と事実は `FW/archive/FW_261118B/TRIAL`、`FW/archive/FW_261119/TRIAL`、`FW/archive/FW_261119D/TRIAL`、`FW/FW_261119F/NOTES`(再現コマンドもここ)と
   このツールの docstring を見ること(ここでは繰り返さない)。テスト: `tests/test_fw_waveform.py`
 - FW_260923 のプログラムは、基板の SPI フラッシュに保存された波形(記録 `!TUL`、
   0x180000 + ID×0x2000)があれば内蔵の表より優先して読み、色コードを読み込んだエントリ数で
   剰余にする。保存波形を持つ基板では、表だけ差し替えたイメージ(`FW_261118B`)を書いても反映されず、
   保存波形の色数で繰り返す。メーカーの 11/9 再送版と FW_261118 のプログラムはこの読み込みを
   外してある。保存波形の消去は 0x24 + 波形 ID(自前ツールに無い)。詳細は `FW/archive/FW_261119/TRIAL`
+- 新しい色の作成は保留(Codex の実現性調査: 限定付きで可能。彩度の高い紫・マゼンタはこのパネルでは
+  出たことがない)。メーカーへの依頼 R1〜R5 と質問 Q1〜Q4 は `docs/meris/Meris_FW_request_20261119.pdf`
+  (英語 + 中国語。リポジトリの記録では未送付)
+
+### パネルファームのプロファイル(Conductor とシミュレーターの「Panel firmware」、2026-11-19)
+
+- **何が変わるか**: Conductor ページと設計者用シミュレーターの `Panel firmware` セレクタ
+  (既定 `FW_261119F`、`FW_260923` も選べる)で、**画面上のリフレッシュのアニメーションとパレット**だけが
+  変わる。FW_261119F は 0x0A / 0x0C がピンク(`(est.)` の印)、FW_260923 は同じコードが橙とオリーブ
+  グレー。リフレッシュは色コードごとの測定カーブ(白から各色への遷移)を、各ファームの tick 表
+  (1 tick = 11 ms、共通長 662 = 7.28 秒)で再生する。3D 書き出しは `?fw=` に従う
+- **何が変わらないか**: ショーファイル、キューのタイミング、機体へ送るもの(絵・遅延表・`refresh_s`)、
+  Upload の判定。選択はブラウザにだけ保存され、ショーにも機体にも書かれない
+- **データの出どころ**: 実機パネルを撮った動画から取った生のキャプチャ
+  `conductor/web/sim/refresh_capture_planD.json`(0.08 秒ごとの RGB)→ `tools/make_panelfw.py`
+  (ホワイトバランスと、駆動の終わりで色が パレットの色 に収まる補正)→ `conductor/web/sim/panelfw.js`
+  の生成ブロック。手書きのブロック(タイムライン・パレット上書き・どの録画をどのコードに使うか)も同じファイル。
+  Python 側は `conductor/panelfw.py`(`/api/state` の `panel_fw` と 3D 書き出し)。
+  **推定値**: 2 色のピンクの RGB(色見本の写真から。`(est.)`)、白以外から始めるときの導入部、
+  FW_260923 の橙とオリーブグレー(合成)
+- **再生成**: 手書きブロック・キャプチャ・`conductor/look.py` の `PALETTE` を変えたら
+  `python tools/make_panelfw.py`(`--check` は古いと exit 1)。その後 `python tools/build_designer.py`
+  で `dist/az27ss-simulator.html` を作り直す。動いている Conductor はセレクタを出すには再起動が要る
 
 ### Wi-Fi の切り替え(WIFI と `/status` の `wifi`、2026-09-30)
 
@@ -1870,11 +1906,19 @@ radxa-05(Debian 11、SD/eMMC 上の ext4 `rw,relatime`)は 2026-10-01 に 2 回�
   present` で緑、誰もいなければ赤)、`not answering` 以外の理由はその下の行に
   (`03 needs Upload`)。run 中は `run.left_out` を `left out 01 02` として同じ形で出す。
   `presence` を返さない古い Conductor では従来の `units 7/7 online`
-  (消灯: Conductor が 127.0.0.1 で応答する機体 = radxa-05 は **どの画面でも 30 秒無操作で
-  バックライト消灯** ―― 自動判定で service 変更不要、`--blank-after` で上書き、0 = 消さない。
-  ガーメント機は従来どおり消えない。最初の 1 押しは点灯だけ。`speaker LOST`・新たな未接続・
-  新しい verdict(START 拒否 / ERROR など)は押さずに点灯させ、さらに 30 秒保つ ―― 点灯直後
-  1 秒以内の押下は点灯扱い。コマンドの返事待ちの間は消えない)、
+  (消灯: **2026-11-20 から全機**が、どの画面でも 30 秒無操作でバックライトを消す
+  (`ui/config.py` の `BLANK_AFTER_S` = 30。service 変更不要、`--blank-after` で上書き、0 = 消さない。
+  以前はガーメント機は消えなかった)。最初の 1 押しは点灯だけ。**短押しは点灯(どの経路でも)から
+  1.5 秒以内なら点灯扱いのまま**(`WAKE_GUARD_S`。「点いた?」の 2 度押しで、ガーメント機の KEY2 が
+  パターン停止や PC ショー離脱をしないため)。**長押し**(KEY1 / KEY3)は、暗いうちか点灯から 0.3 秒以内
+  (`WAKE_HOLD_GRACE_S`)に押し始めたものだけ点灯扱いで、点いた画面で押し始めた長押しは効く
+  (radxa-05 の STOP = 何か押して点灯 → すぐ KEY1 長押し約 1.5 秒、ガーメント機は押して約 1.5 秒待ってから
+  KEY2)。次の間は消えない: UPDATE FW / CLEAR BOARD / GIT PULL / FW VERSION / BOARD INFO /
+  REBOOT / WIFI / SPEAKER の作業中、コマンドの返事待ち。書き込み・消去・pull の結果(DONE / FAILED)と
+  ランナーのエラー(`no serial port` など)は、暗くても点灯してボタンを 1 回押すまで点いたまま。同じ
+  障害(数字を除いた同じ文)が暗い画面を再点灯させるのは 1 分に 1 回まで(`ATTENTION_REWAKE_S`)。
+  radxa-05 は加えて `speaker LOST`・新たな未接続・新しい verdict(START 拒否 / ERROR など)で押さずに
+  点灯し、さらに 30 秒保つ)、
   `LOOP on / off`(Conductor が `loop` を返さない古い版なら `loop ?`)、`speaker ok · vol
   70% (bluez)` / `no speaker - <理由>`(同じく `speaker ?`)。**ジョイスティック LEFT /
   RIGHT = 音量 −5 / +5**(短押し、何度でも。`POST /api/speaker/volume {"delta": ±5}`、

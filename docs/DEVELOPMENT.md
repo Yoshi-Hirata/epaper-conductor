@@ -180,7 +180,8 @@ radxa-04 の LOOK26 リハーサルで、最後のキューが `fired (+166 ms)`
   捨てずに溜めて後で実行するので、修復が次のトリガまで残っていても
   **同じスロットを二度描くのではなく、次の絵がその分遅れる**。
   式は `now + refresh_s + span_s ≤ 次キューの発火時刻 + 2 秒`。
-  9 秒間隔・リフレッシュ 7 秒なら、span 1 秒のキューは T+2.5 に
+  9 秒間隔・リフレッシュ 7 秒なら(当時の値での計算例。物理モデルは 2026-11-19 から
+  7.3 秒)、span 1 秒のキューは T+2.5 に
   「届いていない」と判って T+10.5 に描き終わる(次キューは 1.5 秒
   遅れ)ので**送り直す**。span 7 秒は T+8.5 に判って T+22.5 ―
   11.5 秒遅れなので**送り直さない**
@@ -459,7 +460,8 @@ Raspberry Pi Zero 2 W ──USB CDC── 基板 ID:1 ──4芯(TTL UART)──
 |---|---|---|
 | `python tools/make_goldens.py` | `tests/goldens/model.json` と `conductor/web/sim/goldens.js`(Python 版 `look.py`/`sequence.py`/`timeline.py` の答え合わせ用) | `tests/fixtures/sim/*.csv` を足す/変えたとき、Python 側の該当モジュールを変えたとき |
 | `python tools/make_starter.py` | `conductor/web/sim/starter.js`(`conductor/web/starter/*.csv` を JS の定数に固めたもの。初回起動時の既定データ) | `conductor/web/starter/*.csv` を足す/変えたとき |
-| `python tools/build_designer.py` | `dist/az27ss-simulator.html`(`conductor/web/designer.html` と `conductor/web/sim/*.css/*.js` を 1 個の HTML に inline したもの。**フラグなしが出荷版**(`goldens.js`/`selftest.js` 抜き、550 KB 前後) - コミットされている `dist/` はこれ。`--with-goldens` を付けると自己テスト付きの開発版(1.1 MB 前後、Python 側との答え合わせ用)が作れる。`--no-starter` で初期データ抜きのビルドも作れる) | `conductor/web/designer.html`・`conductor/web/sim/*` のいずれかを変えたとき(上の 2 つを先に作り直してから) |
+| `python tools/make_panelfw.py` | `conductor/web/sim/panelfw.js` の生成ブロック(パネルファームごとの測定カーブ。元は `conductor/web/sim/refresh_capture_planD.json` と同ファイルの手書きブロック)。`--check` は古ければ exit 1 | 手書きブロック(ピンクの RGB・タイムライン)、キャプチャ、`conductor/look.py` の `PALETTE` を変えたとき(`build_designer.py` の前に) |
+| `python tools/build_designer.py` | `dist/az27ss-simulator.html`(`conductor/web/designer.html` と `conductor/web/sim/*.css/*.js` を 1 個の HTML に inline したもの。**フラグなしが出荷版**(`goldens.js`/`selftest.js` 抜き、550 KB 前後) - コミットされている `dist/` はこれ。`--with-goldens` を付けると自己テスト付きの開発版(1.1 MB 前後、Python 側との答え合わせ用)が作れる。`--no-starter` で初期データ抜きのビルドも作れる) | `conductor/web/designer.html`・`conductor/web/sim/*` のいずれかを変えたとき(上の 3 つのうち該当するものを先に作り直してから) |
 
 > `make_starter.py` は commit 済みの starter セット(conductor/web/starter/*.csv)だけを showdata から更新する。運用側が実験で足した CSV(例: `AZ271SB2303_color_black_grid.csv`)は取り込まず、starter に加えたいときだけ `--adopt-new` を付ける(注意: 初期演出の最初のキューは名前順で先頭のデザインになるため、柄を足すと開始の演出が変わることがある)(2026-09-26)。削除も同様に `--drop-missing` で明示する。
 
