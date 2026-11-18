@@ -1,0 +1,5 @@
+Trial build from the vendor (2026-11-18): colour codes 0x0A and 0x0C changed to pinks.
+  mcb_two_pinks(0a,0c).bin
+UPDATE FW offers it with LEFT/RIGHT, marked "(trial)", but never as the
+default image (ui/updater.py is_trial / find_firmware). Delete this file to
+make it the default.

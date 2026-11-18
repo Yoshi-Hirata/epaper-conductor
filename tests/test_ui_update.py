@@ -181,7 +181,7 @@ def test_repo_ships_the_fw_260923_image_and_the_one_before_it():
     # the vendor's subfolder; FW_260917 stays offered, to go back to.
     image = updater_mod.find_firmware()
     assert image is not None
-    # FW_261109's trial builds are newer but never the default.
+    # FW_261109/FW_261118 trial builds are newer but never the default.
     assert updater_mod.firmware_label(image) == "FW_260923/MCB_16_0923.bin"
     assert 0 < image.stat().st_size <= ota.MAX_IMAGE_SIZE
     labels = [updater_mod.firmware_label(p) for p in updater_mod.find_firmware_images()]
@@ -189,11 +189,12 @@ def test_repo_ships_the_fw_260923_image_and_the_one_before_it():
     assert "FW_260923/MCB_16_0923.bin" in labels
 
 
-def test_the_fw_261109_trial_builds_are_offered_but_not_by_default():
+def test_the_trial_builds_are_offered_but_not_by_default():
     images = updater_mod.find_firmware_images()
     trial = [updater_mod.firmware_label(p) for p in images if updater_mod.is_trial(p)]
     assert trial == ["FW_261109/mcb_pink_purple_0_7.bin",
-                     "FW_261109/mcb_pink_red_0_16.bin"]
+                     "FW_261109/mcb_pink_red_0_16.bin",
+                     "FW_261118/mcb_two_pinks(0a,0c).bin"]
     for p in images:
         if updater_mod.is_trial(p):
             assert 0 < p.stat().st_size <= ota.MAX_IMAGE_SIZE
