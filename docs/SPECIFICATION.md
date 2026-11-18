@@ -1731,15 +1731,21 @@ radxa-05(Debian 11、SD/eMMC 上の ext4 `rw,relatime`)は 2026-10-01 に 2 回�
 - イメージは `FW/FW_*/**/*.bin`(`host/ota.py` のカタログも同じ範囲)。**既定**は
   `TRIAL` ファイルを持たない最新フォルダのイメージ(`ui/updater.py` の `find_firmware()`、
   今は `FW_260923`)。`TRIAL` のあるフォルダ(メーカーの試作 `FW_261109` / `FW_261118`、
-  自作の `FW_261118B`)は LEFT/RIGHT で選べるが `TRIAL` と表示され、既定にならない。
+  自作の `FW_261118B` / `FW_261119` / `FW_261119D`)は LEFT/RIGHT で選べるが `TRIAL` と表示され、既定にならない。
   カタログに全 `.bin` が入るので、試作を載せた基板も FW VERSION / BOARD INFO で名前が出る
 - FW VERSION 画面上部の `bundled:` は**UPDATE FW が既定で書くイメージのフォルダ**
   (`ui/versions.py` の `bundled_folder()`、TRIAL 除く)。行は、そのフォルダ名と**完全に
   一致**する名前(ビルド名か `flashed FW_...` の記録)のときだけ緑
 - 試作イメージの解析・作成は `tools/fw_waveform.py`(`dump` = 色の波形表を表示、
-  `transplant` = 別イメージから指定した色だけを移植)。形式と事実は
-  `FW/FW_261118B/TRIAL` とこのツールの docstring を見ること(ここでは繰り返さない)。
-  テスト: `tests/test_fw_waveform.py`
+  `transplant` = 別イメージから指定した色だけを移植、`--total N` で表の共通長も指定、
+  `retime --end-align` = 各色の末尾の休止を揺れの直後へ移して全色が同時に駆動を終えるようにする)。
+  形式と事実は `FW/FW_261118B/TRIAL`、`FW/FW_261119/TRIAL`、`FW/FW_261119D/TRIAL` と
+  このツールの docstring を見ること(ここでは繰り返さない)。テスト: `tests/test_fw_waveform.py`
+- FW_260923 のプログラムは、基板の SPI フラッシュに保存された波形(記録 `!TUL`、
+  0x180000 + ID×0x2000)があれば内蔵の表より優先して読み、色コードを読み込んだエントリ数で
+  剰余にする。保存波形を持つ基板では、表だけ差し替えたイメージ(`FW_261118B`)を書いても反映されず、
+  保存波形の色数で繰り返す。メーカーの 11/9 再送版と FW_261118 のプログラムはこの読み込みを
+  外してある。保存波形の消去は 0x24 + 波形 ID(自前ツールに無い)。詳細は `FW/FW_261119/TRIAL`
 
 ### Wi-Fi の切り替え(WIFI と `/status` の `wifi`、2026-09-30)
 
