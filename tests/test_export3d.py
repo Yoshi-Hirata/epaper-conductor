@@ -4,7 +4,9 @@ The keys must be the frames the Conductor's own Timeline preview shows,
 flicker included: the page's model (conductor/web/sim/flicker.js) is run
 under Node on the same show and every scale is compared, sampled every
 50 ms through a preset, a centre-outward sweep, a top-down sweep with a
-short refresh and a partial cue. Skipped where Node is not installed.
+short refresh, a partial cue and a design in FW_261119F's two pinks - once
+per panel firmware profile (conductor/panelfw.py, 2026-11-19). Skipped
+where Node is not installed.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from conductor import export3d
+from conductor import export3d, panelfw
 from conductor.server import Workspace, make_server
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,6 +35,7 @@ NODE_WORN_AT = r"""
 // one implementation), then the stubbed timeline over model.js's own.
 require(%(model)s);
 globalThis.SIM.timeline = { PANEL_REPAINT_S: %(repaint)s };
+require(%(panelfw)s);
 require(%(flicker)s);
 const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
 const hex = c => typeof c === "number"
@@ -40,7 +43,8 @@ const hex = c => typeof c === "number"
   : c;
 const out = input.times.map(t => {
   const worn = SIM.flicker.wornAt(input.item, t, {
-    cuesOf: () => input.cues, palette: input.palette, refreshS: input.refreshS });
+    cuesOf: () => input.cues, palette: input.palette, refreshS: input.refreshS,
+    fw: input.fw });
   const colors = {};
   for (const [k, v] of Object.entries(worn.colors)) colors[k] = hex(v);
   return colors;
@@ -78,25 +82,48 @@ def color_at(track, t):
     return track[i][1] if i >= 0 else None
 
 
-def test_keys_match_the_timeline_preview_frame_for_frame(workspace, tmp_path):
+def _add_pink_cue(workspace):
+    """A third design, DESIGN with every other coloured row in 0x0A and
+    0x0C (FW_261119F's pinks), sent at 100 s - the codes whose colour and
+    waveform differ most between the two profiles."""
+    lines = (FIX / DESIGN).read_text(encoding="utf-8").splitlines()
+    pinks = [lines[0]] + [line.replace("0x04", ("0x0A", "0x0C")[n % 2])
+                          for n, line in enumerate(lines[1:])]
+    workspace.save(f"{ITEM}_3_HW.csv", "\n".join(pinks) + "\n")
+    cues = workspace.state()["show"]["cues"]
+    raw = [{k: c[k] for k in ("id", "item", "at", "design", "partial",
+                              "refresh_s", "transition", "sequence", "span_s")}
+           for c in cues]
+    raw.append({"id": "k", "item": ITEM, "at": 100, "design": f"{ITEM}_3_HW.csv"})
+    workspace.set_timeline(120, raw)
+
+
+@pytest.mark.parametrize("fw", panelfw.IDS)
+def test_keys_match_the_timeline_preview_frame_for_frame(workspace, tmp_path, fw):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node is not installed")
+    _add_pink_cue(workspace)
     state = workspace.state()
-    out = export3d.resolve(state)
+    out = export3d.resolve(state, fw=fw)
+    assert out["panel_firmware"]["id"] == fw
     item = next(i for i in state["items"] if i["item"] == ITEM)
     cues = sorted((c for c in state["show"]["cues"] if c["item"] == ITEM),
                   key=lambda c: c["sent"])
-    times = [round(-12 + k * 0.05, 4) + 0.0123 for k in range(int(110 / 0.05))]
+    times = [round(-12 + k * 0.05, 4) + 0.0123 for k in range(int(122 / 0.05))]
     script = tmp_path / "worn.js"
     script.write_text(NODE_WORN_AT % {
         "repaint": json.dumps(export3d.timeline.PANEL_REPAINT_S),
         "model": json.dumps(str(ROOT / "conductor" / "web" / "sim" / "model.js")),
+        "panelfw": json.dumps(str(ROOT / "conductor" / "web" / "sim" / "panelfw.js")),
         "flicker": json.dumps(str(ROOT / "conductor" / "web" / "sim" / "flicker.js"))},
         encoding="utf-8")
     run = subprocess.run([node, str(script)], capture_output=True, text=True,
-                         input=json.dumps({"item": item, "cues": cues,
-                                           "palette": state["palette"],
+                         input=json.dumps({"item": item, "cues": cues, "fw": fw,
+                                           # the page hands wornAt the
+                                           # profile's palette already
+                                           "palette": panelfw.palette_of(
+                                               state["palette"], fw),
                                            "refreshS": state["show"]["refresh_s"],
                                            "times": times}),
                          encoding="utf-8", check=True)

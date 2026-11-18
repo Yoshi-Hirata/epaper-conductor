@@ -201,7 +201,7 @@ def test_timeline_is_stored_cleaned_and_returned_with_its_times(workspace):
     show = workspace.state()["show"]
     # A new show opens on the current default refresh, the effect included.
     assert show["duration"] == 600 and show["refresh_s"] == 8
-    assert show["refresh_default"] == 8 and show["panel_repaint_s"] == 7
+    assert show["refresh_default"] == 8 and show["panel_repaint_s"] == 7.3
     assert show["gap_s"] == 1.0
     assert [c["id"] for c in show["cues"]] == ["a", "b"]        # by time
     preset, second = show["cues"]
@@ -249,17 +249,18 @@ def test_the_shortest_interval_is_what_this_show_needs_on_that_unit(workspace):
                                   "design": grid}])
     state = workspace.state()
     cue = state["show"]["cues"][0]
-    assert cue["span"] == 7.0 and cue["complete"] == 74.0
-    assert round(state["show"]["min_interval"]["radxa-01"], 2) == 15.0
+    # 7.3 s repaint (2026-11-19) + 7 s sweep, then the 1 s gap.
+    assert cue["span"] == 7.0 and cue["complete"] == 74.3
+    assert round(state["show"]["min_interval"]["radxa-01"], 2) == 15.3
     # ...and that IS the floor validate() applies to the next send.
     workspace.set_timeline(600, [{"id": "a", "item": "Look22", "at": 60,
                                   "design": grid},
-                                 {"id": "b", "item": "Look22", "at": 75,
+                                 {"id": "b", "item": "Look22", "at": 75.3,
                                   "design": grid}])
     assert workspace.state()["show"]["cues"][1]["problems"] == []
     workspace.set_timeline(600, [{"id": "a", "item": "Look22", "at": 60,
                                   "design": grid},
-                                 {"id": "b", "item": "Look22", "at": 74.9,
+                                 {"id": "b", "item": "Look22", "at": 75.2,
                                   "design": grid}])
     assert workspace.state()["show"]["cues"][1]["problems"]
 
@@ -1363,9 +1364,9 @@ def test_the_show_file_carries_uint16_delay_tables_and_the_unit_of_ten_ms(worksp
     a, b, c = show["cues"]
     assert (b["sweep"]["sequence"], b["sweep"]["span_s"], b["span"]) == \
         ("top_down", 2.0, 2.0)                              # rows 1 and 0
-    # "at" IS Start; the 2 s sweep runs past the 8 s refresh (7 s repaint
-    # + 2 s sweep = 9 s), so it is what Complete follows.
-    assert (b["sent"], b["complete"]) == (60, 60 + 7 + 2)
+    # "at" IS Start; the 2 s sweep runs past the 8 s refresh (7.3 s repaint
+    # + 2 s sweep = 9.3 s), so it is what Complete follows.
+    assert (b["sent"], b["complete"]) == (60, 69.3)
     assert a["span"] == 0 and a["problems"] == [] and b["problems"] == []
     assert workspace.state()["sequences"][0]["id"] == "natural"
     item22 = item(workspace.state(), "Look22")

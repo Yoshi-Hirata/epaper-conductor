@@ -28,6 +28,8 @@ body { margin: 0; font: 14px/1.5 "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif;
 header { display: flex; align-items: center; gap: 14px; padding: 10px 18px; flex-wrap: wrap;
   background: var(--panel); border-bottom: 1px solid var(--line); }
 header h1 { font-size: 16px; margin: 0; letter-spacing: .04em; }
+header .panel-fw { margin-left: auto; color: var(--dim); font-size: 12px; }
+header .panel-fw select { font-size: 12px; margin-left: 4px; }
 /* serve --label (Start Exhibition Conductor.bat passes EXHIBITION): a SEPARATE
    Conductor's name, worn as an amber badge right after the app name so its
    window is never taken for the show's. Made by applyLabel() only when the
@@ -649,6 +651,7 @@ button.primarybtn:disabled { filter: none; }
   </div>
   <label class="filebtn" tabindex="0" role="button">Add CSV<input id="pick" type="file" accept=".csv" multiple></label>
   <span class="meta">or drop CSV files anywhere on the page</span>
+  <label class="panel-fw" id="panel-fw-pick" title="Which board firmware the simulated refresh and the colours of 0x0A/0x0C follow. On screen only: the units play whatever firmware they carry.">Panel firmware <select id="panel-fw"></select></label>
 </header>
 <main id="main">
   <aside>
@@ -968,6 +971,71 @@ async function pollOtherConductor() {
 }
 setTimeout(pollOtherConductor, OTHER_CONDUCTOR_POLL_MS);
 
+// ---- panel firmware profile (2026-11-19) ----
+// Which board firmware the simulated refresh and the colours of 0x0A/0x0C
+// follow: /api/state's panel_fw (conductor/panelfw.py, read from
+// conductor/web/sim/panelfw.js - the designers' simulator loads that same
+// file). A view setting of this browser, kept in localStorage like the dock
+// and the music, NOT a show-file field: it says which firmware the operator
+// wants to SEE, the show and the units are the same either way, and an old
+// show file must not silently pick a firmware. Unset = panel_fw.default.
+const PANEL_FW_KEY = "sim.panelFw";
+function loadPanelFwPref() { try { return localStorage.getItem(PANEL_FW_KEY) || ""; } catch { return ""; } }
+function savePanelFwPref(id) { try { localStorage.setItem(PANEL_FW_KEY, id); } catch {} }
+let panelFwChoice = loadPanelFwPref();
+// A Conductor started before this page knew about profiles sends no
+// panel_fw (the page is served from disk, the server is not reloaded): a
+// refresh then shows the scale white for one repaint and cuts to its
+// colour, and the selector says the Conductor needs a restart.
+const PANEL_FW_FALLBACK = { id: "", label: "profiles unavailable - restart the Conductor (see its log)", tick_s: 0.011,
+                            wave_ticks: 662, lead_in_ticks: 122, cross_ticks: 10, white: "#89adc3",
+                            palette: {}, curves: Array.from({ length: 16 }, () => ({ end: 662, keys: [[0, "#89adc3"]] })) };
+const panelFwMerged = new Map();            // id -> profile with the shared wave numbers on it
+// panelfw.js's profile(), off the state: the chosen profile, or the default
+// one for an unknown choice (a profile a later build dropped).
+function panelFw() {
+  const data = state && state.panel_fw;
+  if (!data) return PANEL_FW_FALLBACK;
+  const p = data.profiles.find(q => q.id === panelFwChoice) || data.profiles.find(q => q.id === data.default);
+  let out = panelFwMerged.get(p.id);
+  if (!out) {
+    out = Object.assign({ tick_s: data.tick_s, wave_ticks: data.wave_ticks, lead_in_ticks: data.lead_in_ticks,
+                          cross_ticks: data.cross_ticks, white: data.white }, p);
+    panelFwMerged.set(p.id, out);
+  }
+  return out;
+}
+// state.palette = look.py's PALETTE with the profile's own codes over it
+// (panelfw.js's paletteOf), so everything that paints or names a code -
+// rgb(), hexOfCode(), COLOURS USED, the hover line - follows the selector.
+function applyPanelFw() {
+  const over = panelFw().palette;
+  state.palette = state.basePalette.map((p, code) => over[code] ? Object.assign({}, over[code]) : p);
+  paintPanelFwPick();
+}
+function paintPanelFwPick() {
+  const select = $("#panel-fw");
+  if (!select) return;
+  const data = state.panel_fw;
+  const profiles = data ? data.profiles : [PANEL_FW_FALLBACK];
+  const html = profiles.map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join("");
+  if (select.dataset.html !== html) { select.innerHTML = html; select.dataset.html = html; }
+  select.value = panelFw().id;
+  select.disabled = !data;
+}
+function choosePanelFw(id) {
+  panelFwChoice = id;
+  savePanelFwPref(id);
+  leadHexCache.clear();               // keyed by colour, so only to keep it small
+  applyPanelFw();
+  render();
+}
+// The name of code c as the selected firmware has it, marked when its RGB is
+// still an estimate (FW_261119F's pinks, no measured colour yet).
+const ESTIMATE_NOTE = "colour from the colour chart photos - not measured on the panel yet";
+const colorName = c => state.palette[c].name + (state.palette[c].estimate ? " (est.)" : "");
+const colorTitle = c => state.palette[c].estimate ? ` title="${esc(state.palette[c].name)}: ${ESTIMATE_NOTE}"` : "";
+
 async function refresh() {
   state = await api("/api/state");
   // The folder behind this Conductor, on hover only: the header is the
@@ -978,7 +1046,10 @@ async function refresh() {
   if (!state.items.some(i => i.item === ui.item)) ui.item = state.items[0]?.item ?? null;
   maxRankCache.clear();               // ranks/maps may have changed under us
   refreshModelCache.clear();          // cue ids may now mean different cues
-  tintedHexCache.clear();             // the palette may now mean different codes
+  leadHexCache.clear();
+  panelFwMerged.clear();
+  state.basePalette = state.palette;  // look.py's PALETTE, the FW_260923 chart
+  applyPanelFw();
   syncPlayerSrc();
   render();
 }
@@ -1182,7 +1253,7 @@ function renderContent() {
             <span style="margin-left:6px">whatever look the files are named after, they are saved as ${esc(item.item)}_… and belong to this item alone</span></div>
         </div>
         ${design ? `<div class="card"><h2>COLOURS USED</h2><table><tbody>
-          ${Object.keys(usage).sort((a, b) => a - b).map(c => `<tr><td><span class="sw" style="background:${rgb(c)}"></span>${hex(c)} ${esc(state.palette[c].name)}</td><td>${usage[c]}</td></tr>`).join("")}
+          ${Object.keys(usage).sort((a, b) => a - b).map(c => `<tr${colorTitle(c)}><td><span class="sw" style="background:${rgb(c)}"></span>${hex(c)} ${esc(colorName(c))}</td><td>${usage[c]}</td></tr>`).join("")}
           ${design.undecided.length ? `<tr><td>- undecided</td><td>${design.undecided.length}</td></tr>` : ""}
           </tbody></table></div>` : ""}
         <div class="card"><h2>MAP FILE</h2>${fileList(item)}</div>
@@ -1423,11 +1494,16 @@ function maxRankOf(item, sequence, ranks) {
   if (m === undefined) { m = Math.max(...ranks, 0); maxRankCache.set(key, m); }
   return m;
 }
-// ---- e-paper refresh flicker (simulator only): every scale a cue colours goes
-// dark, flickers, warms, then settles on its target - a wave whose per-scale
-// start time is the sweep delay (rank x step, 0 for natural) plus a small
-// deterministic per-scale jitter, so a "natural" cue still refreshes as one
-// ripple instead of a single flat cut. See plan_refresh_sim.md for the model.
+// ---- e-paper refresh flicker (simulator only): every scale a cue colours plays
+// the selected panel firmware's MEASURED curve for its target colour
+// (2026-11-19, panelFw() below; the reference video of the real panel, made
+// into curves by tools/make_panelfw.py): lead-in, shake, rest and colour
+// drive as the garment shows them - a wave whose per-scale start time is the
+// sweep delay (rank x step, 0 for natural) plus a small deterministic
+// per-scale jitter, so a "natural" cue still refreshes as one ripple instead
+// of a single flat cut. The old generic phases A-D of plan_refresh_sim.md
+// (REFRESH_TINT/REFRESH_PHASE_A/REFRESH_PALETTE/REFRESH_PHASE_C/TINT_STEPS)
+// went when the measured curves came in.
 const JITTER_MAX = 0.35;                    // seconds, spread of phase-A stragglers
 // On a swept cue the jitter is capped at this fraction of the sweep's own step
 // between consecutive ranks (adversarial review, 2026-09-26): the hardware has
@@ -1437,15 +1513,9 @@ const JITTER_MAX = 0.35;                    // seconds, spread of phase-A stragg
 // made a real sweep look messier than it is. The full JITTER_MAX stays for a
 // flat refresh, where it models the panel-to-panel variance we did film.
 const SWEEP_JITTER_FRAC = 0.3;
-const REFRESH_TINT = [0xb8, 0xa0, 0x30];    // yellow-green tint blended into phase D
-const REFRESH_PHASE_A = ["#2b2a4e", "#3a2f5a"];                                    // dark navy / dark purple
-const REFRESH_PALETTE = ["#2b2a4e", "#3a2f5a", "#9a9aa0", "#c9c9cc", "#e6e3d8",
-                          "#d8cf7a", "#b8b83a", "#7a5a3a", "#8a4a3a", "#2f4a7a"]; // phase B: any of these
-const REFRESH_PHASE_C = ["#c9c9cc", "#e6e3d8", "#d8cf7a", "#b8b83a", "#7a5a3a"]; // phase C: warm/grey subset
-// 32-bit integer mix (Math.imul only - no strings, no Math.random) used both for
-// the per-scale jitter and for picking a flicker colour each 0.25 s tick: same
-// (n, bucket) always gives the same result, so a frame can be redrawn or skipped
-// without the flicker looking different.
+// 32-bit integer mix (Math.imul only - no strings, no Math.random) used for the
+// per-scale jitter: the same scale always gets the same jitter, so a frame can
+// be redrawn or skipped without the wave looking different.
 function hash32(a, b) {
   let h = Math.imul(a ^ 0x9e3779b1, 0x85ebca6b) ^ Math.imul(b ^ 0x27d4eb2f, 0xc2b2ae35);
   h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
@@ -1454,25 +1524,40 @@ function hash32(a, b) {
 }
 const hexOfCode = code => { const [r, g, b] = state.palette[code].rgb; return "#" + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, "0")).join(""); };
 const hexToRgb = hex => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
-// target tinted towards REFRESH_TINT by weight w (0..1): the weight varies
-// continuously frame to frame, so quantise it to a handful of steps and
-// memoise the result per code+step - otherwise this rebuilds the same few
-// hex strings from scratch some 1,000 times a frame with 7 looks firing
-// together (fix round finding 2).
-const TINT_STEPS = 8;
-const tintedHexCache = new Map();           // "code|step" -> "#rrggbb"
-function tintedHex(targetCode, w) {
-  const step = Math.max(0, Math.min(TINT_STEPS, Math.round(w * TINT_STEPS)));
-  const key = targetCode + "|" + step;
-  let out = tintedHexCache.get(key);
+// The lead-in on a scale that did not start white (the recording did): the
+// previous colour `fromHex` with the measured change from white added - the
+// navy of a level-6 lead-in, the yellow of a level-1 one - and, over the first
+// cross_ticks of the shake (step 1..cross_ticks-1), blended into the measured
+// colour, which is used as is from there on: the shake resets the panel,
+// whatever it showed before (assumption, 2026-11-19 - the video only has
+// refreshes from white). Memoised per from+measured+step: otherwise this
+// rebuilds the same few hex strings some 1,000 times a frame with 7 looks
+// firing together (fix round finding 2).
+const leadHexCache = new Map();             // "from|measured|step" -> "#rrggbb"
+function leadHex(fromHex, measuredHex, step, fw) {
+  const key = fromHex + "|" + measuredHex + "|" + step;
+  let out = leadHexCache.get(key);
   if (out === undefined) {
-    const target = hexToRgb(hexOfCode(targetCode));
-    const ww = step / TINT_STEPS;
-    const mixed = target.map((v, i) => Math.round(v * (1 - ww) + REFRESH_TINT[i] * ww));
+    const from = hexToRgb(fromHex), measured = hexToRgb(measuredHex), white = hexToRgb(fw.white);
+    const w = step / fw.cross_ticks;
+    const mixed = measured.map((v, i) => {
+      const lead = Math.max(0, Math.min(255, from[i] + v - white[i]));
+      return Math.round(lead * (1 - w) + v * w);
+    });
     out = "#" + mixed.map(v => v.toString(16).padStart(2, "0")).join("");
-    tintedHexCache.set(key, out);
+    leadHexCache.set(key, out);
   }
   return out;
+}
+// The index of the last key at or before tick (keys sorted by tick, the first
+// at tick 0).
+function keyAt(keys, tick) {
+  let lo = 0, hi = keys.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (keys[mid][0] <= tick) lo = mid; else hi = mid - 1;
+  }
+  return lo;
 }
 // Per item+cue, each scale's sweep delay and jitter, in item.map.scales order -
 // computed once (typed arrays) and reused every frame; cleared alongside
@@ -1505,37 +1590,39 @@ function refreshModelFor(item, cue, sweep) {
   refreshModelCache.set(key, m);
   return m;
 }
-// One scale's colour at τ seconds into its own repaint (0 <= τ < repaint): the
-// phase table from plan_refresh_sim.md, expressed as a fraction of the repaint
-// so a 16 s firmware scales the same as the 7 s one measured on video.
-function refreshPhaseColor(n, tau, frac, targetCode) {
-  const bucket = Math.floor(tau / 0.25);
-  const h = hash32(n, bucket);
-  if (frac < 0.13) return REFRESH_PHASE_A[h % REFRESH_PHASE_A.length];
-  if (frac < 0.50) return REFRESH_PALETTE[h % REFRESH_PALETTE.length];
-  if (frac < 0.72) return REFRESH_PHASE_C[h % REFRESH_PHASE_C.length];
-  if (frac < 0.95) {
-    if (h % 6 === 0) return REFRESH_PHASE_C[hash32(n, bucket + 1) % REFRESH_PHASE_C.length];   // small residual flicker
-    const w = 0.45 * (1 - (frac - 0.72) / 0.23);
-    return tintedHex(targetCode, w);
-  }
-  // The settled state (below) also returns the numeric code, not a hex
-  // string - matching it here means updateThumbColors() sees the same fill
-  // both sides of "settled" and skips the redundant setAttribute at the
-  // instant a cue completes (fix round finding 13).
-  return targetCode;
+// One scale's look `tick` waveform ticks into its own refresh (2026-11-19):
+// the measured curve of the target code in the panel firmware profile fw (a
+// colour per key, held to the next), the palette colour from the curve's end
+// (drive_end) on. `prev` is what the scale showed before (a code, a
+// "#rrggbb", or undefined for the bare garment - taken as white, like the
+// recording): it shapes the lead-in and the start of the shake only.
+function refreshPhaseColor(tick, targetCode, prev, fw) {
+  const curve = fw.curves[targetCode];
+  // The settled state also returns the numeric code, not a hex string, as
+  // applySweptColors does after the waveform - so updateThumbColors() sees the
+  // same fill both sides of "settled" and skips the redundant setAttribute at
+  // the instant a cue completes (fix round finding 13).
+  if (tick >= curve.end) return targetCode;
+  const measured = curve.keys[keyAt(curve.keys, tick)][1];
+  const cross = tick - fw.lead_in_ticks;
+  if (cross >= fw.cross_ticks) return measured;
+  const from = prev === undefined ? fw.white : typeof prev === "string" ? prev : hexOfCode(prev);
+  return leadHex(from, measured, cross < 0 ? 0 : Math.floor(cross), fw);
 }
 // The scales a cue in flight is showing at t, written directly into `out`
 // (mutated, not spread) - a fresh {...colors, ...swept} of a ~1,000-key
 // object every frame for every in-flight cue was the main cost measured
 // here (fix round finding 2). Each scale starts its own repaint at
-// sent + delay (sweep) + jitter, runs through the flicker phases above, and
-// reaches its target one repaint after it started. A scale the design does
-// not colour (partial cue) is left untouched.
+// sent + delay (sweep) + jitter and plays the firmware's measured curve
+// (above), ending at sent + delay + the waveform's 7.28 s, capped at the
+// repaint - the jitter comes out of the waveform, so under FW_261119F every
+// scale of a flat refresh arrives at the same instant. A scale the design
+// does not colour (partial cue) is left untouched.
 //
 // ONE SCALE's own repaint - what the flicker is phased over, and NOT the cue's
 // refresh. Since 2026-09-26 a refresh is the whole change, the sweep INCLUDED
-// (8 s = a 7 s panel repaint with a 1 s sweep inside it), so phasing a scale
+// (8 s = a 7 s panel repaint with a 1 s sweep inside it - a 7.3 s one since
+// 2026-11-19, so a 1 s sweep now completes at 8.3 s), so phasing a scale
 // over the refresh made the last scale of a swept cue still mid-flicker at
 // Complete, where wornAt() drops the whole design in at once and the preview
 // snapped. A scale takes one PHYSICAL repaint, capped at the cue's own refresh
@@ -1556,18 +1643,29 @@ function panelRepaintFor(cue) {
 // compressed show (a 0.3 s refresh on the bench) keeps a visible flicker.
 function startJitter(raw, repaint) { return Math.min(raw, repaint / 2); }
 function applySweptColors(item, cue, design, t, out) {
+  const fw = panelFw();
   const sweep = sweepOf(cue);
   const repaint = panelRepaintFor(cue);
+  // The waveform as measured: 662 ticks x 11 ms = 7.28 s, inside the
+  // model's repaint (PANEL_REPAINT_S, 7.3 s since 2026-11-19), so it plays
+  // at true speed; never past the repaint, though - a scale still drawing
+  // at Complete would snap there - so a show that declares a shorter
+  // refresh (a legacy 7 s one, a bench run) squeezes it into that.
+  const wave = Math.min(repaint, fw.wave_ticks * fw.tick_s);
   const model = refreshModelFor(item, cue, sweep);
   item.map.scales.forEach((s, n) => {
     const key = `${s[0]}|${s[1]}|${s[2]}`;
     const targetCode = design.colors[key];
     if (targetCode === undefined) return;                    // partial cue: this scale is untouched
-    const jitter = startJitter(model.jitter[n], repaint);
+    const jitter = startJitter(model.jitter[n], wave);
     const tau = t - (cue.sent + model.delay[n] + jitter);
     if (tau < 0) return;                                      // not started yet: keep showing the old colour
-    const own = repaint - jitter;          // ends at delay + repaint, never later
-    out[key] = tau >= own ? targetCode : refreshPhaseColor(n, tau, tau / own, targetCode);
+    // The jitter is a late start, so a scale plays its waveform a little
+    // faster to end at delay + wave like every other (2026-11-19).
+    const own = wave - jitter;
+    // Done at the same sum applyFlatColors uses, not tau >= own: one ulp short
+    // of it and the last measured key would still show at the very end.
+    out[key] = t >= cue.sent + model.delay[n] + wave ? targetCode : refreshPhaseColor(tau / own * fw.wave_ticks, targetCode, out[key], fw);
   });
 }
 // The old, flat simulator: a scale simply cuts to its target once its own
@@ -1924,7 +2022,7 @@ function renderTimeline() {
         <button type="button" id="tl-fit" disabled>Fit to music</button>
         <span class="warn" id="music-note"></span></div>
       <div class="group"><span>Default refresh time</span><input type="text" id="refresh" value="${show.refresh_s}" style="width:54px"
-        title="Seconds from the command to the finished picture, the transition's sweep included, used by every cue that does not set its own (${defaultRefreshS().toFixed(1)} s on the latest firmware: a ${panelRepaintS().toFixed(1)} s panel repaint with a 1 s sweep inside it; 16 s on older boards)"><span>s</span></div>
+        title="Seconds from the command to the finished picture, the transition's sweep included, used by every cue that does not set its own (${defaultRefreshS().toFixed(1)} s on the latest firmware: a ${panelRepaintS().toFixed(1)} s panel repaint with room for a ${(defaultRefreshS() - panelRepaintS()).toFixed(1)} s sweep inside it; 16 s on older boards)"><span>s</span></div>
       <div class="group">
         <button class="primarybtn" id="tl-write" title="Put this timeline on the units: Upload it for a show this PC drives, or save it on the units as a demo they play from KEY1 without this PC. One dialog, both ways.">Write to units…</button>
       </div>
@@ -3078,7 +3176,10 @@ async function downloadExport3d() {
   toast("Building the 3D timeline - every scale of the show, this takes a few seconds");
   let url = null;
   try {
-    const response = await fetchWithPasscode("/api/show/export3d");
+    // The selected panel firmware's waveform and colours (2026-11-19); a
+    // Conductor that knows no profiles sends its own default.
+    const fw = panelFw().id;
+    const response = await fetchWithPasscode("/api/show/export3d" + (fw ? "?fw=" + encodeURIComponent(fw) : ""));
     if (!response.ok) {
       let detail = `HTTP ${response.status}`;
       try { detail = (await response.json()).error || detail; } catch {}
@@ -6754,6 +6855,7 @@ document.addEventListener("keydown", e => {
 document.addEventListener("change", async e => {
   const id = e.target.id;
   if (e.target.dataset.choice !== undefined) { ui.choices[e.target.dataset.choice] = e.target.value; return; }
+  if (id === "panel-fw") { choosePanelFw(e.target.value); return; }
   if (id === "fleet-lead") {
     const seconds = parseSeconds(e.target.value, 0.5, 60);   // the server's own rule
     if (seconds !== null) ui.lead = seconds; else { toast("Enter 0.5 to 60 seconds"); e.target.value = ui.lead; }
@@ -7255,7 +7357,8 @@ document.addEventListener("mouseover", e => {
   const label = String(g.dataset.b).padStart(3, "0") + "-" + String(g.dataset.s).padStart(2, "0");
   $("#info").innerHTML = `<b>${esc(side)}</b> row ${row} / col ${col} · cable <b>${label}</b>
     (board ${String(g.dataset.b).padStart(3, "0")} = DIP ID <b>${board ? board.dip_id : "?"}</b>, socket P${g.dataset.s})` +
-    (design ? ` · colour <b>${code !== undefined ? hex(code) + " " + esc(state.palette[code].name) : "undecided"}</b>` : "");
+    (design ? ` · colour <b>${code !== undefined ? hex(code) + " " + esc(colorName(code)) : "undecided"}</b>` : "")
+    + (design && code !== undefined && state.palette[code].estimate ? ` <span class="meta">(${ESTIMATE_NOTE})</span>` : "");
 });
 
 // Into one item: a file belongs to the item its name begins with, so two garments of the

@@ -6,7 +6,7 @@
  * applySweptColors/applyFlatColors (789-824), wornAt (825-852).
  *
  * Kept verbatim except the parameterisation plan_designer_sim.md §2.3 names for
- * wornAt: `opts {flicker, cuesOf, palette}`. The operator page reads the show's
+ * wornAt: `opts {flicker, cuesOf, palette, fw}`. The operator page reads the show's
  * cues and palette off two module-level globals (`cuesOf(item)`, itself reading
  * `state.show.cues`, and `state.palette` via hexOfCode/rgb); the designer has no
  * such globals, so both travel down as parameters from wornAt's own opts, threaded
@@ -14,6 +14,12 @@
  * cache, hexOfCode, tintedHex, refreshPhaseColor, applySweptColors/applyFlatColors).
  * `maxRankCache`/`refreshModelCache` stay as this module's own private caches
  * (SIM.flicker.clearCaches() replaces the operator page's per-refresh() clearing).
+ *
+ * 2026-11-19: a scale's refresh plays the selected panel firmware profile's
+ * MEASURED curve for its target code (sim/panelfw.js, loaded before this
+ * file; made from the reference video by tools/make_panelfw.py) instead of
+ * the old generic flicker - REFRESH_TINT/REFRESH_PHASE_A/REFRESH_PALETTE/
+ * REFRESH_PHASE_C/TINT_STEPS and tintedHex went with it (user, 2026-11-19).
  */
 (function () {
   "use strict";
@@ -27,21 +33,15 @@
   // made a real sweep look messier than it is. The full JITTER_MAX stays for a
   // flat refresh, where it models the panel-to-panel variance we did film.
   const SWEEP_JITTER_FRAC = 0.3;
-  const REFRESH_TINT = [0xb8, 0xa0, 0x30];
-  const REFRESH_PHASE_A = ["#2b2a4e", "#3a2f5a"];
-  const REFRESH_PALETTE = ["#2b2a4e", "#3a2f5a", "#9a9aa0", "#c9c9cc", "#e6e3d8",
-                            "#d8cf7a", "#b8b83a", "#7a5a3a", "#8a4a3a", "#2f4a7a"];
-  const REFRESH_PHASE_C = ["#c9c9cc", "#e6e3d8", "#d8cf7a", "#b8b83a", "#7a5a3a"];
-  const TINT_STEPS = 8;
 
   const maxRankCache = new Map();
   const refreshModelCache = new Map();
-  const tintedHexCache = new Map();
+  const leadHexCache = new Map();
 
   function clearCaches() {
     maxRankCache.clear();
     refreshModelCache.clear();
-    tintedHexCache.clear();
+    leadHexCache.clear();
   }
 
   // model.js's hash32 (2026-10-22): it moved there when the sweep's edge
@@ -52,18 +52,38 @@
     return "#" + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, "0")).join("");
   }
   function hexToRgb(hex) { return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]; }
-  function tintedHex(targetCode, w, palette) {
-    const step = Math.max(0, Math.min(TINT_STEPS, Math.round(w * TINT_STEPS)));
-    const key = targetCode + "|" + step;
-    let out = tintedHexCache.get(key);
+  // The lead-in on a scale that did not start white (the recording did): the
+  // previous colour `fromHex` with the measured change from white added -
+  // the navy of a level-6 lead-in, the yellow of a level-1 one - and, over
+  // the first cross_ticks of the shake (step 1..cross_ticks-1), blended into
+  // the measured colour, which is used as is from there on: the shake resets
+  // the panel, whatever it showed before (assumption, 2026-11-19 - the video
+  // only has refreshes from white). Memoised per from+measured+step. The
+  // SAME CODE as index.html's leadHex.
+  function leadHex(fromHex, measuredHex, step, fw) {
+    const key = fromHex + "|" + measuredHex + "|" + step;
+    let out = leadHexCache.get(key);
     if (out === undefined) {
-      const target = hexToRgb(hexOfCode(targetCode, palette));
-      const ww = step / TINT_STEPS;
-      const mixed = target.map((v, i) => Math.round(v * (1 - ww) + REFRESH_TINT[i] * ww));
+      const from = hexToRgb(fromHex), measured = hexToRgb(measuredHex), white = hexToRgb(fw.white);
+      const w = step / fw.cross_ticks;
+      const mixed = measured.map((v, i) => {
+        const lead = Math.max(0, Math.min(255, from[i] + v - white[i]));
+        return Math.round(lead * (1 - w) + v * w);
+      });
       out = "#" + mixed.map(v => v.toString(16).padStart(2, "0")).join("");
-      tintedHexCache.set(key, out);
+      leadHexCache.set(key, out);
     }
     return out;
+  }
+  // The index of the last key at or before tick (keys sorted by tick, the
+  // first at tick 0). The SAME CODE as index.html's keyAt.
+  function keyAt(keys, tick) {
+    let lo = 0, hi = keys.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (keys[mid][0] <= tick) lo = mid; else hi = mid - 1;
+    }
+    return lo;
   }
   function maxRankOf(item, sequence, ranks) {
     const key = item.item + "|" + sequence;     // "<sequence>#<rank_set>" when the edge is not straight
@@ -101,22 +121,21 @@
     refreshModelCache.set(key, m);
     return m;
   }
-  // One scale's colour at τ seconds into its own repaint (0 <= τ < repaint):
-  // the phase table from plan_refresh_sim.md, expressed as a fraction of the
-  // repaint so a 16 s firmware scales the same as the 7 s one measured on
-  // video.
-  function refreshPhaseColor(n, tau, frac, targetCode, palette) {
-    const bucket = Math.floor(tau / 0.25);
-    const h = hash32(n, bucket);
-    if (frac < 0.13) return REFRESH_PHASE_A[h % REFRESH_PHASE_A.length];
-    if (frac < 0.50) return REFRESH_PALETTE[h % REFRESH_PALETTE.length];
-    if (frac < 0.72) return REFRESH_PHASE_C[h % REFRESH_PHASE_C.length];
-    if (frac < 0.95) {
-      if (h % 6 === 0) return REFRESH_PHASE_C[hash32(n, bucket + 1) % REFRESH_PHASE_C.length];
-      const w = 0.45 * (1 - (frac - 0.72) / 0.23);
-      return tintedHex(targetCode, w, palette);
-    }
-    return targetCode;
+  // One scale's look `tick` waveform ticks into its own refresh (2026-11-19):
+  // the measured curve of the target code in the panel firmware profile fw
+  // (a colour per key, held to the next), the palette colour from the
+  // curve's end (drive_end) on. `prev` is what the scale showed before (a
+  // code, a "#rrggbb", or undefined for the bare garment - taken as white,
+  // like the recording): it shapes the lead-in and the start of the shake
+  // only (leadHex). The SAME CODE as index.html's refreshPhaseColor.
+  function refreshPhaseColor(tick, targetCode, prev, palette, fw) {
+    const curve = fw.curves[targetCode];
+    if (tick >= curve.end) return targetCode;
+    const measured = curve.keys[keyAt(curve.keys, tick)][1];
+    const cross = tick - fw.lead_in_ticks;
+    if (cross >= fw.cross_ticks) return measured;
+    const from = prev === undefined ? fw.white : typeof prev === "string" ? prev : hexOfCode(prev, palette);
+    return leadHex(from, measured, cross < 0 ? 0 : Math.floor(cross), fw);
   }
   const sweepOf = cue => cue.sweep || { sequence: "natural", span_s: 0, source: "design" };
   function refreshOfFor(cue, showRefreshS) {
@@ -125,7 +144,8 @@
   }
   // ONE SCALE's own repaint - what the flicker below is phased over, and NOT
   // the cue's refresh. Since 2026-09-26 a refresh is the whole change, the
-  // sweep INCLUDED (8 s = a 7 s panel repaint with a 1 s sweep inside it), so
+  // sweep INCLUDED (8 s = a 7 s panel repaint with a 1 s sweep inside it - a
+  // 7.3 s one since 2026-11-19, so a 1 s sweep now completes at 8.3 s), so
   // phasing a scale over the refresh made the last scale of a swept cue still
   // mid-flicker at Complete, where wornAt() drops the whole design in at once
   // and the preview snapped. A scale takes one PHYSICAL repaint, capped at the
@@ -146,7 +166,7 @@
   // no jitter, and missed it). Never more than half the repaint either, so a
   // compressed show (a 0.3 s refresh on the bench) keeps a visible flicker.
   function startJitter(raw, repaint) { return Math.min(raw, repaint / 2); }
-  function applySweptColors(item, cue, design, t, out, palette, showRefreshS) {
+  function applySweptColors(item, cue, design, t, out, palette, showRefreshS, fw) {
     const sweep = sweepOf(cue);
     // panelRepaintFor(), never a hard-coded number (adversarial review,
     // 2026-09-25: this used to fall back to a bare "7" - a silent duplicate
@@ -155,16 +175,28 @@
     // 7.0s in the first place, e.g. after Default refresh time is edited on
     // the Timeline toolbar).
     const repaint = panelRepaintFor(cue, showRefreshS);
+    // The waveform as measured: 662 ticks x 11 ms = 7.28 s, inside the
+    // model's repaint (PANEL_REPAINT_S, 7.3 s since 2026-11-19), so it plays
+    // at true speed; never past the repaint, though - a scale still drawing
+    // at Complete would snap there - so a show that declares a shorter
+    // refresh (a legacy 7 s one, a bench run) squeezes it into that.
+    const wave = Math.min(repaint, fw.wave_ticks * fw.tick_s);
     const model = refreshModelFor(item, cue, sweep);
     item.map.scales.forEach((s, n) => {
       const key = `${s[0]}|${s[1]}|${s[2]}`;
       const targetCode = design.colors[key];
       if (targetCode === undefined) return;
-      const jitter = startJitter(model.jitter[n], repaint);
+      const jitter = startJitter(model.jitter[n], wave);
       const tau = t - (cue.sent + model.delay[n] + jitter);
       if (tau < 0) return;
-      const own = repaint - jitter;          // ends at delay + repaint, never later
-      out[key] = tau >= own ? targetCode : refreshPhaseColor(n, tau, tau / own, targetCode, palette);
+      // The jitter is a late start, so a scale plays its waveform a little
+      // faster to end at delay + wave like every other: a code whose drive
+      // ends at 662 lands at the same instant on every scale of a flat
+      // refresh, as FW_261119F does on the garment (2026-11-19).
+      const own = wave - jitter;
+      // Done at the same sum applyFlatColors uses, not tau >= own: one ulp short
+      // of it and the last measured key would still show at the very end.
+      out[key] = t >= cue.sent + model.delay[n] + wave ? targetCode : refreshPhaseColor(tau / own * fw.wave_ticks, targetCode, out[key], palette, fw);
     });
   }
   function applyFlatColors(item, cue, design, t, out, showRefreshS) {
@@ -179,7 +211,9 @@
     });
   }
   const designLabel = d => d.label || d.name;
-  // opts: {flicker (default true), cuesOf(item)->cues, palette, refreshS
+  // opts: {flicker (default true), cuesOf(item)->cues, palette (already the
+  // selected profile's - SIM.panelFw.paletteOf), fw (the panel firmware
+  // profile's id; absent = panelfw.js's default), refreshS
   // (state.show.refresh_s - the show's own default, used only for a cue
   // that carries no override of its own; state.show.cues[] normally already
   // has a computed .refresh by the time it reaches here, so this is a
@@ -189,6 +223,7 @@
     const cues = (opts && opts.cuesOf) ? opts.cuesOf(item) : [];
     const palette = opts && opts.palette;
     const showRefreshS = opts && opts.refreshS;
+    const fw = SIM.panelFw.profile(opts && opts.fw);
     let colors = {}, shifts = null, label = "(as before the show)", changing = false;
     for (const cue of cues) {
       const design = item.designs.find(d => d.name === cue.design);
@@ -196,7 +231,7 @@
       if (!design) continue;
       if (cue.complete > t) {
         if (cue.sent <= t) {
-          if (flicker) applySweptColors(item, cue, design, t, colors, palette, showRefreshS);
+          if (flicker) applySweptColors(item, cue, design, t, colors, palette, showRefreshS, fw);
           else applyFlatColors(item, cue, design, t, colors, showRefreshS);
         }
         continue;
@@ -209,8 +244,8 @@
 
   globalThis.SIM = Object.assign(globalThis.SIM || {}, {
     flicker: {
-      JITTER_MAX, REFRESH_TINT, REFRESH_PHASE_A, REFRESH_PALETTE, REFRESH_PHASE_C, TINT_STEPS,
-      hash32, refreshPhaseColor, refreshModelFor, refreshOfFor, panelRepaintFor,
+      JITTER_MAX,
+      hash32, leadHex, keyAt, refreshPhaseColor, refreshModelFor, refreshOfFor, panelRepaintFor,
       startJitter, wornAt, clearCaches,
     },
   });

@@ -58,7 +58,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import durable, export3d, sequence, showfile, timeline
+from . import durable, export3d, panelfw, sequence, showfile, timeline
 from .backups import (BACKUPS_OFF, RESTORE_WAIT_S, backup_listing,
                       content_revision, restore_note, start_backups)
 from .fleet import (DEFAULT_HOTSPOT_UNIT, DEFAULT_LEAD_S, STAGING_BUSY,
@@ -2801,6 +2801,11 @@ class Workspace:
                 "sequences": [{"id": name, "label": sequence.LABELS[name]}
                               for name in sequence.SEQUENCES],
                 "palette": [{"name": n, "rgb": list(rgb)} for n, rgb in PALETTE],
+                # The panel firmware profiles (conductor/panelfw.py,
+                # 2026-11-19): the page's refresh simulation and its
+                # 0x0A/0x0C colours follow the one the operator picks;
+                # "palette" above stays look.py's, the FW_260923 chart.
+                **({"panel_fw": panelfw.DATA} if panelfw.DATA else {}),
                 "transitions": transitions, "music": self.music_info(),
                 "workspace": str(self.root.resolve())}
 
@@ -3461,8 +3466,13 @@ class Handler(BaseHTTPRequestHandler):
     def _export_3d(self) -> None:
         """GET /api/show/export3d - every scale's colour over the show,
         flicker included, for the other team's 3D simulator
-        (conductor/export3d.py). Results only: no ranks or delay tables."""
-        payload = export3d.resolve(self.workspace.state())
+        (conductor/export3d.py). Results only: no ranks or delay tables.
+        ?fw=<id> picks the panel firmware profile whose waveform and
+        colours the keys follow (the page sends its selector's); absent
+        or unknown = conductor/panelfw.py's default (2026-11-19)."""
+        query = urllib.parse.parse_qs(self.path.partition("?")[2])
+        payload = export3d.resolve(self.workspace.state(),
+                                   fw=query.get("fw", [None])[0])
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         stamp = time.strftime("%Y%m%d-%H%M")
         filename = f"{self.workspace.root.name}-3d-{stamp}.json"

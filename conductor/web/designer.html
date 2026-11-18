@@ -42,6 +42,9 @@
        autosave's own later failure would otherwise be the sole warning for
        (adversarial review round 2, friendly-review wording). -->
   <span class="warn" id="autosave-warn" style="display:none">⚠ Autosave is off in this browser - use Save project… to keep your work.</span>
+  <!-- Which board firmware the simulated refresh and the colours of 0x0A/
+       0x0C follow (sim/panelfw.js, 2026-11-19); filled by designer-app.js. -->
+  <label class="panel-fw" title="Which panel firmware the simulated refresh and the colours of 0x0A/0x0C follow - what the screen shows only; the garment plays whatever firmware it carries.">Panel firmware <select id="panel-fw"></select></label>
   <span class="ws" id="ws"></span>
 </header>
 <main id="main">
@@ -58,7 +61,7 @@
 <div id="fps"></div>
 
 <!-- Script order is the dependency order (plan_designer_sim.md §1.1):
-     model → state → render → flicker → looks → transport → starter →
+     model → state → render → panelfw → flicker → looks → transport → starter →
      goldens → designer-app → selftest. Coder P's model.js/state.js/
      goldens.js/selftest.js landed 2026-09-24 (commit ed37ba1); this page no
      longer needs sim/model.stub.js (kept in the tree only as documentation
@@ -96,6 +99,7 @@
 <script defer data-guarded src="sim/model.js"></script>
 <script defer data-guarded src="sim/state.js"></script>
 <script defer data-guarded src="sim/render.js"></script>
+<script defer data-guarded src="sim/panelfw.js"></script>
 <script defer data-guarded src="sim/flicker.js"></script>
 <script defer data-guarded src="sim/looks.js"></script>
 <script defer data-guarded src="sim/transport.js"></script>

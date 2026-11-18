@@ -53,7 +53,7 @@ def test_clock_both_ways():
     # 8 s covers the ~7 s repaint of the latest firmware plus the 1 s sweep
     # a production cue uses), and the physical repaint it is built on.
     assert REFRESH_S == 8.0
-    assert PANEL_REPAINT_S == 7.0      # latest firmware, reported 2026-09-21
+    assert PANEL_REPAINT_S == 7.3      # measured 7.28 s on the reference video, 2026-11-19
     assert LEGACY_REFRESH_S == 7.0     # what a show saved before it was drawn against
     with pytest.raises(ValueError):
         parse_clock("soon")
@@ -76,26 +76,29 @@ def test_start_is_the_send_instant_and_complete_adds_refresh_and_sweep():
     swept = cue("a", "Look22", 60, "g1.csv")
     swept["sweep"] = {"sequence": "top_down", "span_s": 4.0, "source": "cue"}
     swept["span"] = 4.0
-    # 7 s repaint + 4 s sweep runs past the 8 s refresh, so it wins.
+    # The repaint + 4 s sweep runs past the refresh, so it wins: 7.3 + 4
+    # (PANEL_REPAINT_S since 2026-11-19); a legacy 7 s show caps the repaint
+    # at its own refresh, 7 + 4.
     assert times(swept, 7.0) == (60.0, 71.0)
-    assert times(swept) == (60.0, 71.0)
+    assert times(swept) == (60.0, 71.3)
 
 
 def test_complete_is_the_refresh_unless_the_sweep_really_runs_longer():
     """The operator's 2026-09-26 decision: a cue's refresh is the seconds
     from its send to "picture complete", the sweep INCLUDED - 8 s covers
     the 7 s repaint plus the 1 s span a production cue uses. A sweep only
-    lengthens a cue when it genuinely finishes later."""
+    lengthens a cue when it genuinely finishes later. Since the 7.3 s
+    repaint (2026-11-19) a 1 s sweep is one of those: 8.3 s."""
     natural = cue("a", "Look22", 60, "p1")
     assert complete_s(natural) == 8.0                   # budgeted as 8 s
     swept = cue("b", "Look22", 60, "g1.csv")
     swept["sweep"] = {"sequence": "top_down", "span_s": 1.0, "source": "cue"}
     swept["span"] = 1.0
-    assert complete_s(swept) == 8.0                     # 7 + 1, inside the 8
-    assert times(swept) == (60.0, 68.0)
+    assert complete_s(swept) == pytest.approx(8.3)      # 7.3 + 1, past the 8
+    assert times(swept) == (60.0, 68.3)
     long_sweep = dict(swept, span=7.0)
-    assert complete_s(long_sweep) == 14.0               # 7 s repaint + 7 s sweep
-    assert times(long_sweep) == (60.0, 74.0)
+    assert complete_s(long_sweep) == pytest.approx(14.3)  # 7.3 s repaint + 7 s sweep
+    assert times(long_sweep) == (60.0, 74.3)
     # A cue's own refresh above panel + span wins outright.
     own = dict(swept, refresh_s=12.0)
     assert complete_s(own) == 12.0
@@ -105,7 +108,7 @@ def test_complete_is_the_refresh_unless_the_sweep_really_runs_longer():
     assert complete_s(natural, refresh=7.0) == 7.0
     # A refresh set BELOW one physical repaint (a bench run, the
     # compressed shows the tests drive) is the operator's own statement
-    # about the panel: the 7 s constant is not put back on top of it.
+    # about the panel: the 7.3 s constant is not put back on top of it.
     assert panel_repaint_of(natural, refresh=1.0) == 1.0
     assert complete_s(natural, refresh=1.0) == 1.0
     assert complete_s(dict(swept, span=2.0), refresh=1.0) == 3.0
@@ -122,10 +125,12 @@ def test_the_preset_is_sent_one_whole_picture_before_the_show():
     swept = cue("b", "Look22", 0, "g1.csv")
     swept["sweep"] = {"sequence": "top_down", "span_s": 5.0, "source": "cue"}
     swept["span"] = 5.0
-    assert complete_s(swept) == 12.0                    # 7 s repaint + 5 s sweep
-    assert times(swept) == (-12.0, 0.0)                 # ...and complete AT 0:00
-    # A sweep that fits inside the refresh is sent one refresh early, as before.
-    assert times(dict(swept, span=1.0)) == (-8.0, 0.0)
+    assert complete_s(swept) == pytest.approx(12.3)     # 7.3 s repaint + 5 s sweep
+    assert times(swept) == (-12.3, 0.0)                 # ...and complete AT 0:00
+    # A sweep that fits inside the refresh is sent one refresh early, as before
+    # (up to 0.7 s since the 7.3 s repaint).
+    assert times(dict(swept, span=0.5)) == (-8.0, 0.0)
+    assert times(dict(swept, span=1.0)) == (-8.3, 0.0)
     # A cue's own refresh still wins, preset or not.
     assert times(cue("c", "Look22", 0, "p1", refresh_s=16.0)) == (-16, 0)
 
@@ -158,14 +163,14 @@ def test_min_interval_of_is_what_this_show_needs_on_one_unit():
     swept = cue("b", "Look22", 60, "g1.csv")
     swept["sweep"] = {"sequence": "top_down", "span_s": 7.0, "source": "cue"}
     swept["span"] = 7.0
-    assert min_interval_of([swept], 16) == 15.0          # 7 + 7 + the 1 s gap
-    assert min_interval_of([plain, swept], 16) == 15.0   # the slowest of them
+    assert min_interval_of([swept], 16) == pytest.approx(15.3)   # 7.3 + 7 + the 1 s gap
+    assert min_interval_of([plain, swept], 16) == pytest.approx(15.3)  # the slowest
     # It is exactly the floor validate() applies to that unit's own cues.
     items = {"look22": {"item": "Look22", "unit": "radxa-01", "boards": 2,
                         "designs": {"p1": OK, "g1.csv": OK}}}
-    after = cue("c", "Look22", 60 + 15, "p1")
+    after = cue("c", "Look22", 60 + 15.3, "p1")
     assert validate([swept, after], items, 600)[0]["c"] == []
-    tight = cue("c", "Look22", 60 + 14.9, "p1")
+    tight = cue("c", "Look22", 60 + 15.2, "p1")
     assert validate([swept, tight], items, 600)[0]["c"]
     # A legacy 7 s show keeps its own smaller default.
     assert min_interval_of([], 16, refresh=7.0) == 8.0
@@ -661,22 +666,25 @@ def test_what_a_unit_is_told_keeps_its_guard_after_the_real_end():
     # What the unit is told, with the show at the 8 s default: the cue's
     # own refresh, floored at one physical repaint.
     assert panel_refresh(natural) == panel_refresh(swept) == 8.0
-    # A legacy show (7.0 s) is exactly at the floor; a bench show below it
-    # is lifted to it, because a board really does take PANEL_REPAINT_S.
-    assert panel_refresh(natural, refresh=7.0) == 7.0
+    # A legacy show (7.0 s) is below the 7.3 s floor since 2026-11-19, and so
+    # is a bench show: both are lifted to it, because a board really does
+    # take PANEL_REPAINT_S.
+    assert panel_refresh(natural, refresh=7.0) == PANEL_REPAINT_S == 7.3
     assert panel_refresh(natural, refresh=1.0) == PANEL_REPAINT_S
     # ...and a board on older firmware keeps its own, longer value.
     assert panel_refresh(cue("c", "Look22", 60, "p1", refresh_s=16.0)) == 16.0
 
     # The guard must land AFTER the picture is really finished. A swept
-    # production cue is done at PANEL_REPAINT_S + 1 = 8 s; the guard is
-    # 32 s with what we send (8.0), 31 s if we sent the bare repaint, so
+    # production cue is done at PANEL_REPAINT_S + 1 = 8.3 s; the guard is
+    # 32 s with what we send (8.0), 31.3 s if we sent the bare repaint, so
     # neither can fall inside the sweep - nor inside a slower board's
     # 16 s repaint plus its span (the radxa-04 tops, 2026-09-26).
     real_end = PANEL_REPAINT_S + 1.0
-    assert real_end == 8.0 == complete_s(swept)
+    assert real_end == pytest.approx(8.3)
+    assert complete_s(swept) == pytest.approx(real_end)
     assert guard(panel_refresh(swept), 1.0) == 32.0 > real_end
-    assert guard(PANEL_REPAINT_S, 1.0) == 31.0 > real_end
+    assert guard(PANEL_REPAINT_S, 1.0) == pytest.approx(31.3)
+    assert guard(PANEL_REPAINT_S, 1.0) > real_end
     assert guard(panel_refresh(natural), 0.0) == 31.0 > PANEL_REPAINT_S
     assert guard_delay > 16.0 + 1.0 + 5.0        # slow firmware + span + margin
 
@@ -783,3 +791,48 @@ def test_the_keep_away_room_is_measured_from_what_the_unit_is_told():
     swept = cue("b", "Look22", 5, "p1")
     swept["span"] = 2.0
     assert unit_picture_s([short, swept], REFRESH_S) == 10.0
+
+
+@pytest.mark.parametrize("start", [60.0, 100.0, 7.4])
+def test_a_cue_exactly_at_the_shown_minimum_is_accepted_for_every_sweep(start):
+    """2026-11-19: with the 7.3 s repaint, 7.3 + 16.1 + 1.0 is
+    24.400000000000002, and a cue placed at the 24.4 s minimum the page
+    shows was refused with "only 24.4 s ...; at least 24.4 s is needed".
+    The floor is compared at the precision it is shown, for every span the
+    page offers, and 0.1 s under it is still refused."""
+    items = {"look22": {"item": "Look22", "unit": "radxa-01", "boards": 2,
+                        "designs": {"p1": OK, "g1.csv": OK}}}
+    for refresh in (REFRESH_S, 7.0):
+        for k in range(0, 301):
+            span = k / 10
+            swept = cue("a", "Look22", start, "g1.csv")
+            swept["sweep"] = {"sequence": "top_down", "span_s": span, "source": "cue"}
+            swept["span"] = span
+            need = min_interval_of([swept], 2, refresh)
+            at = cue("b", "Look22", round(start + need, 3), "p1")
+            assert validate([swept, at], items, 600, refresh)[0]["b"] == [], (refresh, span)
+            under = cue("b", "Look22", round(start + need - 0.1, 3), "p1")
+            assert validate([swept, under], items, 600, refresh)[0]["b"], (refresh, span)
+    swept = cue("a", "Look22", 60.0, "g1.csv")
+    swept["sweep"] = {"sequence": "top_down", "span_s": 16.1, "source": "cue"}
+    swept["span"] = 16.1
+    assert min_interval_of([swept], 2) == 24.4
+    assert validate([swept, cue("b", "Look22", 84.3, "p1")], items, 600)[0]["b"] == [
+        "only 24.3 s after the previous send on radxa-01; at least 24.4 s is needed "
+        "(7.3 s panel repaint + 16.1 s sweep + 1.0 s gap)"]
+
+
+def test_starts_before_complete_names_a_fractional_complete_with_its_tenth():
+    items = {"look22": {"item": "Look22", "unit": "radxa-01", "boards": 2,
+                        "designs": {"p1": OK, "g1.csv": OK}}}
+    swept = cue("a", "Look22", 60.0, "g1.csv")
+    swept["sweep"] = {"sequence": "top_down", "span_s": 1.0, "source": "cue"}
+    swept["span"] = 1.0
+    assert validate([swept, cue("b", "Look22", 68.0, "p1")], items, 600)[0]["b"] == [
+        "starts before the previous picture is complete (1:08.3)"]
+    # A whole second keeps today's form; format_clock() itself is unchanged.
+    assert validate([cue("a", "Look22", 60.0, "p1"), cue("b", "Look22", 67.0, "p1")],
+                    items, 600)[0]["b"] == ["starts before the previous picture is complete (1:08)"]
+    from conductor.timeline import format_clock, format_clock_tenth
+    assert format_clock(68.3) == "1:08" and format_clock_tenth(68.3) == "1:08.3"
+    assert format_clock_tenth(59.96) == "1:00" and format_clock_tenth(-12.3) == "-0:12.3"

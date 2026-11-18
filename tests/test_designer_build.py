@@ -60,9 +60,11 @@ def test_built_file_is_under_the_size_budget():
     assert DIST.stat().st_size <= build_designer.SIZE_BUDGET
 
 
-CONSTANT_NAMES = ["PITCH", "MARGIN", "JITTER_MAX", "SWEEP_JITTER_FRAC",
-                  "TINT_STEPS", "REFRESH_TINT",
-                  "REFRESH_PHASE_A", "REFRESH_PALETTE", "REFRESH_PHASE_C"]
+# REFRESH_TINT / REFRESH_PHASE_A / REFRESH_PALETTE / REFRESH_PHASE_C /
+# TINT_STEPS went with the old generic flicker when the refresh started
+# playing the measured curves of conductor/web/sim/panelfw.js (2026-11-19) -
+# data both screens read from that one file, so not a constant here.
+CONSTANT_NAMES = ["PITCH", "MARGIN", "JITTER_MAX", "SWEEP_JITTER_FRAC"]
 
 
 def _extract_constants(text: str, label: str) -> dict:
@@ -113,26 +115,32 @@ SHARED_FLICKER_FUNCTIONS = ["refreshModelFor", "refreshPhaseColor",
                             # is what decides when the flicker stops being
                             # shown at all - the 2026-09-26 snap lived exactly
                             # there, so it belongs in this list (review).
-                            "wornAt", "startJitter"]
+                            "wornAt", "startJitter",
+                            # the measured curves' lookup and the lead-in
+                            # from a previous colour (2026-11-19)
+                            "keyAt", "leadHex"]
 _FLICKER_PARAMETERISATION = [
     ("refreshOfFor(cue, showRefreshS)", "refreshOf(cue)"),
     ("panelRepaintFor(cue, showRefreshS)", "panelRepaintFor(cue)"),
-    ("applySweptColors(item, cue, design, t, out, palette, showRefreshS)",
-     "applySweptColors(item, cue, design, t, out)"),
+    # The page reads the panel firmware profile off its own panelFw() (the
+    # selector, over state.panel_fw); the module is handed it by wornAt.
+    ("function applySweptColors(item, cue, design, t, out, palette, showRefreshS, fw) {",
+     "function applySweptColors(item, cue, design, t, out) { const fw = panelFw();"),
     ("applyFlatColors(item, cue, design, t, out, showRefreshS)",
      "applyFlatColors(item, cue, design, t, out)"),
-    ("refreshPhaseColor(n, tau, frac, targetCode, palette)",
-     "refreshPhaseColor(n, tau, frac, targetCode)"),
-    ("refreshPhaseColor(n, tau, tau / own, targetCode, palette)",
-     "refreshPhaseColor(n, tau, tau / own, targetCode)"),
-    ("tintedHex(targetCode, w, palette)", "tintedHex(targetCode, w)"),
+    ("refreshPhaseColor(tick, targetCode, prev, palette, fw)",
+     "refreshPhaseColor(tick, targetCode, prev, fw)"),
+    ("refreshPhaseColor(tau / own * fw.wave_ticks, targetCode, out[key], palette, fw)",
+     "refreshPhaseColor(tau / own * fw.wave_ticks, targetCode, out[key], fw)"),
+    ("hexOfCode(prev, palette)", "hexOfCode(prev)"),
     # wornAt: the page reads the cues/palette/refresh off `state`, the module
     # takes them from its opts.
     ("const cues = (opts && opts.cuesOf) ? opts.cuesOf(item) : []; "
      "const palette = opts && opts.palette; "
-     "const showRefreshS = opts && opts.refreshS; ", ""),
+     "const showRefreshS = opts && opts.refreshS; "
+     "const fw = SIM.panelFw.profile(opts && opts.fw); ", ""),
     ("for (const cue of cues)", "for (const cue of cuesOf(item))"),
-    ("applySweptColors(item, cue, design, t, colors, palette, showRefreshS)",
+    ("applySweptColors(item, cue, design, t, colors, palette, showRefreshS, fw)",
      "applySweptColors(item, cue, design, t, colors)"),
     ("applyFlatColors(item, cue, design, t, colors, showRefreshS)",
      "applyFlatColors(item, cue, design, t, colors)"),
@@ -220,7 +228,8 @@ _FLICKER_TIMING_PROBE = """
     var palette = [{ name: "white", rgb: [255, 255, 255] },
                    { name: "black", rgb: [0, 0, 0] }];
 
-    function run(name, showRefresh, spanS, cueRefresh) {
+    // fw: the panel firmware profile (sim/panelfw.js) - both are run.
+    function run(name, showRefresh, spanS, cueRefresh, fw) {
       SIM.flicker.clearCaches();
       var sweep = spanS > 0 ? { sequence: "top_down", span_s: spanS, source: "cue" }
                             : { sequence: "natural", span_s: 0, source: "design" };
@@ -229,6 +238,12 @@ _FLICKER_TIMING_PROBE = """
                   refresh_s: cueRefresh === undefined ? null : cueRefresh };
       cue.refresh = cueRefresh === undefined ? showRefresh : cueRefresh;
       var repaint = SIM.flicker.panelRepaintFor(cue, showRefresh);
+      // The measured waveform's window (2026-11-19): 7.28 s inside the 7.3 s
+      // repaint, or squeezed into a shorter one (legacy 7 s, a bench run) -
+      // applySweptColors()'s own min().
+      var prof = SIM.panelFw.profile(fw);
+      var wave = Math.min(repaint, prof.wave_ticks * prof.tick_s);
+      var squeezed = wave < prof.wave_ticks * prof.tick_s;
       var span = SIM.timeline.spanOf(cue);
       cue.complete = cue.sent + SIM.timeline.completeS(cue, showRefresh);
       var model = SIM.flicker.refreshModelFor(item, cue, sweep);
@@ -239,16 +254,24 @@ _FLICKER_TIMING_PROBE = """
       // BOTH paths: flicker:false is the flat cut (no jitter), flicker:true is
       // the wave a designer actually watches - and the wave is where a jitter
       // added to the start pushed a scale past Complete (review, 2026-09-26).
-      function optsFor(flicker) {
-        return { flicker: flicker, palette: palette, refreshS: showRefresh,
-                 cuesOf: function () { return [cue]; } };
+      function optsFor(flicker, theCue) {
+        return { flicker: flicker, palette: palette, refreshS: showRefresh, fw: fw,
+                 cuesOf: function () { return [theCue || cue]; } };
       }
-      function settledAt(t, flicker) {
-        var worn = SIM.flicker.wornAt(item, t, optsFor(flicker)).colors;
+      function settledAt(t, flicker, theCue) {
+        var worn = SIM.flicker.wornAt(item, t, optsFor(flicker, theCue)).colors;
         for (var k in colors) if (worn[k] !== colors[k]) return false;
         return true;
       }
-      var end = cue.sent + lastDelay + repaint;
+      // The flat cut (flicker:false) still cuts at delay + repaint...
+      var flatEnd = cue.sent + lastDelay + repaint;
+      // ...the wave ends with the waveform.
+      var end = cue.sent + lastDelay + wave;
+      // The same cue with its Complete a second later, so that at the
+      // waveform's own end wornAt() is still drawing the flicker rather than
+      // dropping the finished design in (at Complete it always does): what a
+      // squeezed waveform, ending AT Complete, is checked against.
+      var later = Object.assign({}, cue, { complete: cue.complete + 1 });
       // The instant each scale's PHASE WINDOW closes, jitter and all - the
       // number the flicker is actually driven by. `wouldEnd` is what the same
       // scale would reach if its jitter were simply added to the start (what
@@ -256,29 +279,41 @@ _FLICKER_TIMING_PROBE = """
       // that was never broken.
       var phaseEnds = 0, wouldEnd = 0, maxJitter = 0;
       for (var j = 0; j < N; j++) {
-        var jit = SIM.flicker.startJitter(model.jitter[j], repaint);
+        var jit = SIM.flicker.startJitter(model.jitter[j], wave);
         maxJitter = Math.max(maxJitter, model.jitter[j]);
-        phaseEnds = Math.max(phaseEnds, cue.sent + model.delay[j] + jit + (repaint - jit));
+        phaseEnds = Math.max(phaseEnds, cue.sent + model.delay[j] + jit + (wave - jit));
         wouldEnd = Math.max(wouldEnd, cue.sent + model.delay[j] + model.jitter[j] + repaint);
       }
       out.cases.push({
-        name: name, repaint: repaint, span: span, maxJitter: maxJitter,
+        name: name + (fw ? "@" + fw : ""), fw: prof.id, repaint: repaint, wave: wave,
+        squeezed: squeezed, span: span, maxJitter: maxJitter, lastDelay: lastDelay,
         phaseEnds: phaseEnds, wouldEndWithJitterAdded: wouldEnd,
-        sent: cue.sent, complete: cue.complete, lastEnds: end,
-        settledJustBeforeTheEnd: settledAt(end - 0.01, false),
-        settledAtTheEnd: settledAt(end, false),
+        sent: cue.sent, complete: cue.complete, lastEnds: end, flatEnd: flatEnd,
+        settledJustBeforeTheEnd: settledAt(flatEnd - 0.01, false),
+        settledAtTheEnd: settledAt(flatEnd, false),
         settledInsideTheBand: settledAt(cue.complete - 0.001, false),
         flickerStillDrawingEarly: !settledAt(cue.sent + 0.05, true),
         flickerSettledAtTheEnd: settledAt(end, true),
-        flickerSettledInsideTheBand: settledAt(cue.complete - 0.001, true)
+        // Settled INSIDE the band, on the flicker path: 1 ms before Complete
+        // where the waveform (7.28 s) ends inside the 7.3 s repaint; where it
+        // is squeezed into a shorter refresh it ends AT Complete, so it is
+        // checked at its own end on a cue whose Complete is later (`later`)
+        // - at Complete itself wornAt() drops the design in whatever the
+        // flicker does, which would check nothing.
+        flickerSettledInsideTheBand: squeezed ? settledAt(end, true, later)
+                                              : settledAt(cue.complete - 0.001, true),
+        // ...and the flicker really is still drawing just before that end.
+        flickerDrawingJustBefore: !settledAt(end - 0.02, true, later)
       });
     }
-    run("natural", 8.0, 0);
-    run("sweep_span1", 8.0, 1.0);
-    run("sweep_span7", 8.0, 7.0);
-    run("legacy7_span1", 7.0, 1.0);
-    run("compressed1", 1.0, 0);
-    run("cue_own_16", 8.0, 1.0, 16.0);
+    [undefined, "FW_260923"].forEach(function (fw) {
+      run("natural", 8.0, 0, undefined, fw);
+      run("sweep_span1", 8.0, 1.0, undefined, fw);
+      run("sweep_span7", 8.0, 7.0, undefined, fw);
+      run("legacy7_span1", 7.0, 1.0, undefined, fw);
+      run("compressed1", 1.0, 0, undefined, fw);
+      run("cue_own_16", 8.0, 1.0, 16.0, fw);
+    });
   } catch (e) { out.error = String((e && e.stack) || e); }
   publish();
 })();
@@ -292,7 +327,7 @@ def flicker_timing(tmp_path_factory):
     _require_browser(tmp)
     sim = REPO / "conductor" / "web" / "sim"
     scripts = "".join(f"<script>\n{(sim / n).read_text(encoding='utf-8')}\n</script>\n"
-                      for n in ("model.js", "flicker.js"))
+                      for n in ("model.js", "panelfw.js", "flicker.js"))
     page = tmp / "flicker.html"
     page.write_text('<!doctype html>\n<html><head><meta charset="utf-8"></head>'
                     f"<body>\n{scripts}{_FLICKER_TIMING_PROBE}</body></html>\n",
@@ -311,39 +346,52 @@ def test_a_scales_flicker_lasts_one_physical_repaint_not_the_whole_refresh(flick
     physical repaint, so that is what the flicker is phased over - phasing it
     over the refresh left the last scale of a swept cue mid-flicker at Complete,
     where wornAt() drops the finished design in and the preview snapped."""
+    # PANEL_REPAINT_S is 7.3 since 2026-11-19 (measured 7.28 s): a 1 s sweep
+    # now completes at 8.3 s, an all-at-once cue still inside its 8 s. The
+    # flicker plays the measured waveform, 662 ticks x 11 ms = 7.282 s, so
+    # its own end (lastEnds) is 18 ms inside the repaint; the flat cut
+    # (flatEnd) is at the repaint.
     natural = flicker_timing["natural"]
-    assert natural["repaint"] == 7.0 and natural["complete"] == 68.0
+    assert natural["repaint"] == 7.3 and natural["complete"] == 68.0
+    assert natural["wave"] == pytest.approx(7.282) and not natural["squeezed"]
     # It ends one repaint in and the rest of the band is a settled picture -
-    # which is what the hardware does: 7 s of drawing inside an 8 s budget.
-    assert natural["lastEnds"] == 67.0
+    # which is what the hardware does: 7.3 s of drawing inside an 8 s budget.
+    assert natural["flatEnd"] == pytest.approx(67.3)
+    assert natural["lastEnds"] == pytest.approx(67.282)
     assert not natural["settledJustBeforeTheEnd"]
     assert natural["settledAtTheEnd"] and natural["settledInsideTheBand"]
 
     # A production sweep: the last scale starts at span and finishes one
     # repaint later - exactly at Complete, never past it.
     swept = flicker_timing["sweep_span1"]
-    assert swept["span"] == 1.0 and swept["repaint"] == 7.0
-    assert swept["lastEnds"] == swept["complete"] == 68.0
+    assert swept["span"] == 1.0 and swept["repaint"] == 7.3
+    assert swept["flatEnd"] == pytest.approx(swept["complete"])
+    assert swept["complete"] == pytest.approx(68.3)
+    assert swept["lastEnds"] == pytest.approx(68.282)
     assert not swept["settledJustBeforeTheEnd"]
     assert swept["settledAtTheEnd"]
 
-    # A sweep that genuinely runs past the refresh: 7 s repaint + 7 s sweep.
+    # A sweep that genuinely runs past the refresh: 7.3 s repaint + 7 s sweep.
     long_sweep = flicker_timing["sweep_span7"]
-    assert long_sweep["lastEnds"] == long_sweep["complete"] == 74.0
+    assert long_sweep["flatEnd"] == pytest.approx(long_sweep["complete"])
+    assert long_sweep["complete"] == pytest.approx(74.3)
 
-    # A show still at the legacy 7.0 s refresh reaches the same 8 s Complete.
+    # A show still at the legacy 7.0 s refresh reaches the same 8 s Complete:
+    # its repaint is capped at its own 7 s refresh, and the waveform squeezed
+    # into it ends AT Complete.
     legacy = flicker_timing["legacy7_span1"]
-    assert legacy["repaint"] == 7.0
+    assert legacy["repaint"] == 7.0 and legacy["squeezed"]
     assert legacy["lastEnds"] == legacy["complete"] == 68.0
 
     # A refresh set below one repaint (a bench run) is the operator's own
     # statement about the panel - the 7 s constant is not put back on top.
     assert flicker_timing["compressed1"]["repaint"] == 1.0
     assert flicker_timing["compressed1"]["lastEnds"] == 61.0
+    assert flicker_timing["compressed1"]["squeezed"]
 
     # A cue on slower firmware keeps its own, longer repaint.
     own = flicker_timing["cue_own_16"]
-    assert own["repaint"] == 7.0          # capped by PANEL_REPAINT_S, not 16
+    assert own["repaint"] == 7.3          # capped by PANEL_REPAINT_S, not 16
     assert own["complete"] == 76.0        # ...but the cue still holds the band
 
     # The invariant behind all of it, on BOTH paths: no scale is ever still
@@ -352,9 +400,13 @@ def test_a_scales_flicker_lasts_one_physical_repaint_not_the_whole_refresh(flick
     # in, so a scale that had not arrived used to snap there. The flicker's
     # per-scale jitter is a late START, and it comes out of that scale's own
     # repaint for exactly this reason.
+    # Every case is run under BOTH panel firmware profiles ("<name>" is the
+    # default FW_261119F, "<name>@FW_260923" the production one).
+    assert {c["fw"] for c in flicker_timing.values()} == {"FW_261119F", "FW_260923"}
     for name, case in flicker_timing.items():
         assert case["lastEnds"] <= case["complete"], f"{name}: {case}"
         assert case["phaseEnds"] <= case["complete"], f"{name}: {case}"
+        assert case["lastEnds"] == pytest.approx(case["sent"] + case["lastDelay"] + case["wave"])
         assert case["flickerStillDrawingEarly"], f"{name}: {case}"
         assert case["flickerSettledAtTheEnd"], f"{name}: {case}"
         assert case["flickerSettledInsideTheBand"], f"{name}: {case}"
@@ -367,6 +419,12 @@ def test_a_scales_flicker_lasts_one_physical_repaint_not_the_whole_refresh(flick
     for name in ("sweep_span1", "sweep_span7", "legacy7_span1", "compressed1"):
         case = flicker_timing[name]
         assert case["wouldEndWithJitterAdded"] > case["complete"], f"{name}: {case}"
+    # Under FW_261119F every colour drives to the waveform's last ticks, so
+    # 20 ms before its end the flicker is still visibly drawing (the probe's
+    # garment is in code 1, drive_end 662).
+    for name, case in flicker_timing.items():
+        if case["fw"] == "FW_261119F":
+            assert case["flickerDrawingJustBefore"], f"{name}: {case}"
 
 
 def test_starter_is_current():

@@ -22,6 +22,8 @@ body { margin: 0; font: 14px/1.55 "Segoe UI", "Hiragino Sans", "Yu Gothic UI", M
 header { display: flex; align-items: center; gap: 14px; padding: 10px 18px; flex-wrap: wrap;
   background: var(--panel); border-bottom: 1px solid var(--line); }
 header h1 { font-size: 16px; margin: 0; letter-spacing: .04em; }
+header .panel-fw { color: var(--dim); font-size: 12px; }
+header .panel-fw select { font-size: 12px; margin-left: 4px; }
 header .ws { color: var(--dim); font-size: 12px; margin-left: auto;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
 button, select, input[type=text], .filebtn { font: inherit; color: var(--ink); background: var(--panel);

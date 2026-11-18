@@ -905,8 +905,9 @@ def timeline_cases() -> list:
     cases.append(_run_timeline_case(
         "refresh8_natural_fine", [nat8, _cue("b", "Look22", 69.0, "p2")],
         sweep8, refresh=eight))
-    # A production sweep (span 1) fits inside the 8 s: complete is still
-    # 8 s, and the floor is still 9 s - the same for both cue kinds.
+    # A production sweep (span 1): since the 7.3 s panel repaint
+    # (2026-11-19) it no longer fits inside the 8 s - complete 8.3 s, floor
+    # 9.3 s (it fitted, at 8 / 9 s, while the repaint was modelled as 7.0).
     swept8_1 = _cue("a", "Look22", 60, "g1.csv",
                    sweep={"sequence": "top_down", "span_s": 1.0, "source": "cue"},
                    span=1.0)
@@ -915,14 +916,34 @@ def timeline_cases() -> list:
         sweep8, refresh=eight))
     cases.append(_run_timeline_case(
         "refresh8_sweep_span1_fine",
+        [swept8_1, _cue("b", "Look22", 69.3, "p2")], sweep8, refresh=eight))
+    # After the 8.3 s Complete but inside the 9.3 s floor: the interval
+    # refusal in the sweep's own terms (b at 68.0 above is the overlap one,
+    # whose Complete now carries its tenth - "(1:08.3)").
+    cases.append(_run_timeline_case(
+        "refresh8_sweep_span1_short",
         [swept8_1, _cue("b", "Look22", 69.0, "p2")], sweep8, refresh=eight))
-    # A 7 s sweep does run past it: complete 14 s (7 s repaint + 7 s
-    # sweep), floor 15 s, and the message says so in those terms.
+    # The floor is compared at the precision it is shown (2026-11-19): with
+    # the 7.3 s repaint, 7.3 + 16.1 + 1.0 is 24.400000000000002 in floating
+    # point, and a cue exactly at the 24.4 s minimum was refused with "only
+    # 24.4 s ...; at least 24.4 s is needed". At the minimum: fine; 0.1 s
+    # under it: refused.
+    swept8_16 = _cue("a", "Look22", 60, "g1.csv",
+                    sweep={"sequence": "top_down", "span_s": 16.1, "source": "cue"},
+                    span=16.1)
+    cases.append(_run_timeline_case(
+        "refresh8_sweep_16_1_at_the_minimum",
+        [swept8_16, _cue("b", "Look22", 84.4, "p2")], sweep8, refresh=eight))
+    cases.append(_run_timeline_case(
+        "refresh8_sweep_16_1_under_the_minimum",
+        [swept8_16, _cue("b", "Look22", 84.3, "p2")], sweep8, refresh=eight))
+    # A 7 s sweep does run past it: complete 14.3 s (7.3 s repaint + 7 s
+    # sweep), floor 15.3 s, and the message says so in those terms.
     swept8_7 = _cue("a", "Look22", 60, "g1.csv",
                    sweep={"sequence": "top_down", "span_s": 7.0, "source": "cue"},
                    span=7.0)
     cases.append(_run_timeline_case(
-        "refresh8_sweep_span7", [swept8_7, _cue("b", "Look22", 74.0, "p2")],
+        "refresh8_sweep_span7", [swept8_7, _cue("b", "Look22", 75.0, "p2")],
         sweep8, refresh=eight))
     # A cue's own refresh above panel + span wins outright.
     own12 = _cue("a", "Look22", 60, "g1.csv", refresh_s=12.0,
@@ -1038,6 +1059,10 @@ def build_reference_state(project: dict) -> dict:
         entry["unit"] = None
     state.pop("history", None)
     state.pop("workspace", None)
+    # The panel firmware profiles (2026-11-19) reach the Conductor's page in
+    # its state; the designers' simulator loads the same data straight from
+    # conductor/web/sim/panelfw.js, so SIM.buildState() never carries it.
+    state.pop("panel_fw", None)
     # "Clear pictures after the show" (2026-09-27) is the operator's, about
     # the fleet: which slots the units empty once the show is over. The
     # designers' simulator has no units and no notion of it, exactly as it

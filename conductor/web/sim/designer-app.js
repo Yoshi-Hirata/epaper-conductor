@@ -58,8 +58,8 @@
   // sweep on top of it in their head.
   const REFRESH_HELP = "Command to finished picture, the transition's sweep"
     + ` included: ${DEFAULT_REFRESH_S.toFixed(1)} s is a ${PANEL_REPAINT_S.toFixed(1)} s`
-    + " panel repaint with a 1 s sweep already inside it. Only a sweep longer"
-    + " than this pushes a design's Complete out.";
+    + ` panel repaint with room for a ${(DEFAULT_REFRESH_S - PANEL_REPAINT_S).toFixed(1)} s sweep`
+    + " inside it. Only a longer sweep pushes a design's Complete out.";
   function freshProject() {
     return { files: {}, show: { duration: 600, refresh_s: DEFAULT_REFRESH_S, cues: [], transitions: {}, labels: {}, boards: {}, music: null } };
   }
@@ -147,7 +147,10 @@
     return p;
   }
 
-  const ui = { tab: "designs", item: null, design: null, view: "outside", cue: null, simView: false };
+  // panelFw: the panel firmware profile's id (sim/panelfw.js, 2026-11-19) -
+  // a view setting of this browser like the others here, not part of the
+  // project: "" = panelfw.js's default.
+  const ui = { tab: "designs", item: null, design: null, view: "outside", cue: null, simView: false, panelFw: "" };
 
   function loadUiPrefs() {
     try {
@@ -158,7 +161,7 @@
     } catch {}
   }
   function saveUiPrefs() {
-    try { localStorage.setItem(UI_KEY, JSON.stringify({ tab: ui.tab, item: ui.item, design: ui.design, view: ui.view, simView: ui.simView })); } catch {}
+    try { localStorage.setItem(UI_KEY, JSON.stringify({ tab: ui.tab, item: ui.item, design: ui.design, view: ui.view, simView: ui.simView, panelFw: ui.panelFw })); } catch {}
   }
 
   // The autosave wins over the shipped starter data, which is right - it is
@@ -287,7 +290,8 @@
     }
     buildError = null;
     state = built;
-    globalThis.SIM.flicker.clearCaches();
+    state.basePalette = state.palette;    // look.PALETTE, the FW_260923 chart
+    applyPanelFw();
     if (!state.items.some(i => i.item === ui.item)) ui.item = state.items[0]?.item ?? null;
     if (ui.item) {
       const item = state.items.find(i => i.item === ui.item);
@@ -300,6 +304,34 @@
     if (ui.cue !== null && !state.show.cues.some(c => sameId(c.id, ui.cue))) ui.cue = null;
     render();
   }
+
+  // The selected panel firmware's palette over look.PALETTE (FW_261119F's
+  // pinks at 0x0A/0x0C), so everything that paints or names a code follows
+  // the selector, and the flicker's caches (keyed by code) start over.
+  function applyPanelFw() {
+    state.palette = globalThis.SIM.panelFw.paletteOf(state.basePalette, ui.panelFw);
+    globalThis.SIM.flicker.clearCaches();
+  }
+  function paintPanelFwPick() {
+    const select = $("#panel-fw");
+    if (!select) return;
+    const fw = globalThis.SIM.panelFw;
+    if (!select.options.length) {
+      select.innerHTML = fw.data.profiles.map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join("");
+    }
+    select.value = fw.profile(ui.panelFw).id;
+  }
+  function choosePanelFw(id) {
+    ui.panelFw = id;
+    saveUiPrefs();
+    if (state) applyPanelFw();
+    render();
+  }
+  // A code's name as the selected firmware has it, marked while its RGB is an
+  // estimate (FW_261119F's pinks: from chart photos, not measured on the panel).
+  const ESTIMATE_NOTE = "colour from the colour chart photos - not measured on the panel yet";
+  const colorName = c => state.palette[c].name + (state.palette[c].estimate ? " (est.)" : "");
+  const colorTitle = c => state.palette[c].estimate ? ` title="${esc(state.palette[c].name)}: ${ESTIMATE_NOTE}"` : "";
 
   // Two garments can share one LOOK on purpose (the show line-up puts a top
   // and its skirt on the same Radxa under one LOOK number - LOOK 26 in the
@@ -795,7 +827,7 @@
               <span style="margin-left:6px">whatever name the files arrive under, they are saved as ${esc(item.item)}_… and belong to this item alone</span></div>
           </div>
           ${design ? `<div class="card"><h2>COLOURS USED</h2><table><tbody>
-            ${Object.keys(usage).sort((a, b) => a - b).map(c => `<tr><td><span class="sw" style="background:rgb(${state.palette[c].rgb.join(",")})"></span>${esc(state.palette[c].name)}</td><td>${usage[c]}</td></tr>`).join("")}
+            ${Object.keys(usage).sort((a, b) => a - b).map(c => `<tr${colorTitle(c)}><td><span class="sw" style="background:rgb(${state.palette[c].rgb.join(",")})"></span>${esc(colorName(c))}</td><td>${usage[c]}</td></tr>`).join("")}
             ${design.undecided.length ? `<tr><td>- undecided</td><td>${design.undecided.length}</td></tr>` : ""}
             </tbody></table></div>` : ""}
           <div class="card"><h2>MAP FILE</h2><div class="files"><span>${esc(item.map.name)} <button data-del="${esc(item.map.name)}">×</button></span></div></div>
@@ -808,7 +840,7 @@
   // ==================================================================
   function trackItems() { return orderByLook(state.items.filter(i => i.map && i.map.scales.length)); }
   function cuesOf(item) { return state.show.cues.filter(c => c.item === item.item).sort((a, b) => a.sent - b.sent); }
-  const ctx = () => ({ cuesOf, palette: state.palette, refreshS: state.show.refresh_s });
+  const ctx = () => ({ cuesOf, palette: state.palette, refreshS: state.show.refresh_s, fw: ui.panelFw });
 
   function nextUnusedDesign(item) {
     const used = new Set(cuesOf(item).map(c => c.design));
@@ -1846,6 +1878,8 @@
   }
   function wireChrome() {
     document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => { ui.tab = b.dataset.tab; ui.cue = null; persist(); render(); }));
+    paintPanelFwPick();
+    $("#panel-fw").addEventListener("change", e => choosePanelFw(e.target.value));
     $("#new-project").addEventListener("click", () => {
       if (!confirm("Start a new, empty project? Drop new CSV files to fill it (your autosaved project is replaced).")) return;
       globalThis.SIM.app.newProject();

@@ -1579,8 +1579,9 @@
 
   // ONE BOARD's physical repaint, command to finished image (firmware-
   // dependent: 9.8 s first boards, 16 s production boards, ~7 s on the
-  // latest). The sweep's real end is measured from it.
-  const PANEL_REPAINT_S = 7.0;
+  // latest, measured 7.28 s on the reference video - 7.3 since 2026-11-19,
+  // conductor/timeline.py). The sweep's real end is measured from it.
+  const PANEL_REPAINT_S = 7.3;
   // The default MODELLED refresh of a cue - the seconds budgeted from a
   // send to "picture complete", the sweep INCLUDED (2026-09-26, the
   // operator: 8 s for both a swept and an all-at-once cue). This is what
@@ -1646,6 +1647,14 @@
     const total = fmt.roundInt(Math.abs(seconds));
     const m = Math.trunc(total / 60), s = total - m * 60;
     return `${sign}${m}:${pad2(s)}`;
+  }
+  // timeline.py's format_clock_tenth(): the tenth when not a whole second.
+  function formatClockTenth(seconds) {
+    const parts = fmt.fixed(Math.abs(seconds), 1).split(".");
+    if (parts[1] === "0") return formatClock(seconds);
+    const total = Number(parts[0]);
+    const m = Math.trunc(total / 60), s = total - m * 60;
+    return `${seconds < 0 ? "-" : ""}${m}:${pad2(s)}.${parts[1]}`;
   }
 
   // `boards` is kept (unused) so callers built for the old, per-board
@@ -1714,7 +1723,7 @@
     if (!unitCues || !unitCues.length) return minInterval(boards, refresh, gap);
     let longest = completeS(unitCues[0], refresh);
     unitCues.forEach(c => { longest = pyMax2(longest, completeS(c, refresh)); });
-    return longest + gap;
+    return fmt.round(longest + gap, 3);        // validate()'s own floor
   }
 
   // conductor/timeline.py's unit_picture_s(): seconds after one send until
@@ -1945,7 +1954,7 @@
         const prevTimes = times(prev, refresh);
         const curSent = times(cur, refresh)[0];
         if (curSent !== prevTimes[0] && curSent < prevTimes[1]) {
-          problems[cur.id].push(`starts before the previous picture is complete (${formatClock(prevTimes[1])})`);
+          problems[cur.id].push(`starts before the previous picture is complete (${formatClockTenth(prevTimes[1])})`);
           overlapped.add(cur.id);
         }
       }
@@ -2009,7 +2018,8 @@
           });
           const before = completeS(slowest, refresh);
           const slowRefresh = effectiveRefresh(slowest, refresh);
-          const need = before + gap;
+          // Rounded the same way as `spacing` - timeline.py's own note.
+          const need = fmt.round(before + gap, 3);
           if (spacing < need) {
             // The sweep, not the refresh, is what the next send waits
             // for: say so in its own terms.
