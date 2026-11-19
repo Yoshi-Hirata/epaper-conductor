@@ -215,6 +215,11 @@ class FirmwareUpdater:
         # Pending background query: ("scan", None) or ("probe", addr).
         self._probe_pending: tuple[str, int | None] | None = None
         self.found: dict[int, str] = {}   # last scan: addr -> state line
+        # A scan asked for or running (2026-11-22, Kunitachi): KEY1 before
+        # it has found the board flashed the default address 01 instead -
+        # "no ACK", "flash failed" on radxa-08/09 - and the 1..30 scan
+        # takes long enough (~9 s) to press it in time. start() waits.
+        self.scanning = False
 
     # ---- facts for the screen ----
 
@@ -330,6 +335,8 @@ class FirmwareUpdater:
         target without the operator reading DIP switches. UP/DOWN after
         the scan override it with a plain probe.
         """
+        if not self.busy:
+            self.scanning = True
         self._enqueue(("scan", None))
 
     def _enqueue(self, job: tuple[str, int | None]) -> None:
@@ -352,9 +359,17 @@ class FirmwareUpdater:
                     return
             kind, addr = job
             if kind == "scan":
+                self.scanning = True
                 self.board_state = "scanning..."
-                self._scan()
+                try:
+                    self._scan()
+                finally:
+                    with self._lock:
+                        pending = self._probe_pending
+                    if pending is None or pending[0] != "scan":
+                        self.scanning = False
                 continue
+            self.scanning = False         # UP/DOWN chose an address by hand
             self.board_state = "checking..."
             state = self._with_bus(lambda bus: ota.describe_state(
                 ota.query_state(bus, addr, quiet=True,
@@ -422,6 +437,12 @@ class FirmwareUpdater:
             self.phase = FAILED
             self.error = "no firmware image"
             self.emit("no firmware image in FW/", error=True)
+            return
+        if self.scanning:
+            # Not FAILED: nothing went wrong, the target is not known yet.
+            self.emit("still looking for the board - wait for "
+                      "'board NN found', then KEY1")
+            self.board_state = "scanning... wait, then KEY1"
             return
         if self.bus_shared:
             # KEY1 on the result screen rescans, which is the way back

@@ -614,10 +614,14 @@ def test_key1_flashes_and_buttons_are_ignored_meanwhile(tmp_path):
         progress(len(image), len(image))
         return True
 
-    updater, _ = make_updater(make_image(tmp_path), flash=slow_flash)
+    # One board on the cable (ID 1): the scan picks it, KEY1 then flashes.
+    updater, _ = make_updater(make_image(tmp_path), flash=slow_flash,
+                              bus=FakeOtaBus(answers={1}))
     app, runner = make_app(updater)
     app.select("update")
     app.handle("key1")
+    # The entry scan must finish first: KEY1 during it waits (2026-11-22).
+    assert wait_until(lambda: not updater.scanning)
     app.handle("key1")                       # flash
     assert wait_until(lambda: updater.phase == FLASHING)
     for event in ("key2", "key1", "down", "key1_hold", "press"):
@@ -768,3 +772,43 @@ def test_two_presses_after_a_wake_never_start_a_flash(tmp_path):
             clock.advance(0.6)
             app.handle(second)
             assert updater.phase == IDLE and app.screen is Screen.UPDATE, (wake, second)
+
+
+def test_key1_while_the_scan_runs_waits_instead_of_flashing_board_01(tmp_path):
+    # radxa-08/09, 2026-11-22: KEY1 pressed while the 1..30 scan was still
+    # looking flashed the default address 01 ("no ACK", "flash failed")
+    # while the board on the cable was 05. Now start() waits for the scan.
+    import threading
+    gate = threading.Event()
+    real = FakeOtaBus(answers={5})
+
+    class SlowBus(FakeOtaBus):
+        def __enter__(self):
+            gate.wait(5)
+            return real.__enter__()
+
+        def __exit__(self, *exc):
+            return real.__exit__(*exc)
+
+    updater, calls = make_updater(make_image(tmp_path), boards=[1, 5],
+                                  open_bus=lambda port: SlowBus())
+    updater.scan()
+    assert updater.scanning
+    updater.start()
+    assert updater.phase == IDLE and calls["flash"] == []
+    assert "wait" in updater.board_state
+    gate.set()
+    assert wait_until(lambda: updater.board_state.endswith("(auto)"))
+    assert not updater.scanning and updater.addr == 5
+    updater.start()
+    assert wait_until(lambda: calls["flash"] == [5])
+
+
+def test_up_down_during_a_scan_lets_key1_flash_the_chosen_address(tmp_path):
+    updater, calls = make_updater(make_image(tmp_path),
+                                  bus=FakeOtaBus(answers={20}))
+    updater.scan()
+    assert wait_until(lambda: not updater.scanning)
+    updater.select(-1)                       # by hand: board 1
+    assert wait_until(lambda: not updater.scanning)
+    assert updater.addr == 1
