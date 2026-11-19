@@ -820,6 +820,7 @@ def test_a_start_by_beacon_then_by_http_with_its_serial_runs_once(tmp_path):
 def test_a_forced_start_delivered_twice_with_one_serial_runs_once(tmp_path):
     unit = Real(tmp_path, serve=True)
     try:
+        unit.agent.beacon_seen_cid = 99       # this Conductor's beacon was heard
         runs = count_runs(unit)
         t0 = time.monotonic() + 1.0
         body = {"t0": t0, "show": SHOW_ID, "force": True}
@@ -903,6 +904,7 @@ def test_an_http_run_overtaken_by_a_stop_while_it_queued_is_dropped(tmp_path):
     # would have had the last word.
     unit = Real(tmp_path, serve=True)
     try:
+        unit.agent.beacon_seen_cid = 99       # this Conductor's beacon was heard
         runs = []
         run = unit.player.run
         unit.player.run = lambda *a, **k: (runs.append(a), run(*a, **k))[1]
@@ -959,12 +961,41 @@ def test_a_beacon_run_that_lands_after_an_http_stop_is_stopped_again(tmp_path):
         unit.close()
 
 
+def test_until_a_beacon_is_heard_the_http_path_is_the_one_before_the_beacon(
+        tmp_path):
+    # The Conductor's switch is off (or this unit is out of its reach):
+    # no lock on the HTTP path, no same-START no-op, nothing dropped -
+    # exactly what the unit did before the beacon existed.
+    unit = Real(tmp_path, serve=True)
+    try:
+        runs = count_runs(unit)
+        t0 = time.monotonic() + 2.0
+        body = {"t0": t0, "show": SHOW_ID}
+        assert unit.agent.beacon_seen_cid is None
+        assert unit.agent.show_lock.acquire(timeout=1)     # nobody waits for it
+        try:
+            assert post(unit.agent, "/show/run", body, serial(99, 5))[0] == 200
+            assert post(unit.agent, "/show/run", body, serial(99, 5))[0] == 200
+            assert len(runs) == 2                          # the same START twice: both run
+            assert post(unit.agent, "/show/hold", {}, serial(99, 4))[0] == 200
+            assert unit.player.status()["state"] == "holding"   # an older gen acts too
+            assert post(unit.agent, "/show/stop", {}, serial(99, 6))[0] == 200
+        finally:
+            unit.agent.show_lock.release()
+        # ...and the stamps are kept for the beacon's first datagram.
+        assert unit.agent.show_cmd_serial == (99, 6)
+        assert unit.agent.stops_seen == 1
+    finally:
+        unit.close()
+
+
 def test_http_run_and_beacon_cannot_both_run_one_serial(tmp_path):
     # V2: the HTTP run holds show_lock from the stamp through the player
     # call. Gate the player inside one path's call and deliver the other
     # path's copy meanwhile: it waits, then finds the run applied.
     unit = Real(tmp_path, serve=True)
     try:
+        unit.agent.beacon_seen_cid = 99       # this Conductor's beacon was heard
         runs = []
         inside, release = threading.Event(), threading.Event()
         run = unit.player.run

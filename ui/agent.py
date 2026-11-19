@@ -401,6 +401,7 @@ class Agent:
         # queued is dropped, and the beacon stops again a unit its own
         # run/hold landed on after a STOP (final review, 2026-11-20).
         self.stops_seen = 0
+        self._stops_lock = threading.Lock()
         self.beacon = None             # ui.beacon.Beacon, or None
         # The newest (cid, gen) the beacon accepted for this unit - an
         # applied run/hold/stop, or an entry that found the unit already
@@ -469,6 +470,18 @@ class Agent:
         if via != "http":
             return self._dispatch(path, body, serial)
         serial = _header_serial(headers)
+        if self.beacon_seen_cid is None:
+            # No beacon entry for this unit has been heard this boot (the
+            # Conductor's switch is off, or this unit is out of its
+            # reach): the HTTP path is what it was before the beacon -
+            # no lock, no same-START no-op, nothing dropped. Only the
+            # stamps are kept (plain assignments, read by the beacon
+            # alone), so that its first datagram is ordered against what
+            # HTTP already did (final review, 2026-11-20).
+            self._stamp(serial)
+            if path == "/show/stop":
+                self._count_stop()
+            return self._dispatch(path, body, serial, dedupe=False)
         if path in ("/show/run", "/show/hold"):
             stops = self.stops_seen             # before any wait
             with self.show_lock:
@@ -494,12 +507,20 @@ class Agent:
             # beacon, whose own stop can sit in the player's settle wait
             # for up to 2 s. It goes straight to the player, as it did
             # before the lock existed; stops_seen tells the others.
-            self.stops_seen += 1
+            # Stamp BEFORE the count: a beacon call that read the count
+            # after this STOP then also sees its stamp (and drops an
+            # older run), and one that read it before sees it change
+            # (and stops the unit again).
             self._stamp(serial)
+            self._count_stop()
             return self._dispatch(path, body, serial)
         # load, preset, clear: stamped and dispatched as before the lock.
         self._stamp(serial)
         return self._dispatch(path, body, serial)
+
+    def _count_stop(self) -> None:
+        with self._stops_lock:              # two STOPs at once: both counted
+            self.stops_seen += 1
 
     def _late(self, serial) -> "int | None":
         """The newest gen this unit accepted from that Conductor, by
@@ -527,7 +548,8 @@ class Agent:
                 and serial[0] == last[0] and gen_older(serial[1], last[1])):
             self.show_cmd_serial = serial
 
-    def _dispatch(self, path: str, body: dict, serial) -> bool:
+    def _dispatch(self, path: str, body: dict, serial,
+                  dedupe: bool = True) -> bool:
         player = self.player
         if player is None:
             raise RemoteError("this unit has no show player")
@@ -554,7 +576,7 @@ class Agent:
             player.preset(bool(body.get("force", False)))
         elif path == "/show/run":
             t0, show_id = float(body["t0"]), body.get("show")
-            if self._same_run(serial, t0, show_id):
+            if dedupe and self._same_run(serial, t0, show_id):
                 print("show/run: already running this command - "
                       "not restarted", flush=True)
                 return True                  # V1: this START, delivered again
