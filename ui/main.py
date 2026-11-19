@@ -21,6 +21,7 @@ from epaper.transport import find_port
 
 from .agent import DEFAULT_PORT, Agent
 from .app import App
+from .beacon import PORT as BEACON_PORT, Beacon
 from .demos import DemoStore
 from .display import make_display
 from .inputs import make_input
@@ -572,6 +573,11 @@ def main() -> int:
     ap.add_argument("--remote-port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--remote-token", metavar="TOKEN",
                     help="require this X-Show-Token on every agent request")
+    # The one-way UDP beacon (ui/beacon.py, docs/BEACON.md): on by
+    # default wherever the agent is, signed with the same token.
+    ap.add_argument("--no-beacon", action="store_true",
+                    help="do not listen for the Conductor's UDP beacon")
+    ap.add_argument("--beacon-port", type=int, default=BEACON_PORT)
     ap.add_argument("--max-ticks", type=int,
                     help="exit after N UI ticks (testing)")
     args = ap.parse_args()
@@ -629,7 +635,7 @@ def main() -> int:
     speaker = Speaker(exhibition)
     host = socket.gethostname() or None
 
-    remote = agent = demo_store = None
+    remote = agent = demo_store = beacon = None
     if not args.no_remote:
         remote = RemoteSession(runner)
         player = ShowPlayer(remote)
@@ -657,6 +663,16 @@ def main() -> int:
                 # still needs the PC: the picture stays either way.
                 args.no_standby = True
                 print("show restored after restart, no standby", flush=True)
+            # After restore(): a beacon must find the restored show, not
+            # race it. A port taken costs the beacon only, as above.
+            if not args.no_beacon:
+                beacon = Beacon(agent, port=args.beacon_port)
+                try:
+                    print(f"beacon on port {beacon.start()}", flush=True)
+                    agent.beacon = beacon
+                except OSError as exc:
+                    print(f"beacon not started: {exc}", flush=True)
+                    beacon = None
 
     display_kwargs = {"directory": args.frames} if args.display in ("png", "auto") else {}
     with make_display(args.display, **display_kwargs) as display, \
@@ -690,6 +706,8 @@ def main() -> int:
         try:
             app.run(max_ticks=args.max_ticks)
         finally:
+            if beacon is not None:
+                beacon.stop()
             if remote is not None:
                 # The run record is written off the player's lock, by its
                 # own thread: what is queued goes to the card before exit.

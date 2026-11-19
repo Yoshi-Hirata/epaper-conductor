@@ -104,6 +104,10 @@ a show.
     "pending" is {"profile", "in_s"} while a deferred switch (below)
     counts down, else null
 
+    /status also carries "beacon": the one-way UDP listener's counters
+    (ui/beacon.py, docs/BEACON.md section 3), null with --no-beacon. A
+    beacon acts through show_command(), the same code as POST /show/*
+
     POST /wifi/select  {"profile": <NetworkManager connection name>,
                         "after_s": 0-120 (default 0)}
                        switch this unit's Wi-Fi - Wifi.switch() exactly
@@ -258,39 +262,8 @@ class _Handler(BaseHTTPRequestHandler):
                                               "demos": demos.list()})
                 return self._answer(404, {"error": "not found"})
             if self.path.startswith("/show/"):
-                if player is None:
-                    raise RemoteError("this unit has no show player")
-                # A demo (never a PC-driven show, is_demo is False for
-                # those) that is RUNNING/HOLDING - or still writing its
-                # pictures after KEY1 (LOADED, burn "burning": review
-                # finding F7) - owns the unit until the operator stops
-                # it locally or the PC sends /show/stop - load/preset/run
-                # must not retime or replace it under someone's feet;
-                # hold/stop still work, since those are exactly how the
-                # PC takes the unit back.
-                if (self.path in ("/show/load", "/show/preset", "/show/run",
-                                  "/show/clear")
-                        and player.is_demo):
-                    if player.state in (RUNNING, HOLDING):
-                        raise RemoteError("a show is running - stop it first")
-                    burn = (player.status() or {}).get("burn") or {}
-                    if player.state == LOADED and burn.get("state") == "burning":
-                        raise RemoteError("a demo is writing its pictures - "
-                                          "stop it first")
-                if self.path == "/show/load":
-                    player.load(body)
-                elif self.path == "/show/preset":
-                    player.preset(bool(body.get("force", False)))
-                elif self.path == "/show/run":
-                    player.run(float(body["t0"]), body.get("show"),
-                               bool(body.get("force", False)))
-                elif self.path == "/show/hold":
-                    player.hold()
-                elif self.path == "/show/stop":
-                    player.stop()
-                elif self.path == "/show/clear":
-                    player.clear_pictures(body.get("show"))
-                else:
+                if not self.agent.show_command(self.path, body,
+                                               headers=self.headers):
                     return self._answer(404, {"error": "not found"})
             elif (player is not None and player.running
                   and self.path in ("/prepare", "/fire", "/standby")):
@@ -393,6 +366,16 @@ class Agent:
         self.name = name or socket.gethostname()
         self._server: "ThreadingHTTPServer | None" = None
         self._started = time.monotonic()
+        # When the last HTTP /show/* command arrived (show_command()),
+        # and the Conductor's (cid, run gen) it carried in X-Beacon-Cid /
+        # X-Run-Gen, None without them: the beacon drops what is older
+        # (docs/BEACON.md G5a, by serial; G5, by time, only while the
+        # serial is None). show_lock makes stamp and beacon call atomic
+        # against each other (section 7 A4): HTTP holds it to stamp only.
+        self.show_cmd_at: "float | None" = None
+        self.show_cmd_serial: "tuple[int, int] | None" = None
+        self.show_lock = threading.Lock()
+        self.beacon = None             # ui.beacon.Beacon, or None
 
     def status(self) -> dict:
         # Stamped first, before any of the work below - the PC's offset
@@ -412,8 +395,81 @@ class Agent:
                         "demos": len(self.demos.list()) if self.demos
                         else 0,
                         "wifi": self._wifi(),
+                        "beacon": self._beacon(),
                         "clock": clock})
         return payload
+
+    def show_command(self, path: str, body: dict, via: str = "http",
+                     headers=None) -> bool:
+        """One /show/* command - the HTTP handler's and the beacon's
+        (ui/beacon.py) one code path: the demo gate, then the player.
+        False for a path that is not a show command (the handler's
+        404); a refusal raises RemoteError, a bad body KeyError /
+        TypeError / ValueError, as before.
+
+        An HTTP command records its arrival first, whatever becomes of
+        it, with the (cid, gen) of `headers` when it carries both: a
+        beacon datagram of an older gen (or, without them, SENT before
+        it) must not undo it (docs/BEACON.md G5a/G5 and section 7,
+        2026-11-19). Only the stamp is under show_lock - the command
+        runs outside it, as before; a beacon call holds it throughout."""
+        if via == "http":
+            serial = None
+            try:
+                cid = (headers or {}).get("X-Beacon-Cid")
+                gen = (headers or {}).get("X-Run-Gen")
+                if cid is not None and gen is not None:
+                    serial = (int(cid), int(gen) & 0xFFFFFFFF)
+            except (TypeError, ValueError):
+                serial = None
+            with self.show_lock:
+                self.show_cmd_at = time.monotonic()
+                self.show_cmd_serial = serial
+        player = self.player
+        if player is None:
+            raise RemoteError("this unit has no show player")
+        # A demo (never a PC-driven show, is_demo is False for
+        # those) that is RUNNING/HOLDING - or still writing its
+        # pictures after KEY1 (LOADED, burn "burning": review
+        # finding F7) - owns the unit until the operator stops
+        # it locally or the PC sends /show/stop - load/preset/run
+        # must not retime or replace it under someone's feet;
+        # hold/stop still work, since those are exactly how the
+        # PC takes the unit back.
+        if (path in ("/show/load", "/show/preset", "/show/run",
+                     "/show/clear")
+                and player.is_demo):
+            if player.state in (RUNNING, HOLDING):
+                raise RemoteError("a show is running - stop it first")
+            burn = (player.status() or {}).get("burn") or {}
+            if player.state == LOADED and burn.get("state") == "burning":
+                raise RemoteError("a demo is writing its pictures - "
+                                  "stop it first")
+        if path == "/show/load":
+            player.load(body)
+        elif path == "/show/preset":
+            player.preset(bool(body.get("force", False)))
+        elif path == "/show/run":
+            player.run(float(body["t0"]), body.get("show"),
+                       bool(body.get("force", False)))
+        elif path == "/show/hold":
+            player.hold()
+        elif path == "/show/stop":
+            player.stop()
+        elif path == "/show/clear":
+            player.clear_pictures(body.get("show"))
+        else:
+            return False
+        return True
+
+    def _beacon(self) -> "dict | None":
+        # In-memory counters; never an exception out of /status either.
+        if self.beacon is None:
+            return None
+        try:
+            return self.beacon.status()
+        except Exception:               # noqa: BLE001 - null is an answer
+            return None
 
     def _wifi(self) -> dict:
         # The reader's cache, copied - never a question to nmcli here,
