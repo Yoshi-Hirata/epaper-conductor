@@ -66,6 +66,12 @@ DROP_KEYS = ("bad", "cid", "seq", "now", "gen", "http", "demo", "show",
              "host")
 
 
+def gen_older(gen: int, than: int) -> bool:
+    """32-bit serial arithmetic (section 7 A1): `gen` was issued before
+    `than`. Equal is not older."""
+    return (gen - than) & 0xFFFFFFFF >= 0x80000000
+
+
 def beacon_key(token: "str | None") -> bytes:
     """SHA-256(b"epaper-beacon-v1\\0" + token) - the fleet's token, the
     empty string when none is set, None included (section 7 A5; the
@@ -87,7 +93,7 @@ def unpack(data: bytes, key: bytes):
     if not hmac.compare_digest(hmac.new(key, body, hashlib.sha256).digest(),
                                mac):
         return None
-    if count < 1:
+    if count < 1 or cid == 0:          # cid: "non-zero" (section 2, U7)
         return None
     entries = []
     at = HEADER.size
@@ -169,9 +175,13 @@ class Beacon:
         self._applied = None           # {"what", "gen", "at"}
         self._ignored = None           # the last reason nothing was done
         self._dropped = dict.fromkeys(DROP_KEYS, 0)
-        self._retry_at = 0.0           # no command before this (RETRY_S)
+        # A refused command waits RETRY_S - that command of that serial
+        # only (U3): (cid, gen, path, not before). A refused RUN must
+        # never hold a STOP back.
+        self._retry = None
         self._refusal = None           # the refusal already logged
-        self._stop_told = None         # (cid, gen) a stop was applied for (A2)
+        self._stops = {}               # cid -> gen of the stop applied (A2, U4)
+        self._said = None              # the ignored reason already logged (U8)
 
     # ---- the per-datagram path (socket-free: the tests drive it) ----
 
@@ -191,32 +201,37 @@ class Beacon:
             return self._drop("host", f"no entry for {name}")
         cid = header["cid"]
         with self._lock:
-            # G2: only datagrams carrying our entry latch or refresh.
-            drop = None
+            # G2: only datagrams carrying our entry latch or refresh; the
+            # takeover comes once the latched one is CID_HOLD_S silent.
             if (cid != self._cid and self._cid is not None
                     and self._cid_heard is not None
-                    and mono - self._cid_heard <= CID_HOLD_S):
+                    and mono - self._cid_heard < CID_HOLD_S):
                 drop = "cid"
-            # G3 (A3): per cid, and only datagrams with our entry count -
-            # another unit's half of a split datagram, arriving first
-            # with seq + 1, does not hide ours.
-            last = self._seqs.get(cid)
-            if drop is None and last is not None and header["seq"] <= last:
-                drop = "seq"
-            if drop is None:
-                self._cid, self._cid_heard = cid, mono
-                self._seqs.pop(cid, None)
-                self._seqs[cid] = header["seq"]
-                while len(self._seqs) > SEQ_CIDS:
-                    self._seqs.pop(next(iter(self._seqs)))
-                self._gen = header["gen"]
+            else:
+                # G3 (A3): per cid, and only datagrams with our entry
+                # count - another unit's half of a split datagram,
+                # arriving first with seq + 1, does not hide ours.
+                last = self._seqs.get(cid)
+                drop = ("seq" if last is not None and header["seq"] <= last
+                        else None)
         if drop == "cid":
-            return self._drop("cid", "another Conductor")
+            return self._drop("cid", "another Conductor",
+                              say="other Conductor")
         if drop == "seq":
             return self._drop("seq", "seen already")
         # G4: a reboot on either side, a junk offset, an old capture.
         if abs(entry["now"] - mono) > NOW_TOLERANCE_S:
-            return self._drop("now", "clock out of step")
+            return self._drop("now", "clock out of step",
+                              say="clock (rebooted?)")
+        # Committed only now (U5): a datagram whose clock is unusable
+        # neither captures the latch nor moves the sequence on.
+        with self._lock:
+            self._cid, self._cid_heard = cid, mono
+            self._seqs.pop(cid, None)
+            self._seqs[cid] = header["seq"]
+            while len(self._seqs) > SEQ_CIDS:
+                self._seqs.pop(next(iter(self._seqs)))
+            self._gen = header["gen"]
         # A4: from G5 to the end of the call into the player, an HTTP
         # /show/* command cannot stamp itself in between - one that
         # arrives meanwhile lands after this call; one stamped first
@@ -227,14 +242,14 @@ class Beacon:
     def _act(self, header: dict, entry: dict, mono: float) -> str:
         cid, gen = header["cid"], header["gen"]
         serial = self.agent.show_cmd_serial
-        if serial is not None:
+        if serial is not None and serial[0] == cid:
             # G5a: the last HTTP command named this Conductor's run gen;
             # an older gen of the same cid is what that command replaced.
-            if serial[0] == cid and (gen - serial[1]) & 0xFFFFFFFF >= 0x80000000:
+            if gen_older(gen, serial[1]):
                 return self._drop("gen", "older gen than the last HTTP command")
         else:
-            # G5, the fallback for an HTTP command without the headers:
-            # anything sent before it loses.
+            # G5, by time: the last HTTP command carried no serial, or
+            # one of ANOTHER Conductor (U6) - anything sent before it loses.
             since = self.agent.show_cmd_at
             if since is not None and entry["now"] <= since + HTTP_MARGIN_S:
                 return self._drop("http", "older than the last HTTP command")
@@ -245,12 +260,14 @@ class Beacon:
             burn = (status.get("burn") or {}).get("state")
             if (status.get("state") in (RUNNING, HOLDING)
                     or (status.get("state") == LOADED and burn == "burning")):
-                return self._drop("demo", "the unit plays its own demo")
+                return self._drop("demo", "the unit plays its own demo",
+                                  say="own demo")
         # G7: not the show this unit holds.
         if status is None or entry["show"] != status.get("id"):
-            return self._drop("show", "not the loaded show")
+            return self._drop("show", "not the loaded show",
+                              say="show not loaded")
         path, reason = decide(entry, status, mono)
-        if path == "/show/stop" and self._stop_told == (cid, gen):
+        if path == "/show/stop" and self._stops.get(cid) == gen:
             # A2: once per (cid, gen) - a unit started again by someone
             # else is not stopped again by the same stop.
             path, reason = None, "stop: told already"
@@ -258,7 +275,9 @@ class Beacon:
             with self._lock:
                 self._ignored = reason
             return reason
-        if mono < self._retry_at:
+        retry = self._retry
+        if (retry is not None and retry[:3] == (cid, gen, path)
+                and mono < retry[3]):
             with self._lock:
                 self._ignored = f"{reason}: retry wait"
             return "retry wait"
@@ -269,31 +288,45 @@ class Beacon:
         except Exception as exc:        # noqa: BLE001 - never out of the thread
             # A RemoteError is the refusal an HTTP caller would get as a
             # 409 (burn "none", busy, ...): logged once per reason, asked
-            # again no sooner than RETRY_S.
+            # again no sooner than RETRY_S after it failed.
             text = str(exc) if isinstance(exc, RemoteError) else \
                 f"{exc.__class__.__name__}: {exc}"
-            self._retry_at = mono + RETRY_S
+            self._retry = (cid, gen, path, self._clock() + RETRY_S)
             with self._lock:
                 self._ignored = f"{reason} refused: {text}"
             if text != self._refusal:
                 self._refusal = text
-                self._emit(f"beacon: {reason} refused: {text}")
+                self._emit(f"beacon refused: {text}")
             return "refused"
-        self._retry_at, self._refusal = 0.0, None
+        self._retry, self._refusal, self._said = None, None, None
+        # U2: an HTTP run/hold/stop of an older gen of this Conductor,
+        # arriving after this, is late (Agent.show_command).
+        self.agent.beacon_serial = (cid, gen)
         if path == "/show/stop":
-            self._stop_told = (cid, gen)
+            self._stops.pop(cid, None)
+            self._stops[cid] = gen
+            while len(self._stops) > SEQ_CIDS:
+                self._stops.pop(next(iter(self._stops)))
         with self._lock:
             self._applied = {"what": reason, "gen": gen, "at": mono}
         if reason == "run":
-            self._emit(f"beacon: run (show at {mono - entry['t0']:.1f} s)")
+            at = mono - entry["t0"]
+            self._emit(f"beacon run, starts in {-at:.0f}s" if at < 0 else
+                       f"beacon run, joined at {at:.0f}s")
         else:
-            self._emit(f"beacon: {reason}")
+            self._emit(f"beacon {reason}")
         return reason
 
-    def _drop(self, key: str, reason: str) -> str:
+    def _drop(self, key: str, reason: str, say: "str | None" = None) -> str:
+        """Count a drop. `say`: the LCD's words for it - logged once per
+        change of reason (U8), and only for the drops that tell the
+        operator why a unit that hears the beacon does not obey it."""
         with self._lock:
             self._dropped[key] += 1
             self._ignored = reason
+        if say is not None and say != self._said:
+            self._said = say
+            self._emit(f"beacon ignored: {say}")
         return key
 
     def _emit(self, line: str) -> None:

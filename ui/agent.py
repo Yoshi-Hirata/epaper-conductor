@@ -154,6 +154,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .beacon import gen_older
 from .config import WIFI_FIELDS, WIFI_MAX_AFTER_S
 from .remote import DEV_NUMBER_BRAND, RemoteError, RemoteSession
 from .showplay import HOLDING, LOADED, RUNNING
@@ -161,6 +162,10 @@ from .showplay import HOLDING, LOADED, RUNNING
 DEFAULT_PORT = 8787
 MAX_BODY = 4 * 1024 * 1024      # a show: cues x boards x 2 x 128 hex chars
 API_VERSION = 1
+# A /show/run this close to the T0 already running is the same START
+# delivered twice (beacon and HTTP), not a new one: conductor/fleet.py's
+# T0_TOLERANCE_S, the supervision's own "in step" (review U1, 2026-11-20).
+SAME_T0_S = 0.05
 
 
 def _clock() -> dict:
@@ -376,6 +381,10 @@ class Agent:
         self.show_cmd_serial: "tuple[int, int] | None" = None
         self.show_lock = threading.Lock()
         self.beacon = None             # ui.beacon.Beacon, or None
+        # The (cid, gen) of the last run/hold/stop the beacon APPLIED
+        # (set under show_lock): an HTTP command of an older gen of that
+        # Conductor arrives late and is answered without acting (U2).
+        self.beacon_serial: "tuple[int, int] | None" = None
 
     def status(self) -> dict:
         # Stamped first, before any of the work below - the PC's offset
@@ -412,7 +421,17 @@ class Agent:
         beacon datagram of an older gen (or, without them, SENT before
         it) must not undo it (docs/BEACON.md G5a/G5 and section 7,
         2026-11-19). Only the stamp is under show_lock - the command
-        runs outside it, as before; a beacon call holds it throughout."""
+        runs outside it, as before; a beacon call holds it throughout.
+
+        Two answers are success without a call into the player (review
+        rulings U1/U2, 2026-11-20):
+        - a run/hold/stop over HTTP whose serial is OLDER than what the
+          beacon already applied for the same Conductor: it is late, and
+          the beacon's newer command stands (nothing is stamped either);
+        - a /show/run of the T0 the unit is already running (SAME_T0_S),
+          by either path: the second delivery of the same START must not
+          restart the run - ShowPlayer.run() would take a T0 still ahead
+          as a fresh start and fire the 0:00 cue a second time."""
         if via == "http":
             serial = None
             try:
@@ -423,8 +442,20 @@ class Agent:
             except (TypeError, ValueError):
                 serial = None
             with self.show_lock:
+                applied = self.beacon_serial
+                if (serial is not None and applied is not None
+                        and path in ("/show/run", "/show/hold", "/show/stop")
+                        and serial[0] == applied[0]
+                        and gen_older(serial[1], applied[1])):
+                    return True
                 self.show_cmd_at = time.monotonic()
-                self.show_cmd_serial = serial
+                last = self.show_cmd_serial
+                # Never back to an older gen of the same Conductor: a
+                # late command must not reopen G5a for what it replaced.
+                if not (serial is not None and last is not None
+                        and serial[0] == last[0]
+                        and gen_older(serial[1], last[1])):
+                    self.show_cmd_serial = serial
         player = self.player
         if player is None:
             raise RemoteError("this unit has no show player")
@@ -450,8 +481,11 @@ class Agent:
         elif path == "/show/preset":
             player.preset(bool(body.get("force", False)))
         elif path == "/show/run":
-            player.run(float(body["t0"]), body.get("show"),
-                       bool(body.get("force", False)))
+            t0, show_id = float(body["t0"]), body.get("show")
+            force = bool(body.get("force", False))
+            if not force and self._running_at(t0, show_id):
+                return True                  # U1: this START, delivered again
+            player.run(t0, show_id, force)
         elif path == "/show/hold":
             player.hold()
         elif path == "/show/stop":
@@ -461,6 +495,16 @@ class Agent:
         else:
             return False
         return True
+
+    def _running_at(self, t0: float, show_id: "str | None") -> bool:
+        """The player already RUNS this show, on a T0 from the PC, within
+        SAME_T0_S of `t0` - the beacon's START and the HTTP one both
+        arriving (bench, 2026-11-20: the 0:00 cue fired twice)."""
+        status = self.player.status() or {}
+        return (status.get("state") == RUNNING and bool(status.get("synced"))
+                and status.get("t0") is not None
+                and show_id in (None, status.get("id"))
+                and abs(status["t0"] - t0) <= SAME_T0_S)
 
     def _beacon(self) -> "dict | None":
         # In-memory counters; never an exception out of /status either.
