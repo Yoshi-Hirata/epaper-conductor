@@ -1184,8 +1184,8 @@ class Fleet:
             if show is None:
                 if adopted:
                     view["skipped"][name] = (
-                        "not uploaded by this Conductor since it restarted - "
-                        "the beacon skips it until the next Upload (after STOP)")
+                        "its show is not confirmed by this Conductor since it restarted - "
+                        "the beacon skips it until then (Upload after STOP)")
                 continue
             if name in view["skipped"]:
                 continue

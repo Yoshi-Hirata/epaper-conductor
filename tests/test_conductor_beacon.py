@@ -248,8 +248,8 @@ def test_adopted_run_requires_uploaded_shows(sender_setup):
     view = fleet.beacon_view()
     assert run["adopted"]
     assert view["entries"] == view["shows"] == {}
-    reason = ("not uploaded by this Conductor since it restarted - "
-              "the beacon skips it until the next Upload (after STOP)")
+    reason = ("its show is not confirmed by this Conductor since it restarted - "
+              "the beacon skips it until then (Upload after STOP)")
     assert view["skipped"] == dict.fromkeys(fleet.links, reason)
     sender.set_enabled(True)
     assert sender.tick() == 0
