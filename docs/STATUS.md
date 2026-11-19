@@ -20,6 +20,22 @@
 
 ## 2. 直近で完成したもの
 
+**国立駅のショー(2026-11-22)の準備(2026-11-19、694a175)**
+
+- ショーは最長 **40:00**(15:00 から)、音源は **128 MB**(64 MB から)。Conductor(Python とページ)と
+  設計者用シミュレーターで共通。機体に上限は無く、1 機体 18 送信の上限は変わらない。Timeline の目盛りは
+  30:00 以降 2:00 ごと。ズームは無い(35:28 では 7 秒のキューが数ピクセル)
+- 第 3 のワークスペース `kunitachi-data/`(git 管理外): `Start Kunitachi Conductor.bat`(8767、
+  KUNITACHI)、`Backup kunitachi-data.bat`。本番ショーの 7 着(radxa-01〜04・07・09・10)、
+  音源 `kunitachi100_music_mix_1119.mp3`(35:27.6、68 MB)、ショーの長さ 35:28、Timeline は各着 0:00 の
+  白のプリセットだけ。手順は [CONDUCTOR_START.md](CONDUCTOR_START.md) 1c 節
+- 音源入りシミュレーター `dist/az27ss-simulator-kunitachi-with-music.html`(91.5 MB、git 管理外)。
+  開いたら Fit to music で 35.28 にする
+- **未了(11-22 の前)**: ① 音源つきで 35:28 を 1 回通しで流す(長時間のずれの再シーク)。
+  ② 機体のスピーカー(radxa-05 の mpg123)で遠くへシークするのは未試験。
+  ③ `kunitachi-data/fleet.json` は `showdata/` のコピー(radxa-09 = `10.42.0.109:8787`)なので、
+  会場のネットワークで機体に届くか確かめる。④ 国立駅の絵はこれから作る(いまは白のプリセットだけ)
+
 **2026-11-20 全機展開(リリース)― 手順は [ROLLOUT_20261120.md](ROLLOUT_20261120.md)**
 
 - **最終 FW が UPDATE FW の既定になった**: `FW/FW_261119F/mcb_pinks_0a-purple_0c-red.bin`
@@ -601,7 +617,7 @@ NOW → NEXT の行には出ない)。トーストは
   知っている(サーバーは MP3 を解析しない)。Timeline のプレビューは、音源がショーより
   短いと**音源の終わりで止まっていた**(時計もそこで止まる)。THE SHOW はフリートの時計が
   主で、END で音を止め、音源の後ろは "track ended" ― こちらは元から正しい
-- **上限 15:00**(`timeline.MAX_DURATION_S = 900`)を全部で共有: Show length 欄・
+- **上限 15:00**(`timeline.MAX_DURATION_S = 900`。2026-11-19 に 40:00 = 2400 へ)を全部で共有: Show length 欄・
   `POST /api/show`・Load show・Load bundle は超える長さを `A show is at most 15:00` で
   **拒否**(シミュレーターは `A show is at most 15.00 - kept …`)。`duration` の無い
   `show.json` は従来どおり 600 秒

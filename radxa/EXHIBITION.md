@@ -408,7 +408,7 @@ Conductor の Units タブの **All units → AZ-Epaper in 20 s / All units → 
      (Loop の待ち時間中も含む)。10.42.0.1:8765 を開いて STOP してから送り直す
    - `passcode required` … radxa-05 のパスコードが PC 側の `exhibition-data/fleet.json` に無い
    - `fleet token required` … radxa-05 の `fleet.json` に `token` がある。PC 側にも同じ `token`
-   - `the workspace is at most 200 MB` … 音楽ファイルが大きすぎる(音楽の上限は 64 MB)
+   - `the workspace is at most 200 MB` … 音楽ファイルが大きすぎる(音楽の上限は 128 MB)
    - `… is not a Conductor` … 送り先の番地が違う(機体のエージェント 8787 や別の機器)
 
 送ったあと radxa-05 では**ショーがまだ機体に書かれていない**(タイムラインが新しい。

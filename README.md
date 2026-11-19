@@ -336,6 +336,11 @@ python -m conductor serve        # http://127.0.0.1:8765
 | バックアップ | `Backup showdata.bat` | `Backup exhibition-data.bat` |
 
 中身は `python -m conductor serve --workspace exhibition-data --port 8766 --label EXHIBITION --open`。
+
+**第 3 のワークスペース(国立駅、2026-11-22)**: `Start Kunitachi Conductor.bat` →
+http://localhost:8767、データ `kunitachi-data/`(git 管理外)、ラベル `KUNITACHI`、
+バックアップ `Backup kunitachi-data.bat`。PC の本番ショーの 7 着と 35:28 の音源 1 本が入っている。
+ショーは最長 40:00、音源は 128 MB まで。詳しくは `docs/CONDUCTOR_START.md` 1c 節。
 `--label` はページのバッジとタブの題名になるだけで、本番の Conductor(ラベル無し)のページは変わらない。
 **こちらで Upload / START する前に、もう一方の黒いウィンドウを閉じる(Ctrl+C)** ― 開いているだけの
 Conductor も機体に手を出す(始めていないランへの STOP、予約済みの消去)ので「押さなければよい」では
@@ -428,7 +433,7 @@ map とデザインを結び付けるのは従来どおり CSV のファイル�
     リフレッシュ時間いっぱいかけて変わる。開始時刻は鱗ごとに遷移の遅延(上→下、客席右→左、
     図心から放射状 …)+わずかなばらつきに従うので、設定した方向の波として見える。
     一部更新のキューでは色を持つ鱗だけが書き換わる。Units タブの LOOK 行も同じ
-- **ショーの音楽**: 同じ場所の **Load music** で音声ファイル(MP3 など、64 MB まで)を
+- **ショーの音楽**: 同じ場所の **Load music** で音声ファイル(MP3 など、128 MB まで)を
   アップロードすると(`showdata/music/` に保存)、再生が音楽と同期する(再生位置は音声の時刻に
   従い、スライダーで音楽ごとシークできる)。Replace / Remove で差し替え・解除
 - **機体への書き込み**: ツールバーの **Write to units…**(青いボタン。Units タブの

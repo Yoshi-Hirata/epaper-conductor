@@ -520,12 +520,13 @@ USB が抜けたあとは 0x17 を送る手段が無いので、**衣装を抜�
 (「シミュレーターとコンダクターのショーの長さが音源に対して短い。15分まで延長し、
 音源の終わりがわかるように。」)。
 
-- **ショーの長さ(`show.json` の `duration`)は 1 秒〜15:00(900 秒)**。
+- **ショーの長さ(`show.json` の `duration`)は 1 秒〜40:00(2400 秒)**
+  (2026-11-19 に 15:00 から引き上げ。下の「国立駅のショー」)。
   `conductor/timeline.py` の `MAX_DURATION_S`。Show length 欄・`POST /api/show`・
-  Load show・Load bundle はそれを超える長さを **`A show is at most 15:00`** で拒否する
+  Load show・Load bundle はそれを超える長さを **`A show is at most 40:00`** で拒否する
   (丸めない)。`duration` の無い `show.json` は従来どおり **600 秒**
-  (`DEFAULT_DURATION_S`)。それ以前に 15:00 より長く保存されたショーは、次の編集で
-  15:00 に下げてそう言う(amber)。15:00 を過ぎたキューは従来どおりエラー
+  (`DEFAULT_DURATION_S`)。それ以前に 40:00 より長く保存されたショーは、次の編集で
+  40:00 に下げてそう言う(amber)。40:00 を過ぎたキューは従来どおりエラー
 - **長さを変えると別のショーになる(ショー ID が変わる)。Upload し直さないと START できない。**
   機体が持っている絵は前の ID のショーのもの。Show length を手で変えたとき・Fit to music を
   押したとき、いずれかの機体が今のショーの絵を持っていれば(書き込み済み・書き込み中・一部失敗)
@@ -534,8 +535,8 @@ USB が抜けたあとは 0x17 を送る手段が無いので、**衣装を抜�
   (まだ何も Upload していなければ後半は付かない)
 - **ENDED は機体が走らせている長さで決める**(THE SHOW の大時計は `fleetDuration()`、
   Upload された長さ)。ショー中に Show length を変えても、機体が終わったあとに RUNNING とは出ない
-- シミュレーターに 15.00 より長いショーが自動保存されていた場合は、次に開いたときに 15.00 にし、
-  Open project と同じ `A show is at most 15.00 - Show length clamped to 15.00.` を出す
+- シミュレーターに 40.00 より長いショーが自動保存されていた場合は、次に開いたときに 40.00 にし、
+  Open project と同じ `A show is at most 40.00 - Show length clamped to 40.00.` を出す
   (書き出した bundle が Conductor に拒否されないように)
 - **機体側に上限は無い**(`ui/showplay.py` は `duration` を読むだけ)。機体の再配布は不要
 - **音源の長さはブラウザの `<audio>` が読む**(サーバーは MP3 を解析しない)。読めるまでは
@@ -546,12 +547,26 @@ USB が抜けたあとは 0x17 を送る手段が無いので、**衣装を抜�
   - 音源がショーより長いとき: Show length の横に amber で
     **`music continues 0:54 past the end of the show`**(線は引かない)
   - **Fit to music**(Show length の横): 音源の長さを**秒単位に切り上げて** Show length に
-    する(10:54.25 → 10:55)。上限 15:00(超える音源はそう言って 15:00)。
+    する(10:54.25 → 10:55)。上限 40:00(超える音源はそう言って 40:00)。
     **押したときだけ**変わり、自動では変わらない
   - シミュレーターは自分の表記(mm.ss)で同じことを言う: `music ends 10.54`、
-    `A show is at most 15.00 - kept …`
+    `A show is at most 40.00 - kept …`
 - **THE SHOW(Conductor)**: 大時計の下に `music ends 10:54`(音源の方が長ければ
   amber で `music continues … past the end of the show` も)。再生中も変わらない
+
+**国立駅のショー(2026-11-22)と長いショー(2026-11-19)**
+
+- JR 国立駅の 2026-11-22 のショーは 1 本の音源 `kunitachi100_music_mix_1119.mp3`
+  (35:27.6 = 2127.6 秒、68,081,989 バイト、MP3 256 kbps CBR)を鳴らす。これが入るよう、
+  ショーの長さの上限を **15:00 → 40:00**、音源の上限(`conductor/server.py` の `MAX_MUSIC`)を
+  **64 MB → 128 MB** にした。Conductor(Python とページ)と設計者用シミュレーターで共通。
+  **機体側に上限は無い**。1 機体あたり 18 送信までの上限は変わらない(35 分のショーでも
+  1 機体の絵は最大 18 枚)
+- Timeline の目盛りは 30:00 を過ぎると **2:00 ごと**。Timeline に**ズームは無い**ので、
+  35:28 では 7 秒のキュー 1 つが数ピクセル幅になる
+- ワークスペース `kunitachi-data/`(`showdata/`・`exhibition-data/` と同じく git 管理外)は
+  `Start Kunitachi Conductor.bat`(ポート 8767、ラベル `KUNITACHI`)で動かす。
+  手順は CONDUCTOR_START.md 1b 節
 - **時計はショーが主**:
   - 音源の方が長い → END で音は止まる(フェードなし)。THE SHOW は `plan()` が
     END で `stop`、Timeline のプレビューは END で `pause`

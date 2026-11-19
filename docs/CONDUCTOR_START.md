@@ -57,6 +57,32 @@ START here …`)が出続ける ― もう一方を閉じれば数秒で消え�
 close it`)。PC の展示 Conductor はショーを作って radxa-05 に送るまでが役目で、会場では
 radxa-05 自身の Conductor がショーを回す(`radxa/EXHIBITION.md` 4 章)。
 
+### 1c. 国立駅の Conductor(第 3 のワークスペース、2026-11-22)
+
+JR 国立駅の 2026-11-22 のショー用に、もう 1 つ別のアプリがある。同じプログラムで、1b と同じ
+ルールが当てはまる(**こちらで Upload / START する前に、他の Conductor の黒いウィンドウを閉じる**)。
+
+| | 国立駅(KUNITACHI) |
+|---|---|
+| 起動 | `Start Kunitachi Conductor.bat` |
+| ページ | http://localhost:8767 |
+| データ | `kunitachi-data/`(git 管理外) |
+| バックアップ | `Backup kunitachi-data.bat` |
+
+- 中身: PC の本番ショーの 7 着(同じ機体 radxa-01〜04・07・09・10、同じ絵・DIP 上書き・ラベル。
+  2026-11-19 に `showdata/` からコピー)、音源 `kunitachi100_music_mix_1119.mp3`(35:27.6、
+  68,081,989 バイト、MP3 256 kbps CBR)、ショーの長さ 35:28。Timeline は空で、各着に
+  0:00 の白のプリセット(新ファイル `<ITEM>_white_HW.csv`)だけがある
+- `fleet.json` は `showdata/` のコピー(radxa-09 は `10.42.0.109:8787` = AZ-Epaper ホットスポットの
+  アドレス)。**会場のネットワークで機体に届くか確かめる**
+- 設計者用シミュレーター(音源入り)は Timeline の **Simulator for designers…** ボタン
+  (この Conductor が動いている間)か
+  `python tools/build_designer.py --music auto --workspace kunitachi-data --out dist/az27ss-simulator-kunitachi-with-music.html`
+- ショーは最長 40:00・音源 128 MB まで。Timeline にズームは無く、35:28 では 7 秒のキュー 1 つが
+  数ピクセル幅。目盛りは 30:00 を過ぎると 2:00 ごと。1 機体 18 送信までの上限は変わらない
+- **11-22 の前に**: 音源つきで 35:28 を最初から最後まで 1 回通して流す(長時間のずれの再シーク)。
+  機体のスピーカー(radxa-05 の mpg123)で音源の遠い位置へシークするのは**未試験**
+
 ## 2. 停止する
 
 黒いウィンドウを閉じる(または そのウィンドウで Ctrl+C)。
@@ -205,7 +231,7 @@ Timeline タブの **Load bundle…**(演出家のシミュレーターの Save 
 - キューのドラッグは **1 秒刻み**(Shift を押しながらで 5 秒)
 - 0:00 のブロックは **PRESET ·** と表示される
 - 時間の欄は `3:20` でも `3.20` でも入る(演出家のシミュレーターは mm.ss 表記)。
-  Show length の上限は **15:00**(2026-09-28、下の段落)
+  Show length の上限は **40:00**(2026-11-19 に 15:00 から。下の段落)
 
 ### 詰まったキューと親基板の STOP(keep-away、2026-09-28)
 
@@ -233,7 +259,7 @@ while it draws` は、その 1 枚の絵(refresh の上書き + sweep)が長す�
 ### ショーの長さと音源の終わり(2026-09-28)
 
 ショーの長さは Timeline 上の **Show length**(`10:55` のように m:ss)で決める。上限は
-**15:00**、超えると `A show is at most 15:00` と出て元に戻る。音源を読み込むと、その横の
+**40:00**(音源は 128 MB まで)、超えると `A show is at most 40:00` と出て元に戻る。音源を読み込むと、その横の
 **Fit to music** が押せるようになり、押すと Show length が**音源の長さ(秒で切り上げ)**
 になる(10:54 の曲なら 10:55)。**押さない限りショーの長さは変わらない。** トラックの上には
 音源が終わる位置に amber の破線と `music ends 10:54` が出て、その後ろは斜線(`silence`)。
