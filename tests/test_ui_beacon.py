@@ -876,10 +876,10 @@ def test_the_same_serial_on_a_unit_not_running_or_not_synced_runs(tmp_path):
         unit.close()
 
 
-def test_an_http_stop_never_queues_behind_show_lock(tmp_path):
+def test_an_http_stop_never_waits_for_show_lock(tmp_path):
     # Final review: show_lock is held through player calls (an HTTP
     # run/hold, the beacon - whose stop can wait 2 s in the settle). An
-    # HTTP /show/stop waits for it only a moment, then goes ahead.
+    # HTTP /show/stop never takes it: straight to the player, as before.
     unit = Real(tmp_path, serve=True)
     try:
         stops = []
@@ -887,14 +887,74 @@ def test_an_http_stop_never_queues_behind_show_lock(tmp_path):
         unit.player.stop = lambda *a, **k: (stops.append(1), stop(*a, **k))[1]
         assert unit.agent.show_lock.acquire(timeout=1)     # someone else has it
         try:
-            began = time.monotonic()
             status, _ = post(unit.agent, "/show/stop", {}, serial(99, 5))
-            took = time.monotonic() - began
+            assert status == 200 and stops == [1]          # ...and it did not wait
         finally:
             unit.agent.show_lock.release()
-        assert status == 200 and stops == [1]
-        assert took < 1.5                         # not the 2 s of a settle wait
         assert unit.agent.show_cmd_serial == (99, 5)       # stamped all the same
+        assert unit.agent.stops_seen == 1
+    finally:
+        unit.close()
+
+
+def test_an_http_run_overtaken_by_a_stop_while_it_queued_is_dropped(tmp_path):
+    # The lock must not let an EARLIER run land AFTER a later STOP: without
+    # the lock that run would have reached the player first and the STOP
+    # would have had the last word.
+    unit = Real(tmp_path, serve=True)
+    try:
+        runs = []
+        run = unit.player.run
+        unit.player.run = lambda *a, **k: (runs.append(a), run(*a, **k))[1]
+        t0 = time.monotonic() + 2.0
+        assert unit.agent.show_lock.acquire(timeout=1)     # e.g. a hold in the player
+        try:
+            answer = []
+            queued = threading.Thread(target=lambda: answer.append(post(
+                unit.agent, "/show/run", {"t0": t0, "show": SHOW_ID},
+                serial(99, 5))))
+            queued.start()
+            time.sleep(0.3)
+            assert answer == []                            # waiting on show_lock
+            status, _ = post(unit.agent, "/show/stop", {}, serial(99, 6))
+            assert status == 200
+        finally:
+            unit.agent.show_lock.release()
+        queued.join(5)
+        assert answer and answer[0][0] == 200              # answered, not an error
+        assert runs == []                                  # ...but never run
+        assert unit.player.status()["state"] != "running"
+    finally:
+        unit.close()
+
+
+def test_a_beacon_run_that_lands_after_an_http_stop_is_stopped_again(tmp_path):
+    # A STOP does not wait for the beacon's call: if the beacon's run is in
+    # the player when the STOP goes through, the beacon stops the unit
+    # again when its call returns.
+    unit = Real(tmp_path, serve=True)
+    try:
+        inside, release = threading.Event(), threading.Event()
+        run = unit.player.run
+
+        def gated(*args, **kwargs):
+            inside.set()
+            release.wait(5)
+            return run(*args, **kwargs)
+        unit.player.run = gated
+        t0 = time.monotonic() + 2.0
+        result = []
+        beacon = threading.Thread(
+            target=lambda: result.append(unit.send(RUN, t0, cid=99, gen=5)))
+        beacon.start()
+        assert inside.wait(5)
+        status, _ = post(unit.agent, "/show/stop", {}, serial(99, 6))
+        assert status == 200                               # did not wait
+        release.set()
+        beacon.join(5)
+        assert result == ["stop"]
+        assert unit.player.status()["state"] != "running"
+        assert any("STOP wins" in line for line in unit.runner.recent(20))
     finally:
         unit.close()
 

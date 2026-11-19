@@ -168,9 +168,6 @@ API_VERSION = 1
 # never decides it). conductor/fleet.py's T0_TOLERANCE_S, the
 # supervision's own "in step".
 SAME_T0_S = 0.05
-# How long an HTTP /show/stop waits for show_lock before it goes ahead
-# without it: a STOP must never queue behind another command.
-STOP_LOCK_WAIT_S = 0.25
 
 
 def _clock() -> dict:
@@ -398,6 +395,12 @@ class Agent:
         self.show_cmd_at: "float | None" = None
         self.show_cmd_serial: "tuple[int, int] | None" = None
         self.show_lock = threading.Lock()
+        # HTTP /show/stop arrivals. A STOP never takes show_lock (it must
+        # never wait); instead whoever holds or waited for the lock looks
+        # at this count: an HTTP run/hold that a STOP overtook while it
+        # queued is dropped, and the beacon stops again a unit its own
+        # run/hold landed on after a STOP (final review, 2026-11-20).
+        self.stops_seen = 0
         self.beacon = None             # ui.beacon.Beacon, or None
         # The newest (cid, gen) the beacon accepted for this unit - an
         # applied run/hold/stop, or an entry that found the unit already
@@ -467,7 +470,16 @@ class Agent:
             return self._dispatch(path, body, serial)
         serial = _header_serial(headers)
         if path in ("/show/run", "/show/hold"):
+            stops = self.stops_seen             # before any wait
             with self.show_lock:
+                if self.stops_seen != stops:
+                    # A /show/stop arrived while this command waited for
+                    # the lock: without the lock it would have reached the
+                    # player BEFORE that STOP, and the STOP would have had
+                    # the last word. Running it now would undo the STOP.
+                    print(f"{path} overtaken by a /show/stop while it "
+                          "waited - dropped", flush=True)
+                    return True
                 newest = self._late(serial)
                 if newest is not None:
                     # The journal only (the LCD has the beacon's lines).
@@ -477,21 +489,16 @@ class Agent:
                 self._stamp(serial)
                 return self._dispatch(path, body, serial)
         if path == "/show/stop":
-            # A STOP never queues (final review, 2026-11-20): show_lock is
+            # A STOP never waits (final review, 2026-11-20): show_lock is
             # held through the player call by an HTTP run/hold and by the
-            # beacon - whose own stop can sit in the player's settle wait
-            # for up to 2 s. The stamp wants the lock (so the beacon's
-            # re-check sees it), but only for a bounded moment; past
-            # that the STOP goes ahead, as it did before the lock existed.
-            got = self.show_lock.acquire(timeout=STOP_LOCK_WAIT_S)
-            try:
-                self._stamp(serial)
-            finally:
-                if got:
-                    self.show_lock.release()
-            return self._dispatch(path, body, serial)
-        with self.show_lock:
+            # beacon, whose own stop can sit in the player's settle wait
+            # for up to 2 s. It goes straight to the player, as it did
+            # before the lock existed; stops_seen tells the others.
+            self.stops_seen += 1
             self._stamp(serial)
+            return self._dispatch(path, body, serial)
+        # load, preset, clear: stamped and dispatched as before the lock.
+        self._stamp(serial)
         return self._dispatch(path, body, serial)
 
     def _late(self, serial) -> "int | None":

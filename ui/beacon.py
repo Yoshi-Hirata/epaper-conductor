@@ -241,7 +241,23 @@ class Beacon:
         # arrives meanwhile lands after this call; one stamped first
         # makes G5a/G5 drop the entry here.
         with self.agent.show_lock:
-            return self._act(header, entry, mono)
+            stops = getattr(self.agent, "stops_seen", 0)
+            result = self._act(header, entry, mono)
+            if (result in ("run", "hold")
+                    and getattr(self.agent, "stops_seen", 0) != stops):
+                # An HTTP /show/stop went to the player while this call
+                # was in it (a STOP never waits for show_lock): if our
+                # run landed after it, the unit would play on after a
+                # STOP. Stop it again; the next datagrams say what the
+                # Conductor wants now (the STOP's gen, or this run again).
+                try:
+                    self.agent.show_command("/show/stop", {}, via="beacon",
+                                            serial=None)
+                    self._emit("beacon: STOP wins")
+                except Exception:       # noqa: BLE001 - never out of the thread
+                    pass
+                return "stop"
+            return result
 
     def _act(self, header: dict, entry: dict, mono: float) -> str:
         cid, gen = header["cid"], header["gen"]
