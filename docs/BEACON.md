@@ -190,3 +190,48 @@ sleeps 1 s (no busy loop). It calls the player as an HTTP handler thread does.
 - Hardware, one spare unit: Upload; block TCP 8787 to it; START with
   countdown, HOLD, RESUME, NEXT, MOVE, STOP - the LCD log shows `beacon:` lines;
   reboot mid-run (beacons ignored until a poll returns); switch off.
+
+## 7. Amendments after the design review (2026-11-19) - these override the text above
+
+- **A1 Ordering against HTTP by serial, not by clocks.** The Conductor sends two
+  headers on every `/show/*` POST: `X-Beacon-Cid: <cid, decimal>` and
+  `X-Run-Gen: <Fleet._run_gen & 0xFFFFFFFF at post time, decimal>`. The cid is
+  owned by the Fleet (random, non-zero, per process) and is the one the beacon
+  uses. HTTP bodies do not change. The unit records the pair of the last HTTP
+  `/show/*` command that carried both headers (`agent.show_cmd_serial`).
+  **G5a:** drop a beacon entry whose datagram cid equals that cid and whose gen
+  is older than that gen (32-bit serial arithmetic: `(gen - http_gen) & 0xFFFFFFFF
+  >= 0x80000000` means older). The time-based G5 remains only as the fallback
+  while the last HTTP `/show/*` command carried no headers. A `via="beacon"`
+  call never stamps `show_cmd_at` or `show_cmd_serial`.
+- **A2 Stop once.** A beacon "stop" is applied at most once per (cid, gen), as
+  supervision's `_stop_told` does.
+- **A3 Sequence.** G3 counts only datagrams that carry this unit's entry; the
+  last seq is kept per cid (a small bounded dict); the unicast copy sent to a
+  unit is the datagram that holds its entry. A new cid starting at seq 1 is
+  accepted once the latched cid has been silent for `CID_HOLD_S`.
+- **A4 Atomic against HTTP arrivals.** One `agent.show_lock`: the HTTP handler
+  takes it only to stamp `show_cmd_at` / `show_cmd_serial` (then runs the
+  command outside it, as today); the beacon takes it to re-check G5/G5a and
+  holds it through its call into the player. So an HTTP command that arrives
+  during a beacon call lands after it, and one that was stamped first makes
+  the beacon drop its entry.
+- **A5 Token.** A missing token (`None`) is the empty string on both sides.
+- **A6 Force.** `beacon_view` mirrors supervision's `_rejoin_force` only through
+  a side-effect-free read; where that is not possible the entry carries
+  `run.force or name in run.forced` and the exhibition's failed-garment rejoin
+  stays an HTTP-only path (documented limit).
+- **A7 One beaconing Conductor per network** (v1). Two Conductors with the
+  beacon on fight through the cid latch; the default is off and only the show's
+  Conductor turns it on.
+- **A8 Notes.** Outside EXHIBITION mode START still refuses units that do not
+  answer unless the operator leaves them out; the beacon then starts them as
+  supervision's "started late" would. A beacon "stop" leaves an ENDED unit
+  ENDED (as supervision does). A unit that rebooted and has not been polled
+  since cannot be steered (G4) - a v1.1 item (PC-clock fields + one-way offset
+  estimate on the unit).
+- **Tests added:** a stale beacon (older gen) after an HTTP hold stays holding
+  even when its `now` is later; a beacon of the same gen is accepted; stop is
+  applied once per (cid, gen); a split datagram received out of order; a new
+  cid after 5 s; the e2e 0:00 cue fires exactly once when both paths deliver
+  START.
