@@ -1,4 +1,5 @@
-"""Where the music ends, and a show as long as 15:00 (2026-09-28).
+"""Where the music ends, and a show as long as 15:00 (2026-09-28; 40:00
+since 2026-11-19, for the 35:27.6 Kunitachi music).
 
 The show's music became a 10:54 track while the show was 10:00, and the
 owner asked for 「シミュレーターとコンダクターのショーの長さが音源に対して短い。
@@ -11,7 +12,7 @@ what the Timeline preview does:
   rest of the show as silence; a show shorter than the music says, in amber,
   `music continues 0:10 past the end of the show`;
 * Fit to music sets Show length to the music's length rounded UP, and only
-  when pressed; a length past 15:00 is refused with `A show is at most 15:00`;
+  when pressed; a length past 40:00 is refused with `A show is at most 40:00`;
 * THE SHOW's clock carries `music ends 0:30`;
 * the preview's clock is the master - it runs on in silence after the music
   ends, and stops the music at END when the music is the longer.
@@ -211,11 +212,11 @@ _PROBE = """
       out.fitted = timeline();
       out.fitToast = toastNow();
 
-      // 4. Past 15:00 is refused and changes nothing; 15:00 itself is fine.
-      await typeLength("15:01");
+      // 4. Past 40:00 is refused and changes nothing; 40:00 itself is fine.
+      await typeLength("40:01");
       out.refused = { toast: toastNow(), duration: state.show.duration, field: q("#duration").value };
-      await typeLength("15:00");
-      out.fifteen = timeline();
+      await typeLength("40:00");
+      out.forty = timeline();
 
       // 5. THE SHOW's clock says where the music ends...
       ui.tab = "fleet"; render();
@@ -385,13 +386,13 @@ def test_fit_to_music_sits_next_to_show_length_and_rounds_up(page):
     assert page["fitToast"] == "Show length is 0:31: the music's length, rounded up.", page["fitToast"]
 
 
-def test_a_show_past_fifteen_minutes_is_refused(page):
+def test_a_show_past_forty_minutes_is_refused(page):
     refused = page["refused"]
-    assert refused["toast"] == "A show is at most 15:00", refused
+    assert refused["toast"] == "A show is at most 40:00", refused
     assert refused["duration"] == 31 and refused["field"] == "0:31", refused
-    fifteen = page["fifteen"]
-    assert fifteen["duration"] == 900 and fifteen["field"] == "15:00", fifteen
-    assert fifteen["marker"] is True and fifteen["silence"] is True
+    forty = page["forty"]
+    assert forty["duration"] == 2400 and forty["field"] == "40:00", forty
+    assert forty["marker"] is True and forty["silence"] is True
 
 
 def test_the_show_clock_says_where_the_music_ends(page):

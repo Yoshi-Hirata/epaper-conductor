@@ -1290,10 +1290,11 @@ function cuesOf(item) { return state.show.cues.filter(c => c.item === item.item)
 // reasonable gap" would quietly place cues the server then rejects.
 const APPEND_GAP_S = 1.0;
 // The longest show there can be: conductor/timeline.py's MAX_DURATION_S
-// (15:00, 2026-09-28 - the music became a 10:54 track). The server refuses
-// more with the same sentence, so the field says it before the round trip.
-const MAX_SHOW_DURATION_S = 15 * 60;
-const SHOW_TOO_LONG = "A show is at most 15:00";
+// (40:00 since 2026-11-19 - the 11-22 Kunitachi music is 35:27.6; 15:00 from
+// 2026-09-28). The server refuses more with the same sentence, so the field
+// says it before the round trip.
+const MAX_SHOW_DURATION_S = 40 * 60;
+const SHOW_TOO_LONG = "A show is at most 40:00";
 const DRAG_SNAP_S = 1, DRAG_SNAP_SHIFT_S = 5;
 // The design a fresh placement gets: this item's first one no cue is already
 // wearing, skipping the ones that do not compile at all.
@@ -1713,7 +1714,7 @@ function wornAt(item, t, opts) {
   return { colors, shifts, label, changing };
 }
 async function saveShow(cues, duration, refreshS) {     // not "refresh": that is the reload function
-  // A show stored before the 15:00 ceiling existed may be longer; every
+  // A show stored before the ceiling existed may be longer; every
   // edit posts the length too, and the server would refuse them all - so an
   // edit brings it down to the ceiling and says so, instead of failing.
   if (duration === undefined && state.show.duration > MAX_SHOW_DURATION_S) {
@@ -1934,7 +1935,9 @@ function renderTimeline() {
   // the dock's own chrome exist in the DOM to measure.
   if (!ui.simView) THUMBS.timeline.height = ui.dockCells || THUMBS.timeline.height || 90;
   const pct = t => (100 * Math.max(0, Math.min(D, t)) / D).toFixed(3) + "%";
-  const step = D <= 180 ? 10 : D <= 900 ? 30 : 60;
+  // 2:00 marks past 30:00 (2026-11-19, a 35:28 show): 60 s marks would be
+  // ~36 labels on one ruler, too close to read.
+  const step = D <= 180 ? 10 : D <= 900 ? 30 : D <= 1800 ? 60 : 120;
   let ruler = "";
   for (let t = 0; t <= D; t += step) ruler += `<i style="left:${pct(t)}"></i>` + (t < D ? `<span style="left:${pct(t)}">${clock(t)}</span>` : "");
 
@@ -1978,9 +1981,9 @@ function renderTimeline() {
   const music = state.music || null;
   const musicHtml = music
     ? `<span class="meta">${esc(music.name)} (${fmtSize(music.size)})</span>
-       <label class="filebtn" tabindex="0" role="button" title="Upload another audio file for the show (MP3, WAV, OGG, M4A; up to 64 MB)">Replace music<input type="file" id="tp-music-replace" accept="audio/*"></label>
+       <label class="filebtn" tabindex="0" role="button" title="Upload another audio file for the show (MP3, WAV, OGG, M4A; up to 128 MB)">Replace music<input type="file" id="tp-music-replace" accept="audio/*"></label>
        <button id="tp-music-remove" class="danger">Remove</button>`
-    : `<label class="filebtn" tabindex="0" role="button" title="Upload the show's audio (MP3, WAV, OGG, M4A; up to 64 MB): playback then follows the music">Load music<input type="file" id="tp-music-load" accept="audio/*"></label>`;
+    : `<label class="filebtn" tabindex="0" role="button" title="Upload the show's audio (MP3, WAV, OGG, M4A; up to 128 MB): playback then follows the music">Load music<input type="file" id="tp-music-load" accept="audio/*"></label>`;
   const playBtns = `<button id="tp-play" title="Play/Pause (Space)">${ui.playing ? "⏸ Pause" : "▶ Play"}</button>
         <button id="tp-stop" title="Stop and rewind to 0:00">⏹ Stop</button>
         <span class="meta" id="tp-time">${clock(ui.playhead)} / ${clock(D)}</span>`;
@@ -3092,10 +3095,12 @@ function paintShowMusic() {
     }
   }
 }
-const MAX_MUSIC = 64 * 1024 * 1024;
+// conductor/server.py's MAX_MUSIC (128 MB since 2026-11-19: the 11-22
+// Kunitachi music is one 35:28 MP3 of 68 MB; 64 MB before).
+const MAX_MUSIC = 128 * 1024 * 1024;
 async function uploadMusic(file) {
   if (!file) return;
-  if (file.size > MAX_MUSIC) { toast(`${file.name} is too large (${fmtSize(file.size)}) - the limit is 64 MB`); return; }
+  if (file.size > MAX_MUSIC) { toast(`${file.name} is too large (${fmtSize(file.size)}) - the limit is ${MAX_MUSIC / (1024 * 1024)} MB`); return; }
   toast(`Uploading ${file.name} (${fmtSize(file.size)})…`);
   try {
     // A raw header value must be Latin-1; encode it so names outside that

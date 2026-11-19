@@ -28,7 +28,9 @@
 (function () {
   "use strict";
 
-  const MAX_MUSIC = 64 * 1024 * 1024;
+  // conductor/server.py's MAX_MUSIC: 128 MB since 2026-11-19 (the 11-22
+  // Kunitachi music is one 68 MB MP3), 64 MB before.
+  const MAX_MUSIC = 128 * 1024 * 1024;
 
   // cfg: {
   //   duration(): number,                    show.duration right now

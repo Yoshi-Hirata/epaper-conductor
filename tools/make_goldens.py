@@ -863,11 +863,12 @@ def timeline_cases() -> list:
     cases.append(_run_timeline_case("after_end_and_double_booking", [
         _cue("a", "Look22", "6:00", "p1"), _cue("b", "Look22", "6:00", "p2")], items, duration=300.0))
 
-    # The longest show there can be (15:00, 2026-09-28): a cue at 14:55
-    # holds to 15:00, one at 15:01 is after the end - the same on both sides.
-    cases.append(_run_timeline_case("fifteen_minute_show", [
-        _cue("a", "Look22", "0:00", "p1"), _cue("b", "Look22", "14:55", "p2"),
-        _cue("c", "Look22", "15:01", "p1")], items, duration=timeline.MAX_DURATION_S))
+    # The longest show there can be (40:00 since 2026-11-19 for the 35:27.6
+    # Kunitachi music; 15:00 from 2026-09-28): a cue at 39:55 holds to 40:00,
+    # one at 40:01 is after the end - the same on both sides.
+    cases.append(_run_timeline_case("longest_show", [
+        _cue("a", "Look22", "0:00", "p1"), _cue("b", "Look22", "39:55", "p2"),
+        _cue("c", "Look22", "40:01", "p1")], items, duration=timeline.MAX_DURATION_S))
 
     shared_items = {
         "look20-top": {"item": "Look20-Top", "unit": "radxa-02", "boards": 16,

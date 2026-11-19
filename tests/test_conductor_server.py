@@ -281,28 +281,39 @@ def test_timeline_rejects_nonsense_durations(workspace):
             workspace.set_timeline(bad, [])
 
 
-# ---- a show is at most 15:00 (2026-09-28: the music became 10:54) ----
+# ---- a show is at most 40:00 (2026-11-19: the 11-22 Kunitachi music is
+# 35:27.6; 15:00 from 2026-09-28, when the music became 10:54) ----
 
-def test_a_show_may_last_up_to_fifteen_minutes_and_no_longer(workspace):
-    workspace.set_timeline("15:00", [])
-    assert workspace.state()["show"]["duration"] == 900
-    workspace.set_timeline(900, [])
-    assert workspace.state()["show"]["duration"] == 900
-    for too_long in (901, "15:01", 900.5, "1:00:00", float("inf")):
+def test_a_show_may_last_up_to_forty_minutes_and_no_longer(workspace):
+    workspace.set_timeline("40:00", [])
+    assert workspace.state()["show"]["duration"] == 2400
+    workspace.set_timeline(2400, [])
+    assert workspace.state()["show"]["duration"] == 2400
+    for too_long in (2401, "40:01", 2400.5, "1:00:00", float("inf")):
         with pytest.raises(ValueError) as caught:
             workspace.set_timeline(too_long, [])
-        assert str(caught.value) == "A show is at most 15:00", too_long
-    assert workspace.state()["show"]["duration"] == 900     # the refusal kept it
+        assert str(caught.value) == "A show is at most 40:00", too_long
+    assert workspace.state()["show"]["duration"] == 2400    # the refusal kept it
 
 
-def test_a_cue_past_a_fifteen_minute_show_is_still_a_problem(workspace):
+def test_the_kunitachi_show_length_validates(workspace):
+    # 2026-11-22: one music file of 35:27.6 (2127.6 s); Fit to music rounds
+    # it up to 35:28, and the operator may type 35:30. All of them are shows,
+    # and so is anything just past the old 15:00 ceiling.
+    for length, seconds in (("35:30", 2130), (2127.6, 2127.6), ("35:28", 2128),
+                            ("15:01", 901)):
+        workspace.set_timeline(length, [])
+        assert workspace.state()["show"]["duration"] == seconds, length
+
+
+def test_a_cue_past_a_forty_minute_show_is_still_a_problem(workspace):
     grid = "Look22_color_pattern01_grid.csv"
-    workspace.set_timeline(900, [{"id": "a", "item": "Look22", "at": 0, "design": grid},
-                                 {"id": "b", "item": "Look22", "at": "14:59", "design": grid},
-                                 {"id": "c", "item": "Look22", "at": "15:01", "design": grid}])
+    workspace.set_timeline(2400, [{"id": "a", "item": "Look22", "at": 0, "design": grid},
+                                  {"id": "b", "item": "Look22", "at": "39:59", "design": grid},
+                                  {"id": "c", "item": "Look22", "at": "40:01", "design": grid}])
     problems = {c["id"]: c["problems"] for c in workspace.state()["show"]["cues"]}
     assert problems["a"] == [] and problems["b"] == []
-    assert any("after the end of the show (15:00)" in p for p in problems["c"]), problems["c"]
+    assert any("after the end of the show (40:00)" in p for p in problems["c"]), problems["c"]
 
 
 def test_a_show_file_without_a_duration_is_still_ten_minutes(workspace):
@@ -318,20 +329,24 @@ def test_a_show_file_without_a_duration_is_still_ten_minutes(workspace):
     assert workspace.state()["show"]["duration"] == 720
 
 
-def test_load_show_and_load_bundle_refuse_a_show_longer_than_fifteen_minutes(workspace):
+def test_load_show_and_load_bundle_refuse_a_show_longer_than_forty_minutes(workspace):
     workspace.set_timeline(700, [])
-    for payload in ({"format": "epaper-show", "version": 1, "duration": 901, "cues": []},):
+    for payload in ({"format": "epaper-show", "version": 1, "duration": 2401, "cues": []},):
         with pytest.raises(ValueError) as caught:
             workspace.import_show(payload)
-        assert str(caught.value) == "A show is at most 15:00"
+        assert str(caught.value) == "A show is at most 40:00"
         with pytest.raises(ValueError) as caught:
             workspace.import_bundle({"format": "epaper-show-bundle", "version": 1,
                                      "files": {}, "show": payload})
-        assert str(caught.value) == "A show is at most 15:00"
+        assert str(caught.value) == "A show is at most 40:00"
     assert workspace.state()["show"]["duration"] == 700
-    workspace.import_show({"format": "epaper-show", "version": 1, "duration": 900,
+    workspace.import_show({"format": "epaper-show", "version": 1, "duration": 2130,
                            "cues": []})
-    assert workspace.state()["show"]["duration"] == 900
+    assert workspace.state()["show"]["duration"] == 2130
+    workspace.import_bundle({"format": "epaper-show-bundle", "version": 1, "files": {},
+                             "show": {"format": "epaper-show", "version": 1,
+                                      "duration": 2400, "cues": []}})
+    assert workspace.state()["show"]["duration"] == 2400
 
 
 def test_post_show_says_why_a_long_show_was_refused(tmp_path):
@@ -339,26 +354,41 @@ def test_post_show_says_why_a_long_show_was_refused(tmp_path):
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        status, answer = _post(port, "/api/show", {"duration": 901, "cues": []})
+        status, answer = _post(port, "/api/show", {"duration": "40:01", "cues": []})
         assert status != 200 or not answer.get("ok"), answer
-        assert "A show is at most 15:00" in json.dumps(answer), answer
-        status, answer = _post(port, "/api/show", {"duration": "15:00", "cues": []})
-        assert status == 200 and answer.get("ok"), answer
+        assert "A show is at most 40:00" in json.dumps(answer), answer
+        for fine in ("35:30", "40:00"):
+            status, answer = _post(port, "/api/show", {"duration": fine, "cues": []})
+            assert status == 200 and answer.get("ok"), (fine, answer)
     finally:
         server.shutdown()
         server.server_close()
 
 
-def test_the_pages_share_the_fifteen_minute_ceiling():
+def test_the_pages_share_the_forty_minute_ceiling():
     from conductor import timeline
 
-    assert timeline.MAX_DURATION_S == 900 and timeline.DEFAULT_DURATION_S == 600
+    assert timeline.MAX_DURATION_S == 2400 and timeline.DEFAULT_DURATION_S == 600
+    assert timeline.DURATION_TOO_LONG == "A show is at most 40:00"
     root = Path(__file__).resolve().parents[1] / "conductor" / "web"
     for name in ("index.html", "sim/designer-app.js"):
         text = (root / name).read_text(encoding="utf-8")
-        assert re.findall(r"const MAX_SHOW_DURATION_S = (.*?);", text) == ["15 * 60"], name
+        assert re.findall(r"const MAX_SHOW_DURATION_S = (.*?);", text) == ["40 * 60"], name
+    index = (root / "index.html").read_text(encoding="utf-8")
+    assert re.findall(r'const SHOW_TOO_LONG = "(.*?)";', index) == [timeline.DURATION_TOO_LONG]
     model = (root / "sim" / "model.js").read_text(encoding="utf-8")
-    assert re.findall(r"^  const MAX_DURATION_S = ([0-9.]+);$", model, re.M) == ["900.0"]
+    assert re.findall(r"^  const MAX_DURATION_S = ([0-9.]+);$", model, re.M) == ["2400.0"]
+
+
+def test_the_pages_share_the_128_mb_music_ceiling():
+    # The page and the simulator refuse a file before the server is asked:
+    # their copies must not drift from MAX_MUSIC (review 2026-11-19).
+    from conductor import server
+    assert server.MAX_MUSIC == 128 * 1024 * 1024
+    root = Path(__file__).resolve().parents[1] / "conductor" / "web"
+    for name in ("index.html", "sim/transport.js"):
+        text = (root / name).read_text(encoding="utf-8")
+        assert re.findall(r"const MAX_MUSIC = (.*?);", text) == ["128 * 1024 * 1024"], name
 
 
 # ---- undo / redo of the show ----
@@ -1787,23 +1817,68 @@ def test_music_answers_a_range_request_for_seeking(tmp_path):
         server.server_close()
 
 
+def _music_headers_only(port, name, length):
+    """POST /api/music with only the headers: every size/type refusal is
+    answered before the body is wanted (_refuse_early)."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.putrequest("POST", "/api/music")
+        conn.putheader("X-File-Name", name)
+        conn.putheader("Content-Length", str(length))
+        conn.endheaders()                    # no body: refused before reading
+        response = conn.getresponse()
+        return response.status, json.loads(response.read())
+    finally:
+        conn.close()
+
+
 def test_music_over_the_limit_is_refused(tmp_path):
+    # 128 MB since 2026-11-19 (64 MB before): the 11-22 Kunitachi music is
+    # one 68 MB MP3, not re-encoded.
+    assert MAX_MUSIC == 128 * 1024 * 1024
     server = make_server(tmp_path, port=0)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        conn.putrequest("POST", "/api/music")
-        conn.putheader("X-File-Name", "big.mp3")
-        conn.putheader("Content-Length", str(MAX_MUSIC + 1))
-        conn.endheaders()                    # no body: refused before reading
-        response = conn.getresponse()
-        assert response.status == 400
-        body = json.loads(response.read())
-        assert "MB" in body["error"]
-        conn.close()
+        for length in (MAX_MUSIC + 1, 129 * 1024 * 1024):
+            status, body = _music_headers_only(port, "big.mp3", length)
+            assert status == 400
+            assert body["error"] == "music is at most 128 MB", body
+        # 100 MB passes the size check: what refuses this one is its type,
+        # which is only asked once the size is fine.
+        status, body = _music_headers_only(port, "big.txt", 100 * 1024 * 1024)
+        assert status == 400 and body["error"].startswith("music must be one of"), body
         assert not (tmp_path / "music").exists() or \
             not list((tmp_path / "music").glob("*"))
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_the_kunitachi_music_uploads(tmp_path):
+    # The real size of the 2026-11-22 music (35:27.6, MP3 256 kbps 48 kHz):
+    # over the old 64 MB, so this is the upload that used to be refused.
+    size = 68_081_989
+    server = make_server(tmp_path, port=0)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
+        conn.putrequest("POST", "/api/music")
+        conn.putheader("X-File-Name", "kunitachi.mp3")
+        conn.putheader("Content-Length", str(size))
+        conn.endheaders()
+        block = b"\xff" * (1024 * 1024)
+        left = size
+        while left:
+            conn.send(block[:min(left, len(block))])
+            left -= min(left, len(block))
+        response = conn.getresponse()
+        body = json.loads(response.read())
+        conn.close()
+        assert response.status == 200 and body.get("ok"), body
+        assert body["music"]["size"] == size
+        assert (tmp_path / "music" / "kunitachi.mp3").stat().st_size == size
     finally:
         server.shutdown()
         server.server_close()

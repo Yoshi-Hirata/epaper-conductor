@@ -1622,8 +1622,9 @@
   const MAX_CUES_PER_UNIT = 18;
   const DEFAULT_DURATION_S = 600.0;
   // conductor/timeline.py's MAX_DURATION_S: the longest a show may be set
-  // to (15:00, 2026-09-28). A project with no duration is still 600 s.
-  const MAX_DURATION_S = 900.0;
+  // to (40:00 since 2026-11-19 for the 35:28 Kunitachi music; 15:00 from
+  // 2026-09-28). A project with no duration is still 600 s.
+  const MAX_DURATION_S = 2400.0;
 
   const _CLOCK = /^\s*(?:(\d+):)?(\d{1,2}):(\d{1,2}(?:\.\d+)?)\s*$/;
 

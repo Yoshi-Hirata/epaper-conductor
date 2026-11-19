@@ -1,10 +1,10 @@
-"""The designers' simulator: a show up to 15:00, and where the music ends
-(2026-09-28) - the same as the operator's Timeline
+"""The designers' simulator: a show up to 40:00 (15:00 from 2026-09-28,
+40:00 since 2026-11-19), and where the music ends (2026-09-28) - the same as the operator's Timeline
 (tests/test_conductor_music_end.py), in the simulator's own mm.ss.
 
 One headless run of the committed dist/az27ss-simulator.html with a probe
 appended (never shipped): a 30.4 s WAV is picked as the music, and the probe
-reads the marker, the note, Fit to music and the 15:00 refusal, then plays
+reads the marker, the note, Fit to music and the 40:00 refusal, then plays
 the <audio> element's part itself to check the preview's clock runs on past
 the end of the music and stops the music at END. Behind
 CONDUCTOR_BROWSER_TESTS=1 like every browser test here.
@@ -87,11 +87,13 @@ _PROBE = """
       await wait(400);
       out.fitted = timeline();
       out.fitToast = toastNow();
-      await typeLength("15.01");
+      await typeLength("40.01");
       out.refused = { toast: toastNow(), duration: SIM.app.getState().show.duration,
                       field: q("#show-duration").value };
-      await typeLength("15.00");
-      out.fifteen = timeline();
+      await typeLength("35.30");                       // the 2026-11-22 show
+      out.kunitachi = timeline();
+      await typeLength("40.00");
+      out.forty = timeline();
 
       // The preview's clock. A headless dump runs no animation frames, so
       // they are timers here; and the media element is played by the probe
@@ -176,13 +178,14 @@ def test_the_marker_the_silence_and_the_note(sim):
     assert "warn" in short["noteClass"].split()
 
 
-def test_fit_to_music_rounds_up_and_a_show_is_at_most_15_minutes(sim):
+def test_fit_to_music_rounds_up_and_a_show_is_at_most_40_minutes(sim):
     assert sim["fitted"]["duration"] == 31 and sim["fitted"]["note"] == "", sim["fitted"]
     assert sim["fitToast"] == "Show length is 0.31: the music's length, rounded up."
     refused = sim["refused"]
     assert refused["duration"] == 31 and refused["field"] == "0.31", refused
-    assert refused["toast"] == "A show is at most 15.00 - kept 0.31.", refused
-    assert sim["fifteen"]["duration"] == 900, sim["fifteen"]
+    assert refused["toast"] == "A show is at most 40.00 - kept 0.31.", refused
+    assert sim["kunitachi"]["duration"] == 2130, sim["kunitachi"]
+    assert sim["forty"]["duration"] == 2400, sim["forty"]
 
 
 def test_the_preview_runs_on_in_silence_and_stops_at_the_end(sim):
@@ -206,7 +209,7 @@ def test_a_media_key_cannot_restart_the_track_under_the_silent_tail(sim):
 
 
 # A project autosaved before the ceiling (the field allowed 99.59): the
-# next boot brings it to 15.00 and says so, so its bundle is never refused.
+# next boot brings it to 40.00 and says so, so its bundle is never refused.
 _AUTOSAVE_PROBE = """
 <script>
 (function () {
@@ -228,7 +231,7 @@ _AUTOSAVE_PROBE = """
     if (!seeded) {
       var p = { files: {}, show: JSON.parse(JSON.stringify(SIM.STARTER.show)) };
       Object.keys(SIM.STARTER.files).forEach(function (n) { p.files[n] = SIM.STARTER.files[n]; });
-      p.show.duration = 1200;
+      p.show.duration = 3000;
       try { localStorage.setItem(KEY, JSON.stringify(p)); sessionStorage.setItem(FLAG, "1"); }
       catch (e) { publish({ error: null, storage: false }); return; }
       location.reload();
@@ -251,10 +254,10 @@ _AUTOSAVE_PROBE = """
 """
 
 
-def test_an_autosave_longer_than_15_minutes_comes_back_at_15(tmp_path):
+def test_an_autosave_longer_than_40_minutes_comes_back_at_40(tmp_path):
     _require_browser(tmp_path)
     data = _probe_page(tmp_path, _AUTOSAVE_PROBE, "longsave-out")
     if not data.get("storage"):
         pytest.skip("localStorage is not usable in this headless profile")
-    assert data["duration"] == 900 and data["exported"] == 900, data
-    assert data["toast"] == "A show is at most 15.00 - Show length clamped to 15.00.", data
+    assert data["duration"] == 2400 and data["exported"] == 2400, data
+    assert data["toast"] == "A show is at most 40.00 - Show length clamped to 40.00.", data

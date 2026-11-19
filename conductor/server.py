@@ -87,7 +87,9 @@ DESIGNER_SOURCE = WEB_DIR / "designer.html"
 BUILD_DESIGNER_PY = REPO_DIR / "tools" / "build_designer.py"
 UNITS = [f"radxa-{n:02d}" for n in range(1, 11)]
 MAX_UPLOAD = 8 * 1024 * 1024
-MAX_MUSIC = 64 * 1024 * 1024
+# 128 MB since 2026-11-19 (64 MB before): the 2026-11-22 Kunitachi show
+# plays one 35:27.6 MP3 of 68 MB (256 kbps, 48 kHz), not re-encoded.
+MAX_MUSIC = 128 * 1024 * 1024
 MUSIC_CHUNK = 256 * 1024
 HISTORY_DEPTH = 200
 LABEL_MAX = 40
@@ -209,8 +211,10 @@ WORKSPACE_TAR_MEMBERS = 5000
 # The exhibition workspace travels between two Conductors as one .tar
 # (GET /api/workspace/export -> POST /api/workspace/import): show.json,
 # history.json, files/*.csv and the music - never fleet.json, which says
-# where THIS host's units are. 200 MB is three times the biggest music file
-# allowed plus every CSV a show could hold.
+# where THIS host's units are. 200 MB was three times the biggest music
+# file allowed plus every CSV a show could hold; with music at 128 MB
+# (2026-11-19) it still holds the largest music plus the CSVs (a few MB),
+# and the 68 MB Kunitachi workspace with room to spare.
 WORKSPACE_TAR_MAX = 200 * 1024 * 1024
 WORKSPACE_TAR_CHUNK = 256 * 1024
 # How much of a request body an EARLY refusal (401 / 409 / 413, answered
@@ -1084,7 +1088,7 @@ class Workspace:
     def set_timeline(self, duration, cues, refresh=None) -> None:
         """Replace the whole timeline; the page always posts all of it.
         `refresh` (seconds a repaint takes) is kept when not given."""
-        duration = timeline.check_duration(duration)     # 1 s .. 15:00
+        duration = timeline.check_duration(duration)     # 1 s .. 40:00
         cues = timeline.clean(cues)
         changes = {"duration": duration, "cues": cues}
         if refresh is not None:

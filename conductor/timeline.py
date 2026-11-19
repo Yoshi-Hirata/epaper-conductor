@@ -127,15 +127,17 @@ SLOT_CAPACITY = 20
 MAX_CUES_PER_UNIT = 18
 
 # A show.json with no `duration` is a 10-minute show, as it always was.
-# The longest a show may be set to is 15:00 (2026-09-28: the show's music
-# became a 10:54 track, 「15分まで延長し」) - the Timeline's Show length
+# The longest a show may be set to is 40:00 (15:00 from 2026-09-28, when the
+# show's music became a 10:54 track, 「15分まで延長し」) - the Timeline's Show length
 # field, POST /api/show and Load show / Load bundle all refuse more with
 # DURATION_TOO_LONG. The units themselves have no ceiling of their own
 # (ui/showplay.py only reads the number), so this is the one place it lives;
 # conductor/web/index.html and the simulator mirror it (tests check).
+# 2026-11-19: raised to 40:00 - the 2026-11-22 Kunitachi show plays one
+# 35:27.6 music file (2127.6 s), so 15:00 refused it.
 DEFAULT_DURATION_S = 600.0
-MAX_DURATION_S = 900.0
-DURATION_TOO_LONG = "A show is at most 15:00"
+MAX_DURATION_S = 2400.0
+DURATION_TOO_LONG = "A show is at most 40:00"
 
 
 # The unit's broadcast STOPs, replayed (keep_away_gaps() below): the master

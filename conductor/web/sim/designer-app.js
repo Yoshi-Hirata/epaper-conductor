@@ -32,9 +32,10 @@
   const WARN_BUNDLE_BYTES = 6 * 1024 * 1024;
   const REFUSE_BUNDLE_BYTES = 8 * 1024 * 1024;
   // The longest show there can be: conductor/timeline.py's MAX_DURATION_S
-  // (15:00, 2026-09-28 - the music became a 10:54 track). The operator's
-  // Conductor refuses a longer show outright, so this page does too.
-  const MAX_SHOW_DURATION_S = 15 * 60;
+  // (40:00 since 2026-11-19 - the 11-22 Kunitachi music is 35:27.6; 15:00
+  // from 2026-09-28). The operator's Conductor refuses a longer show
+  // outright, so this page does too.
+  const MAX_SHOW_DURATION_S = 40 * 60;
   // The gap left between one design finishing being drawn and the next one
   // starting, when a design is APPENDED rather than placed by hand (the "+"
   // at the end of a track row, and EDIT CUE's "Add next design after this
@@ -1072,12 +1073,13 @@
   }
   function rulerTicks(D) {
     // The existing tiers, but never finer than D/200 (adversarial review
-    // round 2 - F2): duration is kept to 15:00 everywhere this page
+    // round 2 - F2): duration is kept to 40:00 everywhere this page
     // writes it now, but state.show.duration ultimately comes straight from
     // SIM.buildState(project) with no clamp of its own - a defensive floor
     // here means a pathological D (reached some other way) draws at most
     // ~200 ticks instead of, at the review's own example, ~83,000.
-    const step = Math.max(D > 900 ? 60 : D > 300 ? 30 : 10, D / 200);
+    // 2:00 marks past 30:00 (2026-11-19, a 35:28 show), as index.html.
+    const step = Math.max(D > 1800 ? 120 : D > 900 ? 60 : D > 300 ? 30 : 10, D / 200);
     let html = "";
     for (let t = 0; t <= D; t += step) html += `<i style="left:${(100 * t / D).toFixed(3)}%"></i><span style="left:${(100 * t / D).toFixed(3)}%">${clockShort(t)}</span>`;
     return html;
@@ -1177,7 +1179,7 @@
         <div class="card" id="tl-editor-card"><h2>EDIT CUE</h2><div id="cue-editor-body"></div></div>
       </div>` : `<div class="empty">Add the map and design CSV files on the Designs tab first.</div>`}`;
     if (items.length) {
-      // Kept to 1 s..15:00 (2026-09-28; 99:59 before), and 0
+      // Kept to 1 s..40:00 (2026-11-19; 15:00 from 2026-09-28, 99:59 before), and 0
       // itself is a revert, not a clamp-up-to-1: "0" is what an accidental
       // double-backspace leaves behind, and silently turning that into a
       // 1-second show is a worse surprise than just putting back what was
@@ -1592,7 +1594,7 @@
       <h2>音楽</h2><p>ショーの音源は、オペレーターから渡されたこのファイルの中に埋め込まれています。再生ボタンを押せばそのまま鳴ります（選び直す操作は不要です）。音源が差し替わったときは、新しいファイルが届きます ―― Timeline のツールバーに、いま埋め込まれている曲名が出ます。別の音源で確認したいときは「Pick another file…」で選べます（そのセッションの間だけ。「Back to the built-in track」で元の埋め込み音源に戻ります）。</p>
       <h2>遷移（トランジション）6種</h2><p>各デザインの塗り替え方向を選べます：既定（配線どおり、変更なし）、Top to bottom（上から下）、Bottom to top（下から上）、Left to right (audience)（観客席から見て左から右）、Right to left (audience)（観客席から見て右から左）、Centre outward（中心から外へ）。「秒」は最初の一列が変わってから最後の一列が変わるまでの時間です。</p>
       <h2>保存と受け渡し</h2><p>「Save project…」でこのブラウザ内のプロジェクト全体（CSVとタイムライン）を1つのJSONファイルに書き出します。「Open project…」で読み込みます。オペレーター側の「Load bundle…」に同じファイルを渡すと、ユニットの割り当てはそのままに、CSVとタイムラインだけが更新されます。</p>
-      <h2>制限</h2><p>自動保存はブラウザに約4MBまで。自分で選んだ音楽ファイルは64MBまでで、名前だけが記録されます（プロジェクトファイルには音のデータは入りません。再読み込み後は選び直すか、埋め込みの音源に戻してください）。保存ファイルは6MBを超えると警告、8MBを超えると保存を拒否します。プライベートブラウジングでは自動保存が効かないことがあります（そのときはヘッダーに警告が出ます）。</p>
+      <h2>制限</h2><p>自動保存はブラウザに約4MBまで。自分で選んだ音楽ファイルは128MBまでで、名前だけが記録されます（プロジェクトファイルには音のデータは入りません。再読み込み後は選び直すか、埋め込みの音源に戻してください）。保存ファイルは6MBを超えると警告、8MBを超えると保存を拒否します。プライベートブラウジングでは自動保存が効かないことがあります（そのときはヘッダーに警告が出ます）。</p>
       <h2>自己テスト</h2><p><button id="run-selftest">Run self-test</button> <span id="selftest-result"></span></p>
       <h2>連絡先</h2><p>不具合や質問は ${esc("y.hirata@r2-engineering.com")} まで。</p>
     </div>`;
@@ -2292,7 +2294,7 @@
       return { ok: true, saved, cues: project.show.cues.length };
     },
     pickMusic(file) {
-      if (file.size > globalThis.SIM.transport.MAX_MUSIC) { toast(`${file.name} is too large - the limit is 64 MB`); return; }
+      if (file.size > globalThis.SIM.transport.MAX_MUSIC) { toast(`${file.name} is too large - the limit is ${globalThis.SIM.transport.MAX_MUSIC / (1024 * 1024)} MB`); return; }
       setMusicFile(file);
       rebuild(); persist();
     },
@@ -2331,8 +2333,8 @@
   function boot() {
     loadUiPrefs();
     project = adoptBuiltInName(loadProject());
-    // A project autosaved before the 15.00 ceiling may be longer: brought to
-    // 15.00 here with Open project's own sentence, so the bundle it exports
+    // A project autosaved with a longer show than the ceiling (40.00 since
+    // 2026-11-19, 15.00 before) is brought to MAX_SHOW_DURATION_S here with Open project's own sentence, so the bundle it exports
     // is never refused by the operator's Conductor (review 2026-09-28).
     let bootNote = null;
     const storedLength = Number(project.show && project.show.duration);

@@ -16835,7 +16835,7 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, {
      "sweep": null
     },
     {
-     "at": 895.0,
+     "at": 2395.0,
      "design": "p2",
      "id": "b",
      "item": "Look22",
@@ -16845,7 +16845,7 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, {
      "sweep": null
     },
     {
-     "at": 901.0,
+     "at": 2401.0,
      "design": "p1",
      "id": "c",
      "item": "Look22",
@@ -16855,12 +16855,12 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, {
      "sweep": null
     }
    ],
-   "duration": 900.0,
+   "duration": 2400.0,
    "expect": {
     "cues": [
      {
       "complete": 0.0,
-      "end": 895.0,
+      "end": 2395.0,
       "end_source": "next",
       "id": "a",
       "refresh": 7.0,
@@ -16868,22 +16868,22 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, {
       "sent": -7.0
      },
      {
-      "complete": 902.0,
-      "end": 901.0,
+      "complete": 2402.0,
+      "end": 2401.0,
       "end_source": "next",
       "id": "b",
       "refresh": 7.0,
       "refresh_source": "show",
-      "sent": 895.0
+      "sent": 2395.0
      },
      {
-      "complete": 908.0,
-      "end": 900.0,
+      "complete": 2408.0,
+      "end": 2400.0,
       "end_source": "show",
       "id": "c",
       "refresh": 7.0,
       "refresh_source": "show",
-      "sent": 901.0
+      "sent": 2401.0
      }
     ],
     "minInterval": {
@@ -16893,8 +16893,8 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, {
      "a": [],
      "b": [],
      "c": [
-      "15:01 is after the end of the show (15:00)",
-      "starts before the previous picture is complete (15:02)"
+      "40:01 is after the end of the show (40:00)",
+      "starts before the previous picture is complete (40:02)"
      ]
     },
     "warnings": []
@@ -16926,7 +16926,7 @@ globalThis.SIM = Object.assign(globalThis.SIM || {}, {
     }
    },
    "kind": "timeline",
-   "name": "fifteen_minute_show",
+   "name": "longest_show",
    "refresh": 7.0
   },
   {
