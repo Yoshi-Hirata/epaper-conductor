@@ -31,7 +31,10 @@ for nn in "$@"; do
     # The remote script reads the password from stdin ("$(cat)").
     if printf '%s' "$psk" | ssh -o BatchMode=yes -o ConnectTimeout=8 "radxa@$host" \
         "set -e; psk=\$(cat); name='$ssid';
-         if nmcli -t -f NAME con show | grep -qx \"\$name\"; then echo \"already has \$name - left as it is\"; exit 0; fi
+         if nmcli -t -f NAME con show | grep -qx \"\$name\"; then
+             sudo -n nmcli con modify \"\$name\" 802-11-wireless-security.psk \"\$psk\"
+             echo \"already had \$name - password replaced\"; exit 0
+         fi
          sudo -n nmcli con add type wifi ifname wlan0 con-name \"\$name\" ssid \"\$name\" \
              802-11-wireless-security.key-mgmt wpa-psk 802-11-wireless-security.psk \"\$psk\" \
              ipv4.method manual ipv4.addresses $host/24 ipv4.never-default yes \
