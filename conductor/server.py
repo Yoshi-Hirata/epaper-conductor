@@ -49,6 +49,7 @@ import hashlib
 import hmac
 import http.client
 import importlib.util
+import ipaddress
 import json
 import math
 import os
@@ -4834,9 +4835,26 @@ def serve(workspace, port: int = 8765, open_browser: bool = False,
         compiled, problems = offer_startup_shows(fleet, ws)
     fleet.start()
     server.RequestHandlerClass.fleet = fleet
-    beacon = BeaconSender(fleet, token, enabled=config.fleet_option("beacon", False) is True,
-                          destinations=config.fleet_option("beacon_to"),
-                          unicast=config.fleet_option("beacon_unicast", True) is not False)
+    beacon_options = config._fleet_json()
+    enabled = beacon_options.get("beacon", False)
+    if not isinstance(enabled, bool):
+        print(f"Warning: invalid beacon value {enabled!r}; beacon stays off")
+    unicast = beacon_options.get("beacon_unicast", True)
+    if not isinstance(unicast, bool):
+        print(f"Warning: invalid beacon_unicast value {unicast!r}; unicast stays on")
+    destinations = None
+    if "beacon_to" in beacon_options:
+        value = beacon_options["beacon_to"]
+        addresses = [value] if isinstance(value, str) else value
+        try:
+            if not isinstance(addresses, list) or not all(isinstance(addr, str)
+                                                         for addr in addresses):
+                raise ValueError("expected IPv4 strings")
+            destinations = [str(ipaddress.IPv4Address(addr)) for addr in addresses]
+        except ValueError:
+            print(f"Warning: invalid beacon_to value {value!r}; /24 broadcasts are used instead")
+    beacon = BeaconSender(fleet, token, enabled=enabled is True,
+                          destinations=destinations, unicast=unicast is not False)
     server.RequestHandlerClass.beacon = beacon
     keeper = start_backups(server.RequestHandlerClass, config, backups)
     player = None

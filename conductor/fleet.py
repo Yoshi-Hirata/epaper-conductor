@@ -1145,6 +1145,8 @@ class Fleet:
             run = dict(self.run) if self.run else None
             gen, stopped, staging = self._run_gen, self._stopped, self._staging
             shows = dict(self.shows)
+            adopted_without_upload = bool(run and run.get("adopted")
+                                          and (not shows or self._offered))
         if staging is not None:
             state = None
         elif run is not None:
@@ -1168,15 +1170,26 @@ class Fleet:
                 view["duplicate_units"][name] = host
                 view["skipped"][name] = f"two units report the hostname {host}"
         # A STOP can need offsets for units removed from the current show set.
-        names = self.links if state == "stopped" else shows
+        names = dict.fromkeys((*shows, *self.links)) if adopted_without_upload else (
+            self.links if state == "stopped" else shows)
         for name in names:
             link = self.links.get(name)
             offset = link.offset if link is not None else None
             if offset is not None:
                 view["offsets"][name] = offset
-            if name not in shows or name in view["skipped"]:
+            if name in view["skipped"]:
                 continue
-            show = shows[name]
+            show = shows.get(name)
+            if show is None:
+                if not adopted_without_upload:
+                    continue
+                unit = (link.status or {}).get("show")
+                if (not self._can_adopt_run(link, unit, offset)
+                        or not unit.get("id")):
+                    view["skipped"][name] = "no uploaded show known for this unit - Upload again"
+                    continue
+                show = unit
+                view["shows"][name] = show["id"]
             host = hosts.get(name)
             try:
                 valid_host = isinstance(host, str) and 1 <= len(host.encode("utf-8")) <= 32
@@ -3125,6 +3138,13 @@ class Fleet:
         self._refused.pop(link.name, None)
         return True
 
+    def _can_adopt_run(self, link: UnitLink, unit, offset) -> bool:
+        # A standalone demo also reports "running", but belongs to the unit.
+        return (link.online and isinstance(unit, dict) and unit.get("state") == "running"
+                and not self._playing_demo(link)
+                and unit.get("synced") and unit.get("t0") is not None
+                and offset is not None)
+
     def _adopt(self) -> None:
         """A conductor restarted mid-show finds the run on the units."""
         with self._run_lock:
@@ -3132,16 +3152,10 @@ class Fleet:
                 return
             found = []
             for link in self.links.values():
-                unit = (link.status or {}).get("show") or {}
-                # A unit playing its own standalone demo is not running
-                # the fleet's show, even though its state also reads
-                # "running" - adopting it would have this conductor try
-                # to drive (and "correct") a demo nobody asked it to.
-                if (link.online and unit.get("state") == "running"
-                        and not self._playing_demo(link)
-                        and unit.get("synced") and unit.get("t0") is not None
-                        and link.offset is not None):
-                    found.append(unit["t0"] - link.offset)
+                unit = (link.status or {}).get("show")
+                offset = link.offset
+                if self._can_adopt_run(link, unit, offset):
+                    found.append(unit["t0"] - offset)
             if found:
                 found.sort()
                 self._may_adopt = False

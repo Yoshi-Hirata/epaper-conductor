@@ -236,12 +236,24 @@ class BeaconSender:
                 ips[name] = _unit_ip(link.address)
             except (OSError, ValueError) as exc:
                 skipped[name] = f"unit address: {exc}"
-        routes, missing = _routes(ips.values(), None, self._override, self._port)
+        override = self._override
+        errors = []
+        if override is not None:
+            valid = []
+            for target in (override if isinstance(override, (list, tuple)) else [override]):
+                try:
+                    if not isinstance(target, str):
+                        raise ValueError("expected an IPv4 string")
+                    valid.append(str(ipaddress.IPv4Address(target)))
+                except ValueError as exc:
+                    errors.append(f"beacon destination {target!r}: {exc}")
+            override = valid if valid or not errors else None
+        routes, missing = _routes(ips.values(), None, override, self._port)
         for name, ip in ips.items():
             if _network(ip) in missing:
                 skipped[name] = f"this computer is not on {_network(ip)} - join the show Wi-Fi"
         return ([route for route in routes if route[2] or self._unicast],
-                {name: _unicast_target(ip) for name, ip in ips.items()}, skipped)
+                {name: _unicast_target(ip) for name, ip in ips.items()}, skipped, errors)
 
     def _send(self, data, route):
         local, target, broadcast = route
@@ -300,7 +312,9 @@ class BeaconSender:
                 now = self._clock() if now is None else now
                 if refresh is not None:
                     self._close_sockets()
-                    self._routes, self._unit_targets, self._network_skipped = routes
+                    self._routes, self._unit_targets, self._network_skipped, errors = routes
+                    for error in errors:
+                        self._error(error)
                     self._refresh_at = now + _ROUTE_REFRESH_S
                 self._tick(now)
             except Exception as exc:

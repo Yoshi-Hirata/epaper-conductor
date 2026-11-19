@@ -231,6 +231,37 @@ class Socket:
         pass
 
 
+@pytest.mark.parametrize("other_show", [None, {"id": "idle", "state": "ready"},
+                                       {"id": "demo", "state": "running", "demo": True}])
+def test_adopted_run_uses_each_units_reported_show(fleet_clock, other_show):
+    fleet, clock = fleet_clock
+    fleet.shows = {}
+    fleet.run = None
+    fleet._may_adopt = True
+    for name, offset, duration in (("alias", 10.0, 25), ("other", 20.0, 60)):
+        link = fleet.links[name]
+        link.last_seen = clock.now
+        link._samples.clear()
+        link._samples.append((0.01, offset))
+        link.status["show"] = dict(id=f"{name}-reported", duration=duration,
+                                   state="running", synced=True, t0=90.0 + offset)
+    fleet._adopt()
+    run = dict(fleet.run)
+    view = fleet.beacon_view()
+    assert run["adopted"]
+    assert {name: entry["show"] for name, entry in view["entries"].items()} == {
+        "alias": "alias-reported", "other": "other-reported"}
+    assert view["skipped"] == {}
+
+    fleet.links["other"].status["show"] = other_show
+    assert fleet.beacon_view()["skipped"] == {
+        "other": "no uploaded show known for this unit - Upload again"}
+    clock.now = 146.0
+    fleet.links["alias"].last_seen = clock.now
+    assert fleet.beacon_view()["skipped"]["alias"] == "show has ended - nothing to send"
+    assert fleet.shows == {} and fleet.run == run
+
+
 @pytest.fixture
 def sender_setup(fleet_clock, monkeypatch):
     fleet, clock = fleet_clock
@@ -490,6 +521,27 @@ def test_destination_selection():
     assert override[1:] == beacon.destinations(units, local)[2:]
 
 
+@pytest.mark.parametrize("override,target,errors", [
+    ("192.168.1.254", "192.168.1.254", 0),
+    (["bad", "192.168.1.254"], "192.168.1.254", 1),
+    (["bad"], "192.168.1.255", 1),
+])
+def test_sender_keeps_routes_with_bad_destinations(fleet_clock, monkeypatch,
+                                                   override, target, errors):
+    fleet, clock = fleet_clock
+    fleet.links["alias"].address = "192.168.1.9"
+    routes = beacon._routes
+    monkeypatch.setattr(beacon, "_routes",
+                        lambda ips, local, override, port:
+                        routes(ips, ["192.168.1.4"], override, port))
+    packets = []
+    sender = beacon.BeaconSender(fleet, enabled=True, clock=clock, destinations=override,
+                                 sock_factory=lambda *_: Socket(packets))
+    assert sender.tick() == 2
+    assert [address for _, address in packets] == [(target, 8788), ("192.168.1.9", 8788)]
+    assert sender.snapshot()["errors"] == errors
+
+
 @pytest.mark.parametrize("unicast", [True, False])
 def test_broadcast_and_optional_identical_unicast(fleet_clock, monkeypatch, unicast):
     fleet, clock = fleet_clock
@@ -569,10 +621,21 @@ def test_server_toggle(tmp_path):
         server.server_close()
 
 
-@pytest.mark.parametrize("config,enabled", [
-    ({"beacon": True}, True), ({"beacon": "true"}, False), ({}, False),
+@pytest.mark.parametrize("config,expected,warnings", [
+    ({"beacon": True, "beacon_to": "192.168.51.255", "beacon_unicast": False},
+     (True, ["192.168.51.255"], False), []),
+    ({"beacon": True, "beacon_to": ["192.168.51.255"]},
+     (True, ["192.168.51.255"], True), []),
+    ({"beacon": True, "beacon_to": ["192.168.51.255", "bad"]},
+     (True, None, True), ["beacon_to", "bad", "/24 broadcasts are used instead"]),
+    ({"beacon": "true", "beacon_unicast": "false"},
+     (False, None, True), ["beacon value 'true'", "beacon_unicast value 'false'"]),
+    ({"beacon": None, "beacon_unicast": 0, "beacon_to": 7},
+     (False, None, True), ["beacon value None", "beacon_unicast value 0",
+                          "beacon_to value 7", "/24 broadcasts are used instead"]),
+    ({}, (False, None, True), []),
 ])
-def test_serve_beacon_boot_option(tmp_path, monkeypatch, config, enabled):
+def test_serve_beacon_boot_option(tmp_path, monkeypatch, capsys, config, expected, warnings):
     (tmp_path / "fleet.json").write_text(json.dumps(config), encoding="utf-8")
     monkeypatch.setattr(Fleet, "start", lambda self: None)
     monkeypatch.setattr(beacon.BeaconSender, "start", lambda self: None)
@@ -583,8 +646,14 @@ def test_serve_beacon_boot_option(tmp_path, monkeypatch, config, enabled):
     booted = []
 
     def serve_forever(server):
-        booted.append(server.RequestHandlerClass.beacon.snapshot()["enabled"])
+        sender = server.RequestHandlerClass.beacon
+        booted.append((sender.snapshot()["enabled"], sender._override, sender._unicast))
 
     monkeypatch.setattr(conductor_server.ThreadingHTTPServer, "serve_forever", serve_forever)
     assert conductor_server.serve(tmp_path, port=0) == 0
-    assert booted == [enabled]
+    assert booted == [expected]
+    output = capsys.readouterr().out
+    for warning in warnings:
+        assert output.count(warning) == 1
+    if not warnings:
+        assert "Warning: invalid beacon" not in output
