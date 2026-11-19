@@ -137,7 +137,8 @@
 - **実機確認(2026-10-22)**: radxa-09 / LOOK 28(AZ271SD1307、22 枚)で fray + ランダム 2〜3 段、
   span 20 秒、198 枚。ファームは基板あたり 60 通りの遅延を処理し、全スケールが完了、運用者の目で
   良好。その後 09 は radxa-05 の展示ショーで Upload し直した
-- **決定: radxa-05(展示 Conductor)は 1243d5d(2026-10-19 配布、縁の機能なし)のまま・デプロイしない**。
+- **(2026-11-19 に変更: radxa-05 にも main を載せる ― [ROLLOUT_20261120.md](ROLLOUT_20261120.md) §3 の 4)**
+  それまでの決定: radxa-05(展示 Conductor)は 1243d5d(2026-10-19 配布、縁の機能なし)のまま・デプロイしない。
   縁は PC で回すショー用。展示のショーに縁を使うなら、先に main を radxa-05 に載せること
   (PC を AZ-Epaper につなぎ、`git bundle create` → scp → radxa-05 で `git pull --ff-only /tmp/x.bundle main`
   → `sudo systemctl restart epaper-conductor epaper-ui`。`radxa/EXHIBITION.md` §6 の更新の注意も参照)
