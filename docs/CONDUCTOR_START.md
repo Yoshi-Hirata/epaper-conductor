@@ -126,6 +126,41 @@ python -m conductor serve --open
 - PC が別の Wi-Fi に切り替わっていたら、Wi-Fi 一覧からルータの SSID を選び直す
 - Units タブが全部 offline のときは、まず PC のアドレスが `192.168.51.x` かを確認(`ipconfig`)
 
+## 4c. ビーコン(予備の一方向ブロードキャスト、2026-11-20)
+
+機体の Wi-Fi は「ルーターから機体には届くが、機体の返信がルーターに届かない」ことがある。HTTP の命令は返信も
+要るので、そういう会場では START しても機体が応えない。ビーコンは返信を要らない**予備の経路**。
+
+**いつ ON にするか**: 返信がルーターに届かない会場だけ。**普段は OFF**。Units タブの
+**`Backup broadcast (beacon)`** にチェックを入れる。
+
+- **やること**: START / HOLD / RESUME / SEEK / NEXT / STOP を、HTTP のほかに **UDP でも毎秒数回** 送る。
+  HTTP も従来どおり送る(**置き換えでなく予備**)。機体は先に届いたほうに従い、もう一方で戻されない
+- **やらないこと**: Upload・PRESET・STANDBY・Release・ファームウェアはビーコンでは送らない
+  (HTTP のまま。Upload はルーターの近くで先に済ませる)
+- **機体の LCD で従ったか見る**(ログの行。一部は 17 文字ほどで切れる):
+  - 従った: `beacon run, starts in 8s`(カウントダウン中に入った)/ `beacon run, joined 31s`(途中参加)/
+    `beacon hold` / `beacon stop`
+  - 見送った: `beacon skip: other PC`(別の PC のビーコンを先に聞いている)/ `beacon skip: clock off`
+    (時計が合わない。再起動した機体など)/ `beacon skip: no show`(その機体にそのショーが載っていない)/
+    `beacon skip: own demo`(機体が自分のデモを回している)
+  - 断られた: `beacon NG: ...`(理由つき。例: 書き込み中)
+  - `beacon: STOP wins` = 同時に届いた HTTP の STOP を優先して、もう一度止めた
+- **チェックボックスの横の表示**: `(on, idle)` = ON だが送るものが無い(止まっている)/ `(sending)` = 送信中 /
+  `(no route - check the Wi-Fi)` = 送り先の経路が無い(PC を機体と同じショーの Wi-Fi につなぐ)/
+  `N send errors, last HH:MM:SS` = 送信エラーの回数と最後の時刻 / `N units left out` = N 台は送っていない
+  (**マウスを載せると理由**: 時計をまだ測っていない、ホスト名が同じ、PC がその Wi-Fi にいない、など)
+- **ルール**:
+  - ビーコンを ON にする Conductor は**ネットワークに 1 つだけ**(本番と展示を両方 ON にしない)
+  - 切り替えは**止まっているときだけ**
+  - ON は fleet.json の `"beacon"` に保存され、**再起動しても ON のまま**
+  - **ショーの途中で Conductor を再起動しない**: 再起動のあとは、次の Upload までビーコンは機体を飛ばす
+    (STOP のあとに Upload し直す)
+  - 再起動した機体は、**`/status` の応答が 1 回通る**まで操縦できない(時計が合うまでビーコンを見送る)
+  - バッテリー交換はショーの合間に(途中で電源を切ると上のとおり)
+- 本番で ON にする前に、予備機でハードウェア確認を通す([ROLLOUT_20261120.md](ROLLOUT_20261120.md) §7 の 7 番)。
+  仕様は [BEACON.md](BEACON.md) 8 章
+
 ## 5. データの場所
 
 すべて `showdata/` フォルダ(リポジトリ直下、Git の管理外):

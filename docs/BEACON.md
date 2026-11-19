@@ -95,6 +95,9 @@ mac     32 B  HMAC-SHA256(key, every preceding byte of the datagram)
 
 ## 3. Unit side (`ui/beacon.py`)
 
+*Sections 3 and 4 are the first design; section 8 (as built) overrides them
+where they differ.*
+
 **Thread.** One daemon thread; `SO_REUSEADDR`, `bind(("", 8788))`,
 `settimeout(1.0)`, `recvfrom(2048)`. Every exception is caught; an `OSError`
 sleeps 1 s (no busy loop). It calls the player as an HTTP handler thread does.
@@ -103,6 +106,8 @@ sleeps 1 s (no busy loop). It calls the player as an HTTP handler thread does.
 - G1 bad length, magic, version or MAC.
 - G2 cid latch: another cid is ignored unless the latched one has been silent
   for 5 s (`CID_HOLD_S`). Only datagrams carrying this unit's entry count.
+  (As built: silent for 5 s or more takes over, and the latch moves only after
+  G4 - section 8.)
 - G3 `seq <= last seq` for that cid (replay, reorder, the unicast duplicate).
 - G4 `|entry.now - monotonic()| > 1.0 s` (`NOW_TOLERANCE_S`): a reboot on
   either side, a junk offset, an old capture.
@@ -129,7 +134,8 @@ sleeps 1 s (no busy loop). It calls the player as an HTTP handler thread does.
   same code the HTTP handler runs (demo gate, id check, busy check, burn gate).
 - A `RemoteError` is logged once per reason and retried no sooner than 3 s.
 - Level-triggered: a repeated beacon makes no call.
-- Shown: `runner.emit("beacon: run (show at -8.2 s)")`, `"beacon: hold"`,
+- Shown (first design; the strings built are in section 8):
+  `runner.emit("beacon: run (show at -8.2 s)")`, `"beacon: hold"`,
   `"beacon: stop"`, `"beacon: run refused: <reason>"`; `/status["beacon"] =
   {"on", "port", "heard_s", "cid", "gen", "applied": {"what", "gen", "ago_s"},
   "ignored": <last reason>, "dropped": {...}}`.
@@ -235,3 +241,196 @@ sleeps 1 s (no busy loop). It calls the player as an HTTP handler thread does.
   applied once per (cid, gen); a split datagram received out of order; a new
   cid after 5 s; the e2e 0:00 cue fires exactly once when both paths deliver
   START.
+
+## 8. As built (2026-11-20) - this section overrides the text above
+
+The code went further than section 7 in the review rounds (a friendly review and
+two adversarial reviewers, several rounds). This is what it does now. Merged to
+main as e330963; not pushed, not on any unit.
+
+**Wire format: unchanged.** Header, entries, MAC, the key and the three goldens
+in `tests/goldens/beacon_v1.json` are still valid on both sides.
+
+### 8.1 Unit side (`ui/beacon.py`, `Agent.show_command`)
+
+- **Order and commit point.** G1 (bad datagram) -> no entry for this unit
+  (counted as `host`) -> G2 (cid latch) -> G3 (seq, per cid) -> G4 (`now` within
+  1.0 s). Only after G4 are the cid latch, its "last heard" time, the per-cid seq
+  and `gen` committed: a datagram whose clock is unusable captures nothing and
+  moves no sequence. G2 lets another cid in once the latched one has been silent
+  for 5 s or more (`CID_HOLD_S`), counted from the last datagram that carried
+  this unit's entry. The seq memory is the last 8 cids (`SEQ_CIDS`).
+- **G5a / G5.** From G4 on the unit records `agent.beacon_seen_cid`. If the last
+  HTTP `/show/*` command carried a serial of the SAME cid, G5a decides by
+  `(cid, gen)`: an older gen is dropped (`gen`), an equal or newer one passes. The
+  time-based G5 (`entry.now <= show_cmd_at + 0.10 s`, dropped as `http`) is used
+  only when that command carried no serial, or the serial of ANOTHER cid.
+  A beacon call never stamps `show_cmd_at` / `show_cmd_serial`.
+- **G6, G7** as in section 3 (own demo untouched, even by stop; the entry must
+  name the loaded show - the LCD says "no show").
+- **`decide()`.** run: in step (running or ended, `synced`, T0 within 0.10 s) =
+  none; past its end = none, where the allowance past `duration` is 30 s
+  (`END_SLACK`) ONLY for a unit that is running or holding - a unit that is
+  neither (ended, loaded, a fresh preset) gets none, so a late datagram of a
+  finished lap cannot start it again; burn "burning" = none; otherwise
+  `/show/run`. hold: `/show/hold` only if running. stop: `/show/stop` only if
+  running or holding (an ENDED unit stays ENDED).
+- **Watermark.** An entry that needs no action still advances
+  `agent.beacon_serial` (the newest `(cid, gen)` accepted, never back to an older
+  gen of the same cid) when the unit already is where the entry says: "in step",
+  "stop: told already", "hold" on a holding unit, "stop" on a unit that is
+  neither running nor holding. An older HTTP run/hold is then late (8.2).
+- **Stop once per `(cid, gen)`**, remembered for the last 8 cids, with ONE
+  exception: if, after that stop was applied, an OLDER run of the same Conductor
+  reached the player (an HTTP `/show/run` that was already past the agent's
+  checks when the unit heard its first beacon), the stop is applied again. A unit
+  started again by anything else is not stopped again by the same stop. The
+  snapshot of `agent.applied_run` that decides this is taken BEFORE the player
+  call, because `player.stop()` releases the player's lock during its settle wait.
+- **Retry** of a refused command (`RemoteError`, e.g. burn "none", busy) is keyed
+  to `(cid, gen, path)`: that command of that serial waits `RETRY_S` = 3 s; a
+  refused RUN never holds a STOP back, and a new gen is asked at once.
+- **STOP overtaken.** `Beacon.handle` holds `agent.show_lock` from G5 through the
+  player call. If an HTTP `/show/stop` reached the player meanwhile
+  (`agent.stops_seen` changed) and the beacon's own run/hold landed, the beacon
+  stops the unit again.
+- **LCD strings** (`runner.emit`, about 17 characters survive on the 1.3" row;
+  `tests/test_ui_beacon.py` measures them against `ui/render.py`):
+  applied - `beacon run, starts in 8s`, `beacon run, joined 31s`, `beacon hold`,
+  `beacon stop`; skipped (once per change of reason) - `beacon skip: other PC`
+  (G2), `beacon skip: clock off` (G4), `beacon skip: no show` (G7),
+  `beacon skip: own demo` (G6); refused - `beacon NG: <the refusal>` (once per
+  text); `beacon: STOP wins` (the stop-again above). Other drops are counted in
+  `/status.beacon.dropped` (`bad cid seq now gen http demo show host`) and nothing
+  is written to the LCD.
+
+### 8.2 HTTP path (`Agent.show_command`, `via="http"`)
+
+The Conductor sends `X-Beacon-Cid` and `X-Run-Gen` on every `/show/*` POST
+(`UnitLink.post(..., serial=)`, also for supervision's and the stop tail's
+corrections). The serial is bound to the command's own decision: START/HOLD/STOP
+take `(beacon_cid, _run_gen)` where they decide; supervision's posts carry the
+gen they decided under, not whatever `_run_gen` is when the post goes out.
+
+- **UNTIL a beacon entry for this unit has been heard this boot**
+  (`beacon_seen_cid is None`): the HTTP path is exactly the path before the
+  beacon - no lock, no same-START no-op, nothing dropped. Only the stamps
+  (`show_cmd_at`, `show_cmd_serial`) and the STOP count are kept, so that the
+  first datagram is ordered against what HTTP already did. With the Conductor's
+  switch off, or a unit out of its reach, nothing else ever changes.
+- **AFTER that:**
+  - `/show/run` and `/show/hold` hold `show_lock` from the stamp through the
+    player call, so they cannot interleave with a beacon call.
+  - A run/hold whose gen is OLDER than the newest accepted from that cid (by
+    either path; only for a cid the beacon has been heard from) is answered
+    without acting and without stamping; the journal says "late ...".
+  - The same START - same serial, T0 within `SAME_T0_S`, the unit running that
+    show from the PC - is not run twice (it would fire the 0:00 cue again).
+    Another gen (a SEEK 40 ms away is one), a moved T0 or a unit that is not
+    running goes to the player.
+  - A run/hold that a `/show/stop` overtook while it waited for the lock is
+    dropped (the journal says so).
+  - `/show/stop` NEVER takes `show_lock` and always executes (straight to the
+    player, stamp first, then the count). `/show/load`, `/show/preset`,
+    `/show/clear` stamp and run as before.
+  - The beacon stops again a unit its own run/hold landed on after a STOP (8.1).
+
+### 8.3 Conductor side (`conductor/beacon.py`, `Fleet.beacon_view`, `server.py`)
+
+- **Entries.** `beacon_view()` stamps `now` first and copies run/gen/state/shows
+  under `_run_lock`. No entries while staging or idle. One entry per unit in
+  `shows` that has an offset and a valid `/status` host (1-32 bytes UTF-8) and,
+  while running, is not more than that show's duration + 30 s past. Each entry is
+  validated by `_encode` before it is sent; a unit that fails is left out with the
+  reason, the others still go. Two units that report the SAME `host` are both left
+  out ("two units report the hostname ..."), since the unit matches by host.
+  `flags` bit0 uses `_beacon_force`, a side-effect-free read of supervision's
+  force decision (this closes A6 for the common case).
+- **An adopted run** (the Conductor restarted while the units played) beacons only
+  units whose show id is in `self.shows`; the others are left out with "its show is
+  not confirmed by this Conductor since it restarted ... (Upload after STOP)".
+- **Cadence** as section 4: 5 Hz in the countdown and for 20 s after a change
+  (new gen, state or show-id set), else 1 Hz. The sender ticks every 0.2 s.
+- **STOP tail by observed transition.** A STOP is beaconed only to units that were
+  told the run: a unit is "announced" when a datagram carrying its entry was
+  actually sent (a broadcast, or the unicast copy to it). So a stale STOP is never
+  broadcast to a unit never told a run. The tail is 5 Hz for 5 s, then 1 Hz until
+  60 s, then silence (`_STOP_FAST_S`, `_STOP_TAIL_S`); nothing is sent for a tail
+  with no announced unit. A unit without a measured offset is left out
+  ("clock not measured yet - needs one good /status reply first").
+- **Routes** are refreshed every 10 s (`_ROUTE_REFRESH_S`) in a separate thread,
+  outside the sender's lock (a DNS name that hangs never stalls the ticks). A
+  refresh that finds NO route while the last one had some is believed only after
+  3 in a row (`_EMPTY_REFRESHES`, about 30 s); until then the last routes keep
+  sending and the error "route refresh found no route - keeping the last ones"
+  is counted. A refresh that finds none and had none is the zero-route state:
+  `routes: 0`, which the Units tab shows as "no route". A prefix with no local
+  address is skipped and reported per unit ("this computer is not on a.b.c.0/24
+  - join the show Wi-Fi"). A failed socket is rebuilt at the next refresh; send
+  errors are counted (`errors`, `last_error`, `last_error_at`) and never
+  propagate. Switching on resets those counters.
+- **fleet.json options** (read at start; invalid values warn on the console and
+  fall back safely):
+  - `"beacon"` (bool, default false): the stored state of the switch. Not a
+    bool -> `Warning: fleet.json: "beacon" must be true or false ...` and the
+    beacon stays off.
+  - `"beacon_unicast"` (bool, default true): not a bool -> warning, the unicast
+    copy stays on.
+  - `"beacon_to"` (list of IPv4 strings, or one string): broadcast addresses used
+    instead of the units' /24 broadcasts. An entry that is not an IPv4 address is
+    ignored with a warning; if none is valid (and the list was not empty) the
+    /24 broadcasts are used instead, with the warning saying so. An empty list
+    means no broadcast, unicast only.
+- **Switch.** `POST /api/fleet/beacon {"on": bool}` (non-bool -> error; 400 when
+  no sender is configured); saved to fleet.json under `workspace.set_fleet_option`
+  and applied under one lock; the answer is the sender's snapshot.
+- **Units tab** (`index.html`, the "Backup broadcast (beacon)" checkbox): after it,
+  "(on, idle)", "(sending)" or "(no route - check the Wi-Fi)"; then
+  ", N send errors, last HH:MM:SS" and ", N units left out" (the reasons, and the
+  last error, on hover). Nothing is shown while it is off. The checkbox is disabled
+  while a switch request is in flight or no sender exists.
+- **What is proven** (`tests/test_beacon_e2e.py`, two real Agents and players,
+  real `BeaconSender` and listeners on 127.0.0.1): a cut unit (every HTTP
+  exchange times out) follows START, HOLD, RESUME, SEEK, NEXT and STOP from the
+  beacon alone, T0 within 1 ms of the Conductor's; HTTP-then-beacon and
+  beacon-then-HTTP START fire the first cue once; an older beacon after an HTTP
+  hold leaves the unit holding; with the switch off nothing is sent and START is
+  unchanged; a unit whose clock moved since the last poll ignores the beacon; a
+  unit playing its own demo ignores run, hold and stop. Real radios, the access
+  point's behaviour with broadcast and a real unit's LCD are NOT proven - the
+  hardware check is in `docs/ROLLOUT_20261120.md` section 7.
+
+### 8.4 Accepted limits
+
+- **One beaconing Conductor per network.** Two with the switch on fight through
+  the G2 latch (the unit follows whichever it heard first, and takes the other
+  over only after 5 s of silence).
+- **A unit that rebooted cannot be steered** until one `/status` poll succeeds
+  again (its clock changed; G4 drops the datagrams, and the Conductor's offset is
+  discarded after two agreeing samples). v1.1: PC-clock fields in the datagram and
+  a one-way offset estimate on the unit.
+- **First datagram after boot vs an HTTP command already in flight.** HTTP
+  commands that passed the agent's `beacon_seen_cid is None` check before the
+  first datagram was heard run without the lock; the window is a few statements.
+  The stop-again exception (8.1) and the stamps cover the cases that matter; the
+  rest is that a run racing the very first beacon may land once after it.
+- **Stop-again residual (accepted by the PM, not fixed; Codex's last
+  confirmation).** The stop-once exception reads `agent.applied_run` before the
+  player's stop. If, on a unit's FIRST contact with the beacon, an older HTTP run
+  already in flight lands between that read and the player's stop, the stop still
+  stops it (correct) - but if someone then restarts that show from the unit
+  itself within the 60 s STOP tail, the repeated stop stops it again, because
+  that older run looks as if it came after the stop. It needs three things at
+  once: the first datagram after boot, an HTTP run in flight in a window of a few
+  statements, and a manual restart inside the tail; the result is a unit stopped
+  while the Conductor says STOP. Closing it would need the run identity and the
+  stop recorded under the player's own lock (`ui/showplay.py`), which was not
+  touched before the show.
+- **In step.** A new-gen move of T0 under 0.10 s (`T0_TOLERANCE_S`) is "in step"
+  for the beacon: the unit is not re-timed. HTTP still applies it.
+- **PRESET, load and clear are never beaconed**; Upload stays HTTP.
+- **Outside EXHIBITION mode START still refuses units that do not answer** unless
+  the operator leaves them out; the beacon then starts them as supervision's
+  "started late" would.
+- **After a Conductor restart mid-show** (adopted run) nothing is beaconed to a
+  unit until STOP and a new Upload (8.3).
