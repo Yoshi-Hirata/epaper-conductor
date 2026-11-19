@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import secrets
 import socket
 import threading
 import time
@@ -220,6 +221,7 @@ class UnitLink:
         host, _, port = address.partition(":")
         self._host, self._port = host, int(port or DEFAULT_AGENT_PORT)
         self._token = token
+        self.show_serial = None
         self._clock = clock
         self._timeout = timeout
         self._poll_conn: "http.client.HTTPConnection | None" = None
@@ -249,10 +251,12 @@ class UnitLink:
         conn.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         return conn
 
-    def _exchange(self, conn, method: str, path: str, body=None):
+    def _exchange(self, conn, method: str, path: str, body=None, extra_headers=None):
         headers = {"Content-Type": "application/json"}
         if self._token:
             headers["X-Show-Token"] = self._token
+        if extra_headers:
+            headers.update(extra_headers)
         data = json.dumps(body).encode() if body is not None else None
         sent = self._clock()
         conn.request(method, path, body=data, headers=headers)
@@ -320,7 +324,11 @@ class UnitLink:
         conn = self._connect(timeout if timeout is not None
                              else self._timeout * 2)
         try:
-            payload, sent, received = self._exchange(conn, "POST", path, body)
+            headers = None
+            if path.startswith("/show/") and self.show_serial is not None:
+                cid, gen = self.show_serial()
+                headers = {"X-Beacon-Cid": str(cid), "X-Run-Gen": str(gen)}
+            payload, sent, received = self._exchange(conn, "POST", path, body, headers)
         finally:
             conn.close()
         if learn:
@@ -376,6 +384,7 @@ class UnitLink:
                 "sync_ms": None if best is None else round(best[0] * 500, 1),
                 "samples": len(self._samples),
                 "host": status.get("host"), "commit": status.get("commit"),
+                "beacon": status.get("beacon"),
                 "phase": status.get("phase"), "cue": status.get("cue"),
                 "label": status.get("label"),
                 "boards": len(status.get("boards", [])),
@@ -549,8 +558,11 @@ class Fleet:
         # can compress them; the constants are the real thing.
         self.clear_after_stop_s = clear_after_stop_s
         self.clear_after_move_s = clear_after_move_s
+        self.beacon_cid = secrets.randbelow(0xFFFFFFFF) + 1
         self.links = {name: UnitLink(name, address, token, clock)
                       for name, address in (units or default_units()).items()}
+        for link in self.links.values():
+            link.show_serial = lambda: (self.beacon_cid, self._run_gen & 0xFFFFFFFF)
         self._stop = threading.Event()
         self._threads: "list[threading.Thread]" = []
         self.last_fire: "dict | None" = None
@@ -1110,6 +1122,60 @@ class Fleet:
                         "current": (None if expected is None or show_id is None
                                     else show_id == expected)})
         return out
+
+    def _beacon_force(self, run: dict, name: str) -> bool:
+        """Read the same force decision as supervision without recording a rejoin."""
+        if run.get("force") or name in (run.get("forced") or ()):
+            return True
+        if not self.start_present and not run.get("loops"):
+            return False
+        signature = self._failure_signature(name)
+        return signature is not None and (
+            self.start_present or self._waved.get(name) == signature)
+
+    def beacon_view(self) -> dict:
+        """Read the desired state without adopting or supervising units."""
+        now = self._clock()
+        with self._run_lock:
+            run = dict(self.run) if self.run else None
+            gen, stopped, staging = self._run_gen, self._stopped, self._staging
+            shows = dict(self.shows)
+        if staging is not None:
+            state = None
+        elif run is not None:
+            state = run["state"]
+        else:
+            state = "stopped" if stopped else None
+        view = dict(now=now, gen=gen, state=state, entries={}, skipped={},
+                    shows={name: show["id"] for name, show in shows.items()},
+                    offsets={})
+        if state is None:
+            return view
+        # A STOP can need offsets for units removed from the current show set.
+        names = self.links if state == "stopped" else shows
+        for name in names:
+            link = self.links.get(name)
+            offset = link.offset if link is not None else None
+            if offset is not None:
+                view["offsets"][name] = offset
+            if name not in shows:
+                continue
+            show = shows[name]
+            host = ((link.status or {}).get("host") if link is not None else None)
+            pos = ((run.get("held_at") or now) - run["t0"]) if run else 0.0
+            if offset is None:
+                view["skipped"][name] = "no offset"
+            elif not isinstance(host, str) or not 1 <= len(host.encode("utf-8")) <= 32:
+                view["skipped"][name] = "unknown or invalid host"
+            elif state == "running" and pos > float(show.get("duration", 0)) + 30:
+                view["skipped"][name] = "show over"
+            else:
+                view["entries"][name] = dict(
+                    host=host, show=show["id"], now=now + offset, pos=pos,
+                    state={"running": 1, "holding": 2, "stopped": 3}[state],
+                    t0=run["t0"] + offset if run else 0.0,
+                    flags=int(run is not None and self._beacon_force(run, name)))
+        return view
 
     def snapshot(self) -> dict:
         self._adopt()

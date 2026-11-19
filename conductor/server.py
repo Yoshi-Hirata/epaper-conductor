@@ -28,6 +28,9 @@ client's, not the repo's):
     fleet.json      optional: {"units": {"radxa-01": "host:port", ...},
                     "token": "..."} when the units are not at their
                     usual 192.168.51.1NN:8787 (conductor/fleet.py)
+                    "beacon": false controls the one-way UDP backup.
+                    "beacon_to": ["a.b.c.255"] overrides broadcast targets.
+                    "beacon_unicast": true enables the unicast copies.
 
 Undo covers show.json - the timeline, the show's length and the unit
 assignments - and is kept on disk, so it survives a reload of the page
@@ -61,6 +64,7 @@ from pathlib import Path
 from . import durable, export3d, panelfw, sequence, showfile, timeline
 from .backups import (BACKUPS_OFF, RESTORE_WAIT_S, backup_listing,
                       content_revision, restore_note, start_backups)
+from .beacon import BeaconSender
 from .fleet import (DEFAULT_HOTSPOT_UNIT, DEFAULT_LEAD_S, STAGING_BUSY,
                     WIFI_SWITCH_RANGE_S, Fleet, default_units)
 from .look import (MAX_BOARD_ID, PALETTE, UNRELIABLE_DIP_NOTE, Design,
@@ -3070,6 +3074,8 @@ _LOCAL_HOSTS = ("127.0.0.1", "::1", "::ffff:127.0.0.1")
 class Handler(BaseHTTPRequestHandler):
     workspace: Workspace = None            # set by make_server()
     fleet: "Fleet | None" = None
+    beacon: "BeaconSender | None" = None
+    beacon_lock = threading.Lock()
     speaker = None                         # conductor/speaker.py, with --speaker
     token: "str | None" = None             # fleet.json's, for the two workspace endpoints
     passcode: "str | None" = None          # see PASSCODE_HEADER
@@ -3379,6 +3385,7 @@ class Handler(BaseHTTPRequestHandler):
                 # default and says where the sound comes from. `loop` is
                 # THE SHOW's Loop, always present (see _loop_object).
                 speaker = None if self.speaker is None else self.speaker.status()
+                beacon = None if self.beacon is None else self.beacon.snapshot()
                 if self.fleet is None:
                     return self._json({"units": [], "last_fire": None,
                                        "run": None, "shows": {},
@@ -3386,11 +3393,13 @@ class Handler(BaseHTTPRequestHandler):
                                        "start_at": 0.0, "show_duration": None,
                                        "loop": self._loop_object(None),
                                        "speaker": speaker,
+                                       "beacon": beacon,
                                        "timeline": self.workspace.written_state()})
                 with self.prepared_lock:
                     prepared = dict(self.prepared)
                 snap = self.fleet.snapshot()
                 return self._json(dict(snap, prepared=prepared, speaker=speaker,
+                                       beacon=beacon,
                                        loop=self._loop_object(snap.get("loop")),
                                        timeline=self.workspace.written_state()))
             if path == "/api/fleet/demos":
@@ -4142,6 +4151,17 @@ class Handler(BaseHTTPRequestHandler):
                               status=502)
 
     def _fleet_command(self, command: str, body: dict) -> None:
+        if command == "beacon":
+            on = body.get("on")
+            if not isinstance(on, bool):
+                raise ValueError("beacon on must be a boolean")
+            if self.beacon is None:
+                return self._json({"error": "no beacon configured"}, status=400)
+            with self.beacon_lock:
+                self.workspace.set_fleet_option("beacon", on)
+                self.beacon.set_enabled(on)
+                status = self.beacon.snapshot()
+            return self._json({"beacon": status})
         fleet = self.fleet
         if fleet is None:
             return self._json({"error": "no fleet configured"}, status=400)
@@ -4810,6 +4830,10 @@ def serve(workspace, port: int = 8765, open_browser: bool = False,
         compiled, problems = offer_startup_shows(fleet, ws)
     fleet.start()
     server.RequestHandlerClass.fleet = fleet
+    beacon = BeaconSender(fleet, token, enabled=config.fleet_option("beacon", False) is True,
+                          destinations=config.fleet_option("beacon_to"),
+                          unicast=config.fleet_option("beacon_unicast", True) is not False)
+    server.RequestHandlerClass.beacon = beacon
     keeper = start_backups(server.RequestHandlerClass, config, backups)
     player = None
     if speaker:
@@ -4863,10 +4887,12 @@ def serve(workspace, port: int = 8765, open_browser: bool = False,
         print(f"WARNING: {other['warning']}", flush=True)
     watch.start()
     try:
+        beacon.start()
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        beacon.stop()
         watch.stop()
         if keeper is not None:
             keeper.stop()

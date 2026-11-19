@@ -5612,6 +5612,8 @@ function renderFleet() {
         <span style="flex:1"></span>
         <button id="fleet-standby">All units STANDBY (white)</button>
         <button id="fleet-release">Release units to on-device control</button>
+        <label class="meta"><input type="checkbox" id="fleet-beacon" disabled>
+          One-way beacon <span id="fleet-beacon-counts"></span></label>
       </div>
       <div class="meta" id="go-log" style="margin-top:8px;white-space:pre-wrap">${esc(ui.goLog)}</div>
     </div>
@@ -6306,8 +6308,18 @@ function clearText(u) {
       + ` power the boards off before unplugging.">cleared partially</span>`;
   return "";
 }
+let beaconSaving = false;
+function paintBeacon() {
+  const checkbox = $("#fleet-beacon"), counts = $("#fleet-beacon-counts");
+  if (!checkbox || !counts) return;
+  const beacon = fleet?.beacon;
+  checkbox.disabled = beaconSaving || !beacon;
+  if (!beaconSaving) checkbox.checked = !!beacon?.enabled;
+  counts.textContent = beacon ? `(${beacon.sent} sent, ${beacon.errors} errors)` : "";
+}
 function renderTiles() {
   showClockText();
+  paintBeacon();
   const box = $("#tiles");
   if (!box || !fleet) return;
   const picked = getSelection();
@@ -6859,6 +6871,21 @@ document.addEventListener("keydown", e => {
 });
 document.addEventListener("change", async e => {
   const id = e.target.id;
+  if (id === "fleet-beacon") {
+    beaconSaving = true;
+    paintBeacon();
+    try {
+      const result = await api("/api/fleet/beacon", {on: e.target.checked});
+      if (result.error) throw new Error(result.error);
+      fleet.beacon = result.beacon;
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      beaconSaving = false;
+      paintBeacon();
+    }
+    return;
+  }
   if (e.target.dataset.choice !== undefined) { ui.choices[e.target.dataset.choice] = e.target.value; return; }
   if (id === "panel-fw") { choosePanelFw(e.target.value); return; }
   if (id === "fleet-lead") {
