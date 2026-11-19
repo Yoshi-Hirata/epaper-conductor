@@ -6317,7 +6317,7 @@ function paintBeacon() {
   if (!beaconSaving) checkbox.checked = !!beacon?.enabled;
   const skipped = beacon?.enabled ? Object.entries(beacon.skipped) : [];
   const status = beacon?.routes === 0 ? "no route - check the Wi-Fi"
-    : beacon?.sending ? "sending" : "on, idle";
+    : beacon?.announcing ? "sending" : "on, idle";
   const lastErrorTime = beacon?.errors ? new Date(beacon.last_error_at * 1000).toLocaleTimeString([], {
     hourCycle: "h23", hour: "2-digit", minute: "2-digit", second: "2-digit"
   }) : "";

@@ -226,7 +226,7 @@ class BeaconSender:
     def snapshot(self):
         with self._lock:
             return dict(enabled=self._enabled, sent=self._sent, errors=self._errors,
-                        sending=self._sending and bool(self._routes),
+                        announcing=self._sending and bool(self._routes),
                         last_error=self._last_error, last_error_at=self._last_error_at,
                         routes=len(self._routes), destinations=[dict(
                             local=local, address=target, port=self._port, broadcast=broadcast)

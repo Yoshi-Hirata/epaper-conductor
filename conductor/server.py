@@ -4839,35 +4839,29 @@ def serve(workspace, port: int = 8765, open_browser: bool = False,
     enabled = beacon_options.get("beacon", False)
     if not isinstance(enabled, bool):
         print(f'Warning: fleet.json: "beacon" must be true or false (got {enabled!r}) '
-              '- the beacon stays off; tick it on the Units tab.')
+              '- the beacon stays off; tick it on the Units tab')
     unicast = beacon_options.get("beacon_unicast", True)
     if not isinstance(unicast, bool):
         print(f'Warning: fleet.json: "beacon_unicast" must be true or false (got {unicast!r}) '
-              '- unicast stays on; set it to false to disable unicast.')
+              '- the unicast copy stays on')
     destinations = None
     if "beacon_to" in beacon_options:
         value = beacon_options["beacon_to"]
-        addresses = [value] if isinstance(value, str) else value
-        if isinstance(addresses, list):
-            valid = []
-            for addr in addresses:
-                try:
-                    if not isinstance(addr, str):
-                        raise ValueError("expected an IPv4 string")
-                    valid.append(str(ipaddress.IPv4Address(addr)))
-                except ValueError:
-                    print(f'Warning: fleet.json: "beacon_to" entries must be IPv4 strings '
-                          f'(got {addr!r}) - replace or remove the invalid entry.')
-            if valid or not addresses:
-                destinations = valid
-            else:
-                print('Warning: fleet.json: "beacon_to" has no valid entries - '
-                      'replace them with IPv4 broadcast addresses or remove the setting. '
-                      '/24 broadcasts are used instead.')
-        else:
-            print(f'Warning: fleet.json: "beacon_to" must be an IPv4 string or a list of '
-                  f'IPv4 strings (got {value!r}) - replace it or remove the setting. '
-                  '/24 broadcasts are used instead.')
+        addresses = value if isinstance(value, list) else [value]
+        valid, invalid = [], []
+        for addr in addresses:
+            try:
+                if not isinstance(addr, str):
+                    raise ValueError("expected an IPv4 string")
+                valid.append(str(ipaddress.IPv4Address(addr)))
+            except ValueError:
+                invalid.append(addr)
+        if valid or not addresses:
+            destinations = valid
+        fallback = " - the units' /24 broadcasts are used instead" if destinations is None else ""
+        for addr in invalid:
+            print(f'Warning: fleet.json: "beacon_to": {addr!r} is not an IPv4 address'
+                  f' - ignored{fallback}')
     beacon = BeaconSender(fleet, token, enabled=enabled is True,
                           destinations=destinations, unicast=unicast is not False)
     server.RequestHandlerClass.beacon = beacon

@@ -444,29 +444,29 @@ def stop_fleet(fleet):
     fleet._run_gen += 1
 
 
-def test_sending_status_tracks_run(sender_setup):
+def test_announcing_status_tracks_run(sender_setup):
     sender, fleet, clock, _ = sender_setup
     run, fleet.run = fleet.run, None
     sender.set_enabled(True)
     assert sender.tick() == 0
     assert sender.snapshot()["routes"] > 0
-    assert sender.snapshot()["sending"] is False
+    assert sender.snapshot()["announcing"] is False
     fleet.run = run
     fleet._staging = {}
     assert sender.tick() == 0
-    assert sender.snapshot()["sending"] is False
+    assert sender.snapshot()["announcing"] is False
     fleet._staging = None
     assert sender.tick() == 1
-    assert sender.snapshot()["sending"] is True
+    assert sender.snapshot()["announcing"] is True
     assert tick_at(sender, clock, run["t0"] + fleet.shows["alias"]["duration"] + 31) == 0
-    assert sender.snapshot()["sending"] is False
+    assert sender.snapshot()["announcing"] is False
 
 
 def test_observed_stop_cadence_and_remembered_entries(sender_setup):
     sender, fleet, clock, packets = sender_setup
     sender.set_enabled(True)
     assert sender.tick() == 1
-    assert sender.snapshot()["sending"] is True
+    assert sender.snapshot()["announcing"] is True
     stop_fleet(fleet)
     fleet.shows = {}
     fleet.links["alias"]._samples.clear()
@@ -474,12 +474,12 @@ def test_observed_stop_cadence_and_remembered_entries(sender_setup):
     for step in range(300):
         expected = int(step < 25 or step % 5 == 0)
         assert tick_at(sender, clock, 101 + step / 5) == expected
-        assert sender.snapshot()["sending"] is True
+        assert sender.snapshot()["announcing"] is True
         if expected:
             assert wire_entry(packets[-1][0]) == (
                 "actual-host", "abc", 3, 0, clock.now + 30, 0, 0)
     assert tick_at(sender, clock, 161) == 0
-    assert sender.snapshot()["sending"] is False
+    assert sender.snapshot()["announcing"] is False
     assert tick_at(sender, clock, 200) == 0
 
 
@@ -613,7 +613,7 @@ def test_zero_routes_are_reported(fleet_clock, monkeypatch, override, local):
                                  unicast=False, sock_factory=lambda *_: Socket(packets))
     assert sender.tick() == 0
     assert sender.snapshot()["routes"] == 0
-    assert sender.snapshot()["sending"] is False
+    assert sender.snapshot()["announcing"] is False
     assert sender.snapshot()["destinations"] == []
     assert packets == []
 
@@ -739,22 +739,28 @@ def test_server_toggle(tmp_path):
      (True, ["192.168.51.255"], True), []),
     ({"beacon": True, "beacon_to": ["192.168.51.255", "bad", 7, "192.168.52.255"]},
      (True, ["192.168.51.255", "192.168.52.255"], True),
-     ['fleet.json: "beacon_to" entries must be IPv4 strings (got \'bad\')',
-      'fleet.json: "beacon_to" entries must be IPv4 strings (got 7)']),
-    ({"beacon_to": ["bad"]}, (False, None, True),
-     ['fleet.json: "beacon_to" has no valid entries', "/24 broadcasts are used instead"]),
+     ['fleet.json: "beacon_to": \'bad\' is not an IPv4 address - ignored',
+      'fleet.json: "beacon_to": 7 is not an IPv4 address - ignored']),
+    ({"beacon_to": ["bad", "::1"]}, (False, None, True),
+     ['fleet.json: "beacon_to": \'bad\' is not an IPv4 address - ignored'
+      " - the units' /24 broadcasts are used instead",
+      'fleet.json: "beacon_to": \'::1\' is not an IPv4 address - ignored'
+      " - the units' /24 broadcasts are used instead"]),
     ({"beacon_to": [], "beacon_unicast": False}, (False, [], False), []),
     ({"beacon": "yes", "beacon_unicast": "false"},
      (False, None, True),
      ['fleet.json: "beacon" must be true or false (got \'yes\') '
-      '- the beacon stays off; tick it on the Units tab.',
+      '- the beacon stays off; tick it on the Units tab',
       'fleet.json: "beacon_unicast" must be true or false (got \'false\') '
-      '- unicast stays on; set it to false to disable unicast.']),
+      '- the unicast copy stays on']),
     ({"beacon": None, "beacon_unicast": 0, "beacon_to": 7},
-     (False, None, True), ['fleet.json: "beacon" must be true or false (got None)',
-                          'fleet.json: "beacon_unicast" must be true or false (got 0)',
-                          'IPv4 strings (got 7) - replace it or remove the setting.',
-                          "/24 broadcasts are used instead"]),
+     (False, None, True),
+     ['fleet.json: "beacon" must be true or false (got None) '
+      '- the beacon stays off; tick it on the Units tab',
+      'fleet.json: "beacon_unicast" must be true or false (got 0) '
+      '- the unicast copy stays on',
+      'fleet.json: "beacon_to": 7 is not an IPv4 address - ignored'
+      " - the units' /24 broadcasts are used instead"]),
     ({}, (False, None, True), []),
 ])
 def test_serve_beacon_boot_option(tmp_path, monkeypatch, capsys, config, expected, warnings):
@@ -774,10 +780,6 @@ def test_serve_beacon_boot_option(tmp_path, monkeypatch, capsys, config, expecte
     monkeypatch.setattr(conductor_server.ThreadingHTTPServer, "serve_forever", serve_forever)
     assert conductor_server.serve(tmp_path, port=0) == 0
     assert booted == [expected]
-    output = capsys.readouterr().out
-    for warning in warnings:
-        assert output.count(warning) == 1
-    if expected[1] is not None:
-        assert "/24 broadcasts are used instead" not in output
-    if not warnings:
-        assert 'Warning: fleet.json: "beacon' not in output
+    output = capsys.readouterr().out.splitlines()
+    assert [line for line in output if line.startswith('Warning: fleet.json: "beacon')] == [
+        f"Warning: {warning}" for warning in warnings]
