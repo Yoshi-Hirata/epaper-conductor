@@ -1018,6 +1018,33 @@ def test_a_stop_stands_against_an_older_http_run_that_lands_after_it(tmp_path):
         unit.close()
 
 
+def test_an_older_run_landing_inside_the_stop_call_is_still_stopped_again(
+        tmp_path):
+    # player.stop() releases the player's lock for its settle wait: an
+    # older run that lands in there, before the stop call returns, must
+    # still count as "after the stop".
+    unit = Real(tmp_path, serve=True)
+    try:
+        t0 = time.monotonic() - 1.0
+        assert post(unit.agent, "/show/run", {"t0": t0, "show": SHOW_ID},
+                    serial(99, 4))[0] == 200
+        stop = unit.player.stop
+
+        def stop_then_the_late_run(*args, **kwargs):
+            result = stop(*args, **kwargs)
+            unit.player.stop = stop                 # only the first time
+            unit.agent._dispatch("/show/run", {"t0": t0, "show": SHOW_ID},
+                                 (99, 5), dedupe=False)
+            return result
+        unit.player.stop = stop_then_the_late_run
+        assert unit.send(STOP, 0.0, cid=99, gen=6) == "stop"
+        assert unit.player.status()["state"] == "running"     # the run won the race
+        assert unit.send(STOP, 0.0, cid=99, gen=6) == "stop"  # ...the repeat stops it
+        assert unit.player.status()["state"] == "stopped"
+    finally:
+        unit.close()
+
+
 def test_two_http_stops_at_once_never_wait_for_each_other(tmp_path):
     unit = Real(tmp_path, serve=True)
     try:

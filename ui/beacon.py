@@ -316,6 +316,10 @@ class Beacon:
             return "retry wait"
         body = ({"t0": entry["t0"], "show": entry["show"],
                  "force": entry["force"]} if path == "/show/run" else {})
+        # Taken BEFORE the call: player.stop() lets go of the player's
+        # lock for its settle wait, and a run that lands in there must
+        # read as "after the stop" (_restarted_by_an_older_run()).
+        ran_before = getattr(self.agent, "applied_run", None)
         try:
             self.agent.show_command(path, body, via="beacon",
                                     serial=(cid, gen))
@@ -340,7 +344,7 @@ class Beacon:
         self._advance(cid, gen)
         if path == "/show/stop":
             self._stops.pop(cid, None)
-            self._stops[cid] = (gen, getattr(self.agent, "applied_run", None))
+            self._stops[cid] = (gen, ran_before)
             while len(self._stops) > SEQ_CIDS:
                 self._stops.pop(next(iter(self._stops)))
         with self._lock:
