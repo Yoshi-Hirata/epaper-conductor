@@ -3,3 +3,4 @@ UPDATE FW never offers anything here: ui/updater.py looks only at FW/FW_*/**/*.b
 so the units see FW_261119F (the default since 2026-11-20) and FW_260923 (the way back) alone.
 host/ota.py still reads these for FW VERSION / BOARD INFO, so a board running
 one of them is named, not "unknown". Contents are as delivered or as built.
+FW_261119M: Meris's MCB_DISPLAY_red_pink_v2.bin (2026-11-19), kept for comparison only - see its NOTES.

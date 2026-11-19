@@ -514,7 +514,7 @@ def test_the_trial_folder_is_the_nearest_fw_folder(tmp_path, monkeypatch, capsys
 
 
 def test_validate_refuses_bad_steps_and_every_vendor_image_passes():
-    assert len(ALL_IMAGES) == 10
+    assert len(ALL_IMAGES) == 11        # + Meris's FW_261119M (2026-11-19)
     for path in ALL_IMAGES:
         fw.validate(path.read_bytes(), path.name)
     base = base_entries()

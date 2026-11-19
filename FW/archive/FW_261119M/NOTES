@@ -1,0 +1,13 @@
+MCB_DISPLAY_red_pink_v2.bin - delivered by Meris on 2026-11-19 (received 12:46 JST, table stamp 2026-11-19 11:32:34).
+Kept in the archive only: UPDATE FW does not offer it (the units keep FW_261119F + FW_260923). Not flashed on any board.
+63172 B, sha256 9b2d55bf14f043528942589d5ff58a22db6966003a1bfa509efadbe666e57a0a, CRC16 0x525B.
+
+Compared with tools/fw_waveform.py (2026-11-19):
+- Program: FW_261118's byte for byte; every other difference (89 words) is a pointer moved by the table's 28-byte growth.
+  So the saved SPI waveform is ignored as in FW_261118 (our request R5 holds).
+- Table: total 1197 ticks (~13.2 s on the panel), like FW_261118, not 662 (R2 not done). The 14 colours other than
+  0x0A/0x0C are identical to FW_261118 (slow 60/60 swings; they finish between tick 1045 and 1197, R4 not done).
+- 0x0C: pink PURPLE No.13's colour drive [4 6 3 0 5 3 16] (the drive our FW_261119F has at 0x0A), moved to the end.
+- 0x0A: a NEW pink red ("red pink v2"): drive [8 6 6 0 0 2 0] = 48 ticks of level 6 only; No.13's pink red was
+  [8 6 6 0 5 3 17] (224 ticks). Colour unknown until seen on a board.
+- So 0x0A is still the red family and 0x0C the purple one - the opposite of the colour chart (R1 not done).

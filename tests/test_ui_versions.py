@@ -89,7 +89,7 @@ def test_repo_catalog_names_both_shipped_images():
     assert {"FW_260903", "FW_260917"} <= set(catalog.values())
     assert set(catalog.values()) == {"FW_260903", "FW_260917", "FW_260923", "FW_261109",
                                      "FW_261118", "FW_261118B", "FW_261119", "FW_261119D",
-                                     "FW_261119F"}
+                                     "FW_261119F", "FW_261119M"}
 
 
 def test_repo_catalog_names_subfolder_images_and_keeps_every_key_unique():
@@ -99,7 +99,7 @@ def test_repo_catalog_names_subfolder_images_and_keeps_every_key_unique():
     fw_dir = Path(__file__).resolve().parents[1] / "FW"
     catalog = ota.bundled_images(fw_dir)
     images = sorted(fw_dir.rglob("*.bin"))              # offered and archived
-    assert len(images) == 10 and len(catalog) == len(images)   # no key collides
+    assert len(images) == 11 and len(catalog) == len(images)   # no key collides
     arch = fw_dir / "archive"
     prod = ota.image_fingerprint(
         (fw_dir / "FW_260923" / "fw2029.09.23" / "MCB_16_0923.bin").read_bytes())
