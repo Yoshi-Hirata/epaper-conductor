@@ -122,7 +122,7 @@ class BoardClearer:
                  port: "str | None" = None, open_bus=None, locate=find_port,
                  find=ota.find_boards, clock=time.monotonic,
                  echo_log: bool = True, forget_board=None):
-        self.boards = list(boards) if boards else list(range(1, 21))
+        self.boards = list(boards) if boards else list(ota.SCAN_BOARDS)
         # The runner's group count (DemoRunner._group_count): the list's
         # length, or its highest address when it has gaps.
         self.groups = max(len(self.boards), max(self.boards))

@@ -191,7 +191,7 @@ class FirmwareUpdater:
         # here (runner stopped, the unit its own) also fills /status.
         self.usb_board_sink = None
         self.flash_log = Path(flash_log)
-        self.boards = list(boards) if boards else list(range(1, 21))
+        self.boards = list(boards) if boards else list(ota.SCAN_BOARDS)
         self.port = port
         self._open_bus = open_bus or (lambda p: Bus(p, verbose=False))
         self._flash = flash

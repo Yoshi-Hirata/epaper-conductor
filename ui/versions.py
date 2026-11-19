@@ -84,7 +84,7 @@ class BoardVersions:
                  firmware_dir: Path = FIRMWARE_DIR, echo_log: bool = True,
                  serial_of=port_serial,
                  flash_log: Path = flashlog.DEFAULT_PATH):
-        self.boards = list(boards) if boards else list(range(1, 21))
+        self.boards = list(boards) if boards else list(ota.SCAN_BOARDS)
         self._serial_of = serial_of
         self.flash_log = Path(flash_log)
         self.usb_serial: str | None = None

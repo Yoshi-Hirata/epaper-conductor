@@ -7,7 +7,7 @@ Usage:
     python host/ota.py FW.bin --addr auto            # find the one board answering
     python host/ota.py --check --addr auto           # list every board answering
 
-`--addr auto` scans 1..20 with the 0x29 state query and uses the single
+`--addr auto` scans 1..30 with the 0x29 state query and uses the single
 address that answers - the USB-attached board's own DIP setting (all
 DIP off answers as 1). With the 485 cable still connected the relayed
 boards answer too, and the scan refuses to guess between them.
@@ -59,7 +59,9 @@ MAX_IMAGE_SIZE = 98304   # 96 KB (spec 11.1)
 
 OTA_STATES = {0x00: "IDLE", 0x01: "RECEIVING", 0x02: "READY"}
 
-SCAN_BOARDS = list(range(1, 21))   # the wall's address range
+# IDs 1..30 (2026-11-22, Kunitachi: radxa-03 carries 27 boards, DIP up to 28;
+# 1..20 left IDs 21+ unfindable for UPDATE FW / FW VERSION / CLEAR BOARD).
+SCAN_BOARDS = list(range(1, 31))
 SCAN_TIMEOUT_S = 0.3               # a local answer arrives within ~50 ms
 
 WEDGE_MSG = ("Serial write timed out: the board's CDC stopped draining "
