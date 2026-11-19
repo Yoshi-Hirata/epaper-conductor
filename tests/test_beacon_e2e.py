@@ -98,10 +98,11 @@ class Bench:
             unit.calls = []
             command = unit.agent.show_command
 
-            def spy(path, body, via="http", headers=None, unit=unit,
-                    command=command):
+            def spy(path, body, via="http", headers=None, serial=None,
+                    unit=unit, command=command):
                 unit.calls.append((path, via))
-                return command(path, body, via, headers=headers)
+                return command(path, body, via, headers=headers,
+                               serial=serial)
             unit.agent.show_command = spy
 
     def upload(self, second_at=20, duration=60):

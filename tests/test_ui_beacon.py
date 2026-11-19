@@ -135,11 +135,21 @@ def test_decide_run_re_times_a_t0_off_by_more_than_the_tolerance():
 
 
 def test_decide_run_over_is_no_call():
-    path, reason = bc.decide(entry(t0=100.0), status("stopped"),
-                             100.0 + 60 + 30.5)
-    assert path is None and "over" in reason
-    assert bc.decide(entry(t0=100.0), status("stopped"),
-                     100.0 + 60 + 29.5)[0] == "/show/run"
+    # A unit still in that run gets END_SLACK past the end...
+    for state in ("running", "holding"):
+        path, reason = bc.decide(entry(t0=100.0), status(state, 90.0, True),
+                                 100.0 + 60 + 30.5)
+        assert path is None and "over" in reason
+        assert bc.decide(entry(t0=100.0), status(state, 90.0, True),
+                         100.0 + 60 + 29.5)[0] == "/show/run"
+    # ...one that is not (loaded after a preset, stopped, ended) none:
+    # a late datagram of a finished lap never starts it again (V5).
+    for state in ("loaded", "stopped", "ended"):
+        path, reason = bc.decide(entry(t0=100.0), status(state),
+                                 100.0 + 60 + 0.1)
+        assert path is None and reason == "run is over"
+        assert bc.decide(entry(t0=100.0), status(state),
+                         100.0 + 59.9)[0] == "/show/run"
 
 
 def test_decide_run_waits_for_a_burn_in_progress():
@@ -191,12 +201,13 @@ class StubAgent:
         self.show_cmd_serial = None
         self.show_lock = threading.Lock()
         self.beacon_serial = None
+        self.beacon_seen_cid = None
         self.session = type("S", (), {})()
         self.session.runner = StubRunner()
         self.calls = []
         self.refuse = None
 
-    def show_command(self, path, body, via="http"):
+    def show_command(self, path, body, via="http", serial=None):
         self.calls.append((path, body, via))
         if self.refuse:
             raise bc.RemoteError(self.refuse)
@@ -357,7 +368,7 @@ def test_the_beacon_call_holds_show_lock_through_the_player_call():
     beacon, agent, clock = stub()
     seen = []
 
-    def command(path, body, via="http"):
+    def command(path, body, via="http", serial=None):
         seen.append(agent.show_lock.locked())
         return True
     agent.show_command = command
@@ -399,7 +410,7 @@ def test_a_refusal_is_logged_once_and_retried_no_sooner_than_3_s():
     assert beacon.handle(run_dgram(clock, 3)) == "refused"
     assert len(agent.calls) == 2
     assert agent.session.runner.lines == [
-        "beacon refused: pictures not written (the burn never "
+        "beacon NG: pictures not written (the burn never "
         "started) - Upload again"]
     assert "refused" in beacon.status()["ignored"]
 
@@ -421,7 +432,7 @@ def test_the_retry_wait_holds_back_only_the_refused_command_of_that_gen():
 def test_the_retry_timer_starts_when_the_command_fails():
     beacon, agent, clock = stub()
 
-    def slow_refusal(path, body, via="http"):
+    def slow_refusal(path, body, via="http", serial=None):
         clock.at += 2.0                  # the player took 2 s to say no
         raise bc.RemoteError("no")
     agent.show_command = slow_refusal
@@ -506,7 +517,7 @@ def test_an_applied_command_records_the_beacon_serial():
 
 def ignored_lines(agent):
     return [line for line in agent.session.runner.lines
-            if line.startswith("beacon ignored")]
+            if line.startswith("beacon skip")]
 
 
 def test_each_ignored_reason_is_logged_once_and_again_after_an_action():
@@ -514,20 +525,20 @@ def test_each_ignored_reason_is_logged_once_and_again_after_an_action():
     agent.player.st = None
     for seq in (1, 2, 3):
         assert beacon.handle(run_dgram(clock, seq)) == "show"
-    assert ignored_lines(agent) == ["beacon ignored: show not loaded"]
+    assert ignored_lines(agent) == ["beacon skip: no show"]
     for seq in (4, 5):
         assert beacon.handle(run_dgram(clock, seq, now=clock.at + 3)) == "now"
     assert beacon.handle(run_dgram(clock, 6)) == "show"
-    assert ignored_lines(agent) == ["beacon ignored: show not loaded",
-                                    "beacon ignored: clock (rebooted?)",
-                                    "beacon ignored: show not loaded"]
+    assert ignored_lines(agent) == ["beacon skip: no show",
+                                    "beacon skip: clock off",
+                                    "beacon skip: no show"]
     # An applied action resets it: the same reason is said again.
     agent.player.st = status()
     assert beacon.handle(run_dgram(clock, 7)) == "run"
     agent.player.st = None
     beacon.handle(run_dgram(clock, 8))
     beacon.handle(run_dgram(clock, 9))
-    assert ignored_lines(agent)[-1] == "beacon ignored: show not loaded"
+    assert ignored_lines(agent)[-1] == "beacon skip: no show"
     assert len(ignored_lines(agent)) == 4
 
 
@@ -537,8 +548,8 @@ def test_other_conductor_and_own_demo_are_logged_but_routine_drops_are_not():
     beacon.handle(run_dgram(clock, 2, cid=7))
     beacon.handle(run_dgram(clock, 1, cid=8))
     beacon.handle(run_dgram(clock, 2, cid=8))
-    assert ignored_lines(agent) == ["beacon ignored: own demo",
-                                    "beacon ignored: other Conductor"]
+    assert ignored_lines(agent) == ["beacon skip: own demo",
+                                    "beacon skip: other PC"]
     # bad / host / seq / gen / http / in step: never on the LCD.
     beacon, agent, clock = stub(status("running", 1005.0, True))
     beacon.handle(b"junk")
@@ -556,7 +567,7 @@ def test_other_conductor_and_own_demo_are_logged_but_routine_drops_are_not():
 def test_an_unexpected_exception_from_the_player_is_survived():
     beacon, agent, clock = stub()
 
-    def boom(path, body, via="http"):
+    def boom(path, body, via="http", serial=None):
         raise KeyError("t0")
     agent.show_command = boom
     assert beacon.handle(run_dgram(clock, 1)) == "refused"
@@ -599,9 +610,9 @@ class Real:
         self.calls = []
         command = self.agent.show_command
 
-        def spy(path, body, via="http", headers=None):
+        def spy(path, body, via="http", headers=None, serial=None):
             self.calls.append((path, via))
-            return command(path, body, via, headers=headers)
+            return command(path, body, via, headers=headers, serial=serial)
         self.agent.show_command = spy
         self.seq = 0
         if burn:
@@ -695,7 +706,7 @@ def test_burn_none_is_refused_once_and_retried_after_3_s(tmp_path):
         assert unit.send(RUN, t0) == "retry wait"
         assert unit.calls == [("/show/run", "beacon")]
         refusals = [line for line in unit.runner.recent(20)
-                    if "beacon refused: pictures not written" in line]
+                    if "beacon NG: pictures not written" in line]
         assert len(refusals) == 1
         # The pictures go in; the next beacon past 3 s runs the show.
         real_burn(unit.player._burn_items(a_show()), 3)
@@ -782,66 +793,145 @@ def count_runs(unit):
     return runs
 
 
-def test_a_run_of_the_t0_already_running_does_not_restart_it(tmp_path):
-    # U1: the beacon's START landed first; the HTTP one (same T0) after.
+def serial(cid, gen):
+    return {"X-Beacon-Cid": str(cid), "X-Run-Gen": str(gen)}
+
+
+def test_a_start_by_beacon_then_by_http_with_its_serial_runs_once(tmp_path):
+    # V1: the beacon's START landed first; the HTTP one (same serial,
+    # same T0) after - recognised by command identity.
     unit = Real(tmp_path, serve=True)
     try:
         runs = count_runs(unit)
         t0 = time.monotonic() + 1.0
-        assert unit.send(RUN, t0) == "run"
-        assert len(runs) == 1
-        code, answer = call(unit.agent, "/show/run",
-                            {"t0": t0 + 0.03, "show": SHOW_ID},
-                            token=GOLDEN["token"])
+        assert unit.send(RUN, t0, cid=99, gen=5) == "run"
+        assert unit.agent.applied_run == (99, 5, t0)
+        code, answer = post(unit.agent, "/show/run",
+                            {"t0": t0 + 0.004, "show": SHOW_ID},
+                            serial(99, 5))
         assert code == 200 and answer["show"]["state"] == "running"
         assert answer["show"]["t0"] == t0
         assert len(runs) == 1                     # the player was not asked
-        assert unit.agent.show_cmd_at is not None  # ...but HTTP stamped
-        # The beacon path takes the same shortcut.
-        assert unit.agent.show_command("/show/run", {"t0": t0 - 0.04,
-                                                     "show": SHOW_ID},
-                                       via="beacon") is True
-        assert len(runs) == 1
-        # force, a T0 moved by 0.2 s: the player decides, as before.
-        call(unit.agent, "/show/run", {"t0": t0, "show": SHOW_ID,
-                                       "force": True}, token=GOLDEN["token"])
-        assert len(runs) == 2
-        code, answer = call(unit.agent, "/show/run",
-                            {"t0": t0 + 0.2, "show": SHOW_ID},
-                            token=GOLDEN["token"])
-        assert code == 200 and answer["show"]["t0"] == t0 + 0.2
-        assert len(runs) == 3
-        # Another show id still goes to the player (and is refused there).
-        code, answer = call(unit.agent, "/show/run",
-                            {"t0": t0 + 0.2, "show": "zzzzzzzzzz"},
-                            token=GOLDEN["token"])
-        assert code == 409 and len(runs) == 4
+        assert unit.agent.show_cmd_serial == (99, 5)   # ...HTTP stamped
     finally:
         unit.close()
 
 
-def test_a_run_while_not_running_or_not_synced_goes_to_the_player(tmp_path):
+def test_a_forced_start_delivered_twice_with_one_serial_runs_once(tmp_path):
     unit = Real(tmp_path, serve=True)
     try:
         runs = count_runs(unit)
         t0 = time.monotonic() + 1.0
-        assert call(unit.agent, "/show/run", {"t0": t0, "show": SHOW_ID},
-                    token=GOLDEN["token"])[0] == 200
+        body = {"t0": t0, "show": SHOW_ID, "force": True}
+        assert post(unit.agent, "/show/run", body, serial(99, 5))[0] == 200
+        assert post(unit.agent, "/show/run", body, serial(99, 5))[0] == 200
         assert len(runs) == 1
-        unit.player.hold()
-        assert call(unit.agent, "/show/run", {"t0": t0, "show": SHOW_ID},
+        # The beacon's copy of it (force bit set) is in step anyway.
+        assert unit.send(RUN, t0, cid=99, gen=5, force=True) == "in step"
+        assert len(runs) == 1
+    finally:
+        unit.close()
+
+
+def test_a_new_gen_a_moved_t0_or_no_serial_always_reaches_the_player(
+        tmp_path):
+    unit = Real(tmp_path, serve=True)
+    try:
+        runs = count_runs(unit)
+        t0 = time.monotonic() + 1.0
+        assert post(unit.agent, "/show/run", {"t0": t0, "show": SHOW_ID},
+                    serial(99, 5))[0] == 200
+        # A SEEK 40 ms away is a new gen: executed.
+        post(unit.agent, "/show/run", {"t0": t0 + 0.04, "show": SHOW_ID},
+             serial(99, 6))
+        assert len(runs) == 2 and unit.player.t0 == t0 + 0.04
+        # The same serial with a moved T0: executed.
+        post(unit.agent, "/show/run", {"t0": t0 + 0.2, "show": SHOW_ID},
+             serial(99, 6))
+        assert len(runs) == 3
+        # No serial at all, on a running unit, the same T0: executed -
+        # the HTTP-only path is what it always was.
+        assert call(unit.agent, "/show/run",
+                    {"t0": t0 + 0.2, "show": SHOW_ID},
                     token=GOLDEN["token"])[0] == 200
+        assert len(runs) == 4 and unit.agent.applied_run is None
+    finally:
+        unit.close()
+
+
+def test_the_same_serial_on_a_unit_not_running_or_not_synced_runs(tmp_path):
+    unit = Real(tmp_path, serve=True)
+    try:
+        runs = count_runs(unit)
+        t0 = time.monotonic() + 1.0
+        body = {"t0": t0, "show": SHOW_ID}
+        post(unit.agent, "/show/run", body, serial(99, 5))
+        unit.player.hold()
+        post(unit.agent, "/show/run", body, serial(99, 5))
         assert len(runs) == 2 and unit.player.state == "running"
         unit.player.synced = False                # a T0 restored from disk
-        assert call(unit.agent, "/show/run", {"t0": t0, "show": SHOW_ID},
-                    token=GOLDEN["token"])[0] == 200
+        post(unit.agent, "/show/run", body, serial(99, 5))
         assert len(runs) == 3 and unit.player.synced
     finally:
         unit.close()
 
 
-def serial(cid, gen):
-    return {"X-Beacon-Cid": str(cid), "X-Run-Gen": str(gen)}
+def test_http_run_and_beacon_cannot_both_run_one_serial(tmp_path):
+    # V2: the HTTP run holds show_lock from the stamp through the player
+    # call. Gate the player inside one path's call and deliver the other
+    # path's copy meanwhile: it waits, then finds the run applied.
+    unit = Real(tmp_path, serve=True)
+    try:
+        runs = []
+        inside, release = threading.Event(), threading.Event()
+        run = unit.player.run
+
+        def gated(*args, **kwargs):
+            runs.append(args)
+            if len(runs) == 1:
+                inside.set()
+                release.wait(5)
+            return run(*args, **kwargs)
+        unit.player.run = gated
+        t0 = time.monotonic() + 2.0
+        http = threading.Thread(target=post, args=(
+            unit.agent, "/show/run", {"t0": t0, "show": SHOW_ID},
+            serial(99, 5)))
+        http.start()
+        assert inside.wait(5)
+        result = []
+        beacon = threading.Thread(
+            target=lambda: result.append(unit.send(RUN, t0, cid=99, gen=5)))
+        beacon.start()
+        time.sleep(0.2)
+        assert result == []                       # waiting on show_lock
+        release.set()
+        http.join(5)
+        beacon.join(5)
+        assert result == ["in step"] and len(runs) == 1
+        # ...and the other way round: the beacon first, HTTP waits.
+        inside.clear()
+        release.clear()
+        runs.clear()
+        t1 = t0 + 5.0
+        beacon = threading.Thread(
+            target=lambda: result.append(unit.send(RUN, t1, cid=99, gen=6)))
+        beacon.start()
+        assert inside.wait(5)
+        answers = []
+        http = threading.Thread(target=lambda: answers.append(post(
+            unit.agent, "/show/run", {"t0": t1, "show": SHOW_ID},
+            serial(99, 6))))
+        http.start()
+        time.sleep(0.2)
+        assert answers == []
+        release.set()
+        beacon.join(5)
+        http.join(5)
+        assert answers[0][0] == 200 and len(runs) == 1
+        assert unit.player.t0 == t1
+    finally:
+        unit.close()
 
 
 def test_a_late_http_run_of_an_older_gen_leaves_the_beacons_seek(tmp_path):
@@ -921,6 +1011,113 @@ def test_the_http_serial_never_goes_back_for_the_same_cid(tmp_path):
         assert unit.agent.show_cmd_serial == (42, 3)
     finally:
         unit.close()
+
+
+def test_an_http_stop_of_an_older_gen_is_always_executed(tmp_path):
+    # V3a: a swallowed STOP is the one failure not risked.
+    unit = Real(tmp_path, serve=True)
+    try:
+        t0 = time.monotonic() - 1.0
+        assert unit.send(RUN, t0, cid=99, gen=7) == "run"
+        code, answer = post(unit.agent, "/show/stop", {}, serial(99, 3))
+        assert code == 200 and answer["show"]["state"] == "stopped"
+    finally:
+        unit.close()
+
+
+def test_older_gen_http_is_skipped_only_once_the_beacon_was_heard(tmp_path):
+    # V3c: with the beacon never heard (switched off on the Conductor),
+    # the HTTP path is what it was before the beacon existed.
+    unit = Real(tmp_path, serve=True)
+    try:
+        t0 = time.monotonic() + 1.0
+        post(unit.agent, "/show/run", {"t0": t0, "show": SHOW_ID},
+             serial(99, 8))
+        post(unit.agent, "/show/hold", {}, serial(99, 6))      # older
+        assert unit.player.state == "holding"
+        post(unit.agent, "/show/run", {"t0": t0 + 1, "show": SHOW_ID},
+             serial(99, 5))                                     # older
+        assert unit.player.state == "running"
+        assert unit.player.t0 == t0 + 1
+        assert unit.agent.beacon_seen_cid is None
+        # Now one valid entry for this unit is heard from cid 99...
+        assert unit.send(RUN, t0 + 1, cid=99, gen=8) == "in step"
+        assert unit.agent.beacon_seen_cid == 99
+        # ...and an older-gen hold is late from then on.
+        code, answer = post(unit.agent, "/show/hold", {}, serial(99, 7))
+        assert code == 200 and answer["show"]["state"] == "running"
+        # Another cid has never been heard: executed.
+        post(unit.agent, "/show/hold", {}, serial(42, 1))
+        assert unit.player.state == "holding"
+    finally:
+        unit.close()
+
+
+def test_an_in_step_beacon_advances_the_watermark(tmp_path):
+    # V4: the beacon had nothing to do, but gen 9 is accepted - an HTTP
+    # run of gen 8 arriving afterwards is late.
+    unit = Real(tmp_path, serve=True)
+    try:
+        runs = count_runs(unit)
+        t0 = time.monotonic() + 1.0
+        post(unit.agent, "/show/run", {"t0": t0, "show": SHOW_ID},
+             serial(99, 9))
+        assert unit.agent.beacon_serial is None
+        assert unit.send(RUN, t0, cid=99, gen=9) == "in step"
+        assert unit.agent.beacon_serial == (99, 9)
+        unit.agent.show_cmd_serial = None         # the beacon's word alone
+        post(unit.agent, "/show/run", {"t0": t0 + 3, "show": SHOW_ID},
+             serial(99, 8))
+        assert len(runs) == 1 and unit.player.t0 == t0
+        # Already holding / already stopped advance it too.
+        unit.player.hold()
+        unit.shift = 1.0                 # sent well after the last HTTP stamp
+        assert unit.send(HOLD, t0, cid=99, gen=10) == "hold: not running"
+        assert unit.agent.beacon_serial == (99, 10)
+        unit.player.stop()
+        assert unit.send(STOP, 0.0, cid=99, gen=11).startswith("stop: not")
+        assert unit.agent.beacon_serial == (99, 11)
+    finally:
+        unit.close()
+
+
+def test_a_run_datagram_past_the_shows_end_does_not_start_a_loaded_unit(
+        real):
+    # V5: the show is 60 s; this lap began 61 s ago and the unit is
+    # loaded (preset for the next one) - not even the old +30 s slack.
+    runs = count_runs(real)
+    t0 = time.monotonic() - 61.0
+    assert real.send(RUN, t0) == "run is over"
+    assert runs == [] and real.player.status()["state"] == "loaded"
+
+
+def test_every_beacon_lcd_line_fits_the_log_row():
+    # V6: the 1.3" LCD draws each log line in DejaVuSans 12 px, ellipsized
+    # to WIDTH - 16 px with "HH:MM:SS " in front (ui/render.py). Realistic
+    # worst cases: four-digit seconds.
+    from ui import render
+    from ui.config import WIDTH
+
+    if "DejaVuSans" not in str(getattr(render.FONT_S, "path", "")):
+        pytest.skip("the unit's DejaVuSans font is not on this machine")
+    beacon, agent, clock = stub()
+    lines = []
+    agent.session.runner.emit = lines.append
+    beacon.handle(run_dgram(clock, 1, t0=clock.at + 1234))         # starts in
+    agent.player.st = status(duration=7200.0)
+    beacon.handle(run_dgram(clock, 2, gen=2, t0=clock.at - 3599))  # joined
+    agent.player.st = status("running", 1.0, True)
+    beacon.handle(run_dgram(clock, 3, gen=3, state=HOLD))
+    agent.player.st = status("holding", 1.0, True)
+    beacon.handle(run_dgram(clock, 4, gen=4, state=STOP))
+    beacon._drop("cid", "", say="other PC")
+    beacon._drop("cid", "", say="clock off")
+    beacon._drop("cid", "", say="no show")
+    beacon._drop("cid", "", say="own demo")
+    assert len(lines) == 8, lines
+    for line in lines:
+        text = "12:34:56 " + line
+        assert render._ellipsize(text, render.FONT_S, WIDTH - 16) == text
 
 
 def test_the_http_path_still_answers_404_for_an_unknown_show_path(tmp_path):

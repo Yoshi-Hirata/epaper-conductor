@@ -138,7 +138,11 @@ def decide(entry: dict, status: dict, mono: float):
                 and t0 is not None
                 and abs(t0 - entry["t0"]) <= T0_TOLERANCE_S):
             return None, "in step"
-        if mono - entry["t0"] > float(status.get("duration") or 0) + END_SLACK:
+        # Past its end: END_SLACK only for a unit still in that run. A
+        # late datagram of a finished lap must never start it again
+        # over a fresh preset (review V5, 2026-11-20).
+        slack = END_SLACK if state in (RUNNING, HOLDING) else 0
+        if mono - entry["t0"] > float(status.get("duration") or 0) + slack:
             return None, "run is over"
         if (status.get("burn") or {}).get("state") == "burning":
             return None, "still writing the pictures"
@@ -216,13 +220,13 @@ class Beacon:
                         else None)
         if drop == "cid":
             return self._drop("cid", "another Conductor",
-                              say="other Conductor")
+                              say="other PC")
         if drop == "seq":
             return self._drop("seq", "seen already")
         # G4: a reboot on either side, a junk offset, an old capture.
         if abs(entry["now"] - mono) > NOW_TOLERANCE_S:
             return self._drop("now", "clock out of step",
-                              say="clock (rebooted?)")
+                              say="clock off")
         # Committed only now (U5): a datagram whose clock is unusable
         # neither captures the latch nor moves the sequence on.
         with self._lock:
@@ -241,6 +245,9 @@ class Beacon:
 
     def _act(self, header: dict, entry: dict, mono: float) -> str:
         cid, gen = header["cid"], header["gen"]
+        # G1-G4 passed for our entry: from now on an older-gen HTTP
+        # run/hold from this Conductor is late (Agent._late(), V3c).
+        self.agent.beacon_seen_cid = cid
         serial = self.agent.show_cmd_serial
         if serial is not None and serial[0] == cid:
             # G5a: the last HTTP command named this Conductor's run gen;
@@ -265,13 +272,20 @@ class Beacon:
         # G7: not the show this unit holds.
         if status is None or entry["show"] != status.get("id"):
             return self._drop("show", "not the loaded show",
-                              say="show not loaded")
+                              say="no show")
         path, reason = decide(entry, status, mono)
         if path == "/show/stop" and self._stops.get(cid) == gen:
             # A2: once per (cid, gen) - a unit started again by someone
             # else is not stopped again by the same stop.
             path, reason = None, "stop: told already"
         if path is None:
+            # V4: the unit is already where this entry says - it is still
+            # this gen, accepted, and an older HTTP run/hold is late.
+            state = status.get("state")
+            if (reason in ("in step", "stop: told already")
+                    or (reason.startswith("hold:") and state == HOLDING)
+                    or reason.startswith("stop: not")):
+                self._advance(cid, gen)
             with self._lock:
                 self._ignored = reason
             return reason
@@ -284,7 +298,8 @@ class Beacon:
         body = ({"t0": entry["t0"], "show": entry["show"],
                  "force": entry["force"]} if path == "/show/run" else {})
         try:
-            self.agent.show_command(path, body, via="beacon")
+            self.agent.show_command(path, body, via="beacon",
+                                    serial=(cid, gen))
         except Exception as exc:        # noqa: BLE001 - never out of the thread
             # A RemoteError is the refusal an HTTP caller would get as a
             # 409 (burn "none", busy, ...): logged once per reason, asked
@@ -296,12 +311,14 @@ class Beacon:
                 self._ignored = f"{reason} refused: {text}"
             if text != self._refusal:
                 self._refusal = text
-                self._emit(f"beacon refused: {text}")
+                # ~17 characters of it survive on the LCD; the runner's
+                # echo puts the whole line in the journal.
+                self._emit(f"beacon NG: {text}")
             return "refused"
         self._retry, self._refusal, self._said = None, None, None
-        # U2: an HTTP run/hold/stop of an older gen of this Conductor,
-        # arriving after this, is late (Agent.show_command).
-        self.agent.beacon_serial = (cid, gen)
+        # U2/V3: an HTTP run/hold of an older gen of this Conductor,
+        # arriving after this, is late (Agent._late()).
+        self._advance(cid, gen)
         if path == "/show/stop":
             self._stops.pop(cid, None)
             self._stops[cid] = gen
@@ -312,21 +329,31 @@ class Beacon:
         if reason == "run":
             at = mono - entry["t0"]
             self._emit(f"beacon run, starts in {-at:.0f}s" if at < 0 else
-                       f"beacon run, joined at {at:.0f}s")
+                       f"beacon run, joined {at:.0f}s")
         else:
             self._emit(f"beacon {reason}")
         return reason
 
+    def _advance(self, cid: int, gen: int) -> None:
+        """agent.beacon_serial = (cid, gen), never back to an older gen
+        of the same cid. Called under agent.show_lock."""
+        last = self.agent.beacon_serial
+        if last is None or last[0] != cid or gen_older(last[1], gen):
+            self.agent.beacon_serial = (cid, gen)
+
     def _drop(self, key: str, reason: str, say: "str | None" = None) -> str:
         """Count a drop. `say`: the LCD's words for it - logged once per
         change of reason (U8), and only for the drops that tell the
-        operator why a unit that hears the beacon does not obey it."""
+        operator why a unit that hears the beacon does not obey it.
+        Every LCD line here is measured to fit the 1.3" log row
+        (DejaVuSans 12 px, 224 px after "HH:MM:SS "; review V6) -
+        tests/test_ui_beacon.py runs them through ui/render.py."""
         with self._lock:
             self._dropped[key] += 1
             self._ignored = reason
         if say is not None and say != self._said:
             self._said = say
-            self._emit(f"beacon ignored: {say}")
+            self._emit(f"beacon skip: {say}")
         return key
 
     def _emit(self, line: str) -> None:
