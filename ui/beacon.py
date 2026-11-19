@@ -184,7 +184,9 @@ class Beacon:
         # never hold a STOP back.
         self._retry = None
         self._refusal = None           # the refusal already logged
-        self._stops = {}               # cid -> gen of the stop applied (A2, U4)
+        # cid -> (gen of the stop applied, agent.applied_run at that
+        # moment) (A2, U4; the second half: _restarted_by_an_older_run()).
+        self._stops = {}
         self._said = None              # the ignored reason already logged (U8)
 
     # ---- the per-datagram path (socket-free: the tests drive it) ----
@@ -290,7 +292,8 @@ class Beacon:
             return self._drop("show", "not the loaded show",
                               say="no show")
         path, reason = decide(entry, status, mono)
-        if path == "/show/stop" and self._stops.get(cid) == gen:
+        if (path == "/show/stop" and self._stops.get(cid, (None,))[0] == gen
+                and not self._restarted_by_an_older_run(cid, gen)):
             # A2: once per (cid, gen) - a unit started again by someone
             # else is not stopped again by the same stop.
             path, reason = None, "stop: told already"
@@ -337,7 +340,7 @@ class Beacon:
         self._advance(cid, gen)
         if path == "/show/stop":
             self._stops.pop(cid, None)
-            self._stops[cid] = gen
+            self._stops[cid] = (gen, getattr(self.agent, "applied_run", None))
             while len(self._stops) > SEQ_CIDS:
                 self._stops.pop(next(iter(self._stops)))
         with self._lock:
@@ -349,6 +352,18 @@ class Beacon:
         else:
             self._emit(f"beacon {reason}")
         return reason
+
+    def _restarted_by_an_older_run(self, cid: int, gen: int) -> bool:
+        """The one case the stop-once rule must not cover (final review,
+        2026-11-20): after this stop was applied, an OLDER run of the same
+        Conductor reached the player - an HTTP /show/run that was already
+        past the agent's checks when this unit heard its first beacon.
+        That run was superseded by this stop, so the stop still stands;
+        a unit started again by anything else stays as it is."""
+        ran = getattr(self.agent, "applied_run", None)
+        told = self._stops.get(cid)
+        return (ran is not None and told is not None and ran is not told[1]
+                and ran[0] == cid and gen_older(ran[1], gen))
 
     def _advance(self, cid: int, gen: int) -> None:
         """agent.beacon_serial = (cid, gen), never back to an older gen

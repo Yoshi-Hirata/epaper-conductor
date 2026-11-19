@@ -148,6 +148,7 @@ tries bounds the error to a few milliseconds on a quiet WLAN.
 from __future__ import annotations
 
 import hmac
+import itertools
 import json
 import socket
 import threading
@@ -401,7 +402,7 @@ class Agent:
         # queued is dropped, and the beacon stops again a unit its own
         # run/hold landed on after a STOP (final review, 2026-11-20).
         self.stops_seen = 0
-        self._stops_lock = threading.Lock()
+        self._stop_counter = itertools.count(1)
         self.beacon = None             # ui.beacon.Beacon, or None
         # The newest (cid, gen) the beacon accepted for this unit - an
         # applied run/hold/stop, or an entry that found the unit already
@@ -519,8 +520,10 @@ class Agent:
         return self._dispatch(path, body, serial)
 
     def _count_stop(self) -> None:
-        with self._stops_lock:              # two STOPs at once: both counted
-            self.stops_seen += 1
+        # No lock: a STOP never waits for anything, not even another STOP.
+        # next() on a count is atomic, so two STOPs at once get different
+        # numbers and the value changes whichever assignment lands last.
+        self.stops_seen = next(self._stop_counter)
 
     def _late(self, serial) -> "int | None":
         """The newest gen this unit accepted from that Conductor, by

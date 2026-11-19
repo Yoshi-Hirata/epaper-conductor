@@ -989,6 +989,48 @@ def test_until_a_beacon_is_heard_the_http_path_is_the_one_before_the_beacon(
         unit.close()
 
 
+def test_a_stop_stands_against_an_older_http_run_that_lands_after_it(tmp_path):
+    # The first beacon this unit ever hears is a STOP (gen 6) while an
+    # older HTTP run (gen 5) is already past the agent's checks: the run
+    # lands after the stop. The same stop, repeated, must stop it again -
+    # the stop-once rule is for a unit restarted by someone ELSE.
+    unit = Real(tmp_path, serve=True)
+    try:
+        t0 = time.monotonic() - 1.0
+        assert post(unit.agent, "/show/run", {"t0": t0, "show": SHOW_ID},
+                    serial(99, 4))[0] == 200
+        assert unit.send(STOP, 0.0, cid=99, gen=6) == "stop"
+        assert unit.player.status()["state"] == "stopped"
+        # The late older run, as the plain branch would dispatch it
+        # (it read beacon_seen_cid before the stop was heard).
+        unit.agent._dispatch("/show/run", {"t0": t0, "show": SHOW_ID},
+                             (99, 5), dedupe=False)
+        assert unit.player.status()["state"] == "running"
+        assert unit.send(STOP, 0.0, cid=99, gen=6) == "stop"       # again
+        assert unit.player.status()["state"] == "stopped"
+        assert unit.send(STOP, 0.0, cid=99, gen=6) == "stop: not running or holding"
+        # A restart by someone else (no newer applied run of this
+        # Conductor's older gen) is still left alone.
+        unit.player.run(time.monotonic() - 1.0, SHOW_ID)
+        assert unit.send(STOP, 0.0, cid=99, gen=6) == "stop: told already"
+        assert unit.player.status()["state"] == "running"
+    finally:
+        unit.close()
+
+
+def test_two_http_stops_at_once_never_wait_for_each_other(tmp_path):
+    unit = Real(tmp_path, serve=True)
+    try:
+        seen = {unit.agent.stops_seen}
+        for _ in range(3):
+            unit.agent._count_stop()
+            seen.add(unit.agent.stops_seen)
+        assert len(seen) == 4                    # every STOP changes the count
+        assert not hasattr(unit.agent, "_stops_lock")
+    finally:
+        unit.close()
+
+
 def test_http_run_and_beacon_cannot_both_run_one_serial(tmp_path):
     # V2: the HTTP run holds show_lock from the stamp through the player
     # call. Gate the player inside one path's call and deliver the other
