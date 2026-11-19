@@ -1145,8 +1145,7 @@ class Fleet:
             run = dict(self.run) if self.run else None
             gen, stopped, staging = self._run_gen, self._stopped, self._staging
             shows = dict(self.shows)
-            adopted_without_upload = bool(run and run.get("adopted")
-                                          and (not shows or self._offered))
+            adopted = bool(run and run.get("adopted"))
         if staging is not None:
             state = None
         elif run is not None:
@@ -1154,8 +1153,12 @@ class Fleet:
         else:
             state = "stopped" if stopped else None
         view = dict(now=now, gen=gen, state=state, entries={}, skipped={},
-                    shows={name: show["id"] for name, show in shows.items()},
-                    offsets={}, duplicate_units={})
+                    shows={}, offsets={}, duplicate_units={})
+        for name, show in shows.items():
+            try:
+                view["shows"][name] = show["id"]
+            except Exception as exc:
+                view["skipped"][name] = str(exc) or type(exc).__name__
         if state is None:
             return view
         hosts = {name: (link.status or {}).get("host") for name, link in self.links.items()}
@@ -1170,48 +1173,47 @@ class Fleet:
                 view["duplicate_units"][name] = host
                 view["skipped"][name] = f"two units report the hostname {host}"
         # A STOP can need offsets for units removed from the current show set.
-        names = dict.fromkeys((*shows, *self.links)) if adopted_without_upload else (
+        names = dict.fromkeys((*shows, *self.links)) if adopted else (
             self.links if state == "stopped" else shows)
         for name in names:
             link = self.links.get(name)
             offset = link.offset if link is not None else None
             if offset is not None:
                 view["offsets"][name] = offset
-            if name in view["skipped"]:
-                continue
             show = shows.get(name)
             if show is None:
-                if not adopted_without_upload:
-                    continue
-                unit = (link.status or {}).get("show")
-                if (not self._can_adopt_run(link, unit, offset)
-                        or not unit.get("id")):
-                    view["skipped"][name] = "no uploaded show known for this unit - Upload again"
-                    continue
-                show = unit
-                view["shows"][name] = show["id"]
-            host = hosts.get(name)
+                if adopted:
+                    view["skipped"][name] = (
+                        "not uploaded by this Conductor since it restarted - "
+                        "the beacon skips it until the next Upload (after STOP)")
+                continue
+            if name in view["skipped"]:
+                continue
             try:
-                valid_host = isinstance(host, str) and 1 <= len(host.encode("utf-8")) <= 32
-            except UnicodeEncodeError:
-                valid_host = False
-            pos = ((run.get("held_at") or now) - run["t0"]) if run else 0.0
-            if offset is None:
-                view["skipped"][name] = "clock not measured yet - needs one good /status reply first"
-            elif not valid_host:
-                view["skipped"][name] = "hostname not known yet - needs one good /status reply first"
-            elif not all(map(math.isfinite, (now, offset, pos))):
-                view["skipped"][name] = "non-finite beacon time"
-            # Match supervision's grace period (docs/BEACON.md §4).
-            # Keep in step with ui/beacon.py; tests/goldens/beacon_v1.json pins the wire.
-            elif state == "running" and pos > float(show.get("duration", 0)) + 30:
-                view["skipped"][name] = "show has ended - nothing to send"
-            else:
-                view["entries"][name] = dict(
-                    host=host, show=show["id"], now=now + offset, pos=pos,
-                    state={"running": 1, "holding": 2, "stopped": 3}[state],
-                    t0=run["t0"] + offset if run else 0.0,
-                    flags=int(run is not None and self._beacon_force(run, name)))
+                host = hosts.get(name)
+                try:
+                    valid_host = isinstance(host, str) and 1 <= len(host.encode("utf-8")) <= 32
+                except UnicodeEncodeError:
+                    valid_host = False
+                pos = ((run.get("held_at") or now) - run["t0"]) if run else 0.0
+                if offset is None:
+                    view["skipped"][name] = "clock not measured yet - needs one good /status reply first"
+                elif not valid_host:
+                    view["skipped"][name] = "hostname not known yet - needs one good /status reply first"
+                elif not all(map(math.isfinite, (now, offset, pos))):
+                    view["skipped"][name] = "non-finite beacon time"
+                # Match supervision's grace period (docs/BEACON.md §4).
+                # Keep in step with ui/beacon.py; tests/goldens/beacon_v1.json pins the wire.
+                elif state == "running" and pos > float(show.get("duration", 0)) + 30:
+                    view["skipped"][name] = "show has ended - nothing to send"
+                else:
+                    view["entries"][name] = dict(
+                        host=host, show=view["shows"][name], now=now + offset, pos=pos,
+                        state={"running": 1, "holding": 2, "stopped": 3}[state],
+                        t0=run["t0"] + offset if run else 0.0,
+                        flags=int(run is not None and self._beacon_force(run, name)))
+            except Exception as exc:
+                view["skipped"][name] = str(exc) or type(exc).__name__
         return view
 
     def snapshot(self) -> dict:

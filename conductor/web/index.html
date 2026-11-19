@@ -6316,9 +6316,14 @@ function paintBeacon() {
   checkbox.disabled = beaconSaving || !beacon;
   if (!beaconSaving) checkbox.checked = !!beacon?.enabled;
   const skipped = beacon?.enabled ? Object.entries(beacon.skipped) : [];
-  const status = beacon?.errors ? `${beacon.errors} send errors` : "sending";
+  const status = beacon?.routes === 0 ? "no route - check the Wi-Fi"
+    : beacon?.sending ? "sending" : "on, idle";
+  const lastErrorTime = beacon?.errors ? new Date(beacon.last_error_at * 1000).toLocaleTimeString([], {
+    hourCycle: "h23", hour: "2-digit", minute: "2-digit", second: "2-digit"
+  }) : "";
+  const errors = lastErrorTime ? `, ${beacon.errors} send errors, last ${lastErrorTime}` : "";
   counts.textContent = beacon?.enabled
-    ? `(${status})${skipped.length ? `, ${skipped.length} units left out` : ""}`
+    ? `(${status})${errors}${skipped.length ? `, ${skipped.length} units left out` : ""}`
     : "";
   counts.title = beacon?.enabled
     ? [...(beacon.last_error ? [`last error: ${beacon.last_error}`] : []),

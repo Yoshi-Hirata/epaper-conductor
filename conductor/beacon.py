@@ -12,6 +12,7 @@ import math
 import socket
 import struct
 import threading
+import time
 from urllib.parse import urlsplit
 
 from .fleet import pc_clock
@@ -38,6 +39,8 @@ def beacon_key(token):
 
 
 def _encode(entry):
+    if not isinstance(entry["host"], str) or not isinstance(entry["show"], str):
+        raise TypeError("beacon host and show ID must be strings")
     host = entry["host"].encode("utf-8")
     try:
         show = entry["show"].encode("ascii")
@@ -151,6 +154,7 @@ class BeaconSender:
         self._sequences = itertools.count(1)
         self._sent = self._errors = 0
         self._last_error = None
+        self._last_error_at = None
         self._routes = []
         self._unit_targets = {}
         self._sockets = {}
@@ -161,6 +165,7 @@ class BeaconSender:
         self._forget()
 
     def _forget(self):
+        self._sending = False
         self._signature = None
         self._changed_at = self._last_send = -math.inf
         self._interval = None
@@ -216,11 +221,14 @@ class BeaconSender:
             if on:
                 self._sent = self._errors = 0
                 self._last_error = None
+                self._last_error_at = None
 
     def snapshot(self):
         with self._lock:
             return dict(enabled=self._enabled, sent=self._sent, errors=self._errors,
-                        last_error=self._last_error, destinations=[dict(
+                        sending=self._sending and bool(self._routes),
+                        last_error=self._last_error, last_error_at=self._last_error_at,
+                        routes=len(self._routes), destinations=[dict(
                             local=local, address=target, port=self._port, broadcast=broadcast)
                             for local, target, broadcast in self._routes],
                         skipped={**self._network_skipped, **self._skipped})
@@ -228,6 +236,7 @@ class BeaconSender:
     def _error(self, exc):
         self._errors += 1
         self._last_error = str(exc)
+        self._last_error_at = time.time()
 
     def _resolve_routes(self):
         ips, skipped = {}, {}
@@ -282,46 +291,62 @@ class BeaconSender:
         self._sent += 1
         return True
 
-    def tick(self, now=None):
+    def _refresh_routes(self, refresh):
+        try:
+            routes = self._resolve_routes()
+        except Exception as exc:
+            with self._lock:
+                if self._refreshing is refresh:
+                    self._refreshing = None
+                    self._error(exc)
+            return
         with self._lock:
-            if not self._enabled or self._refreshing is not None:
+            if self._refreshing is not refresh:
+                return
+            refresh_at = self._refresh_at
+            self._close_sockets()
+            self._refresh_at = refresh_at
+            self._routes, self._unit_targets, self._network_skipped, errors = routes
+            for error in errors:
+                self._error(error)
+
+    def tick(self, now=None):
+        refresh = None
+        with self._lock:
+            if not self._enabled:
                 return 0
-            refresh = None
             try:
-                if (self._clock() if now is None else now) >= self._refresh_at:
+                refresh_now = self._clock() if now is None else now
+                if refresh_now >= self._refresh_at and self._refreshing is None:
                     refresh = self._refreshing = object()
+                    self._refresh_at = refresh_now + _ROUTE_REFRESH_S
+                    # The live sender must keep ticking while DNS and route probes run.
+                    if self._thread is not None or self._routes:
+                        try:
+                            threading.Thread(target=self._refresh_routes, args=(refresh,),
+                                             name="beacon-routes", daemon=True).start()
+                        except Exception as exc:
+                            self._refreshing = None
+                            self._error(exc)
+                        refresh = None
             except Exception as exc:
                 self._error(exc)
                 return 0
         if refresh is not None:
-            # Resolve first so DNS cannot age the clock sample in beacon_view().
-            try:
-                routes = self._resolve_routes()
-            except Exception as exc:
-                with self._lock:
-                    if self._refreshing is refresh:
-                        self._refreshing = None
-                        self._error(exc)
-                return 0
+            self._refresh_routes(refresh)
         with self._lock:
-            # Disabling the sender invalidates any routes still resolving.
-            if not self._enabled or self._refreshing is not refresh:
+            if not self._enabled:
                 return 0
             sent = self._sent
             try:
                 now = self._clock() if now is None else now
-                if refresh is not None:
-                    self._close_sockets()
-                    self._routes, self._unit_targets, self._network_skipped, errors = routes
-                    for error in errors:
-                        self._error(error)
-                    self._refresh_at = now + _ROUTE_REFRESH_S
                 self._tick(now)
             except Exception as exc:
                 self._error(exc)
             return self._sent - sent
 
     def _tick(self, now):
+        self._sending = False
         view = self._fleet.beacon_view()
         state, gen = view["state"], view["gen"]
         self._skipped = dict(view["skipped"])
@@ -329,7 +354,8 @@ class BeaconSender:
             self._forget()
             return
         entries = view["entries"]
-        signature = gen, state, frozenset(view["shows"].items())
+        signature = gen, state, frozenset(
+            (name, show) for name, show in view["shows"].items() if isinstance(show, str))
         if state == "stopped":
             if not self._announced:
                 return
@@ -352,8 +378,11 @@ class BeaconSender:
                 if offset is None:
                     self._skipped[name] = _NO_OFFSET
                     continue
-                entries[name] = dict(entry, state=3, flags=0, now=view["now"] + offset,
-                                     t0=0.0, pos=0.0)
+                try:
+                    entries[name] = dict(entry, state=3, flags=0, now=view["now"] + offset,
+                                         t0=0.0, pos=0.0)
+                except Exception as exc:
+                    self._skipped[name] = str(exc) or type(exc).__name__
             # The current show list can change while the STOP tail is active.
             signature = None, state, None
         else:
@@ -366,10 +395,11 @@ class BeaconSender:
         for name, entry in entries.items():
             try:
                 _encode(entry)
-            except ValueError as exc:
-                self._skipped[name] = str(exc)
+            except Exception as exc:
+                self._skipped[name] = str(exc) or type(exc).__name__
             else:
                 valid[name] = entry
+        self._sending = bool(valid)
         if state != "stopped":
             fast = (now - self._changed_at < _FAST_WINDOW_S
                     or any(e["pos"] < 0 for e in valid.values()))
@@ -379,7 +409,7 @@ class BeaconSender:
         self._interval = interval
         if changed:
             self._last_send = -math.inf
-        if not valid or now - self._last_send + 1e-9 < interval:
+        if not self._routes or not valid or now - self._last_send + 1e-9 < interval:
             return
         self._last_send = now
         self._transmit(gen, valid, state)

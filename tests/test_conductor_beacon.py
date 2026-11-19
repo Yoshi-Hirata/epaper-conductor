@@ -231,10 +231,8 @@ class Socket:
         pass
 
 
-@pytest.mark.parametrize("other_show", [None, {"id": "idle", "state": "ready"},
-                                       {"id": "demo", "state": "running", "demo": True}])
-def test_adopted_run_uses_each_units_reported_show(fleet_clock, other_show):
-    fleet, clock = fleet_clock
+def test_adopted_run_requires_uploaded_shows(sender_setup):
+    sender, fleet, clock, packets = sender_setup
     fleet.shows = {}
     fleet.run = None
     fleet._may_adopt = True
@@ -249,17 +247,20 @@ def test_adopted_run_uses_each_units_reported_show(fleet_clock, other_show):
     run = dict(fleet.run)
     view = fleet.beacon_view()
     assert run["adopted"]
-    assert {name: entry["show"] for name, entry in view["entries"].items()} == {
-        "alias": "alias-reported", "other": "other-reported"}
-    assert view["skipped"] == {}
-
-    fleet.links["other"].status["show"] = other_show
-    assert fleet.beacon_view()["skipped"] == {
-        "other": "no uploaded show known for this unit - Upload again"}
-    clock.now = 146.0
-    fleet.links["alias"].last_seen = clock.now
-    assert fleet.beacon_view()["skipped"]["alias"] == "show has ended - nothing to send"
+    assert view["entries"] == view["shows"] == {}
+    reason = ("not uploaded by this Conductor since it restarted - "
+              "the beacon skips it until the next Upload (after STOP)")
+    assert view["skipped"] == dict.fromkeys(fleet.links, reason)
+    sender.set_enabled(True)
+    assert sender.tick() == 0
+    assert packets == []
+    assert sender.snapshot()["skipped"] == view["skipped"]
     assert fleet.shows == {} and fleet.run == run
+
+    fleet.shows["alias"] = {"id": "uploaded", "duration": 100}
+    assert sender.tick() == 1
+    assert wire_entry(packets[0][0])[:2] == ("actual-host", "uploaded")
+    assert sender.snapshot()["skipped"] == {"other": reason}
 
 
 @pytest.fixture
@@ -291,6 +292,10 @@ def wire_entry(data):
 @pytest.mark.parametrize("bad,reason", [
     ("non_ascii_show", "ASCII"),
     ("long_show", "bytes"),
+    ("non_string_show", "must be strings"),
+    ("missing_show_id", "'id'"),
+    ("non_string_host", "hostname not known"),
+    ("bad_duration", "float()"),
     ("long_host", "hostname not known yet - needs one good /status reply first"),
     ("offset", "non-finite beacon time"),
     ("now", "non-finite beacon time"),
@@ -305,6 +310,14 @@ def test_bad_entry_does_not_block_healthy_unit(sender_setup, bad, reason):
         fleet.shows["alias"]["id"] = "\u00e9"
     elif bad == "long_show":
         fleet.shows["alias"]["id"] = "s" * 33
+    elif bad == "non_string_show":
+        fleet.shows["alias"]["id"] = ["not hashable"]
+    elif bad == "missing_show_id":
+        del fleet.shows["alias"]["id"]
+    elif bad == "non_string_host":
+        alias.status["host"] = ["not a host"]
+    elif bad == "bad_duration":
+        fleet.shows["alias"]["duration"] = []
     elif bad == "long_host":
         alias.status["host"] = "\u00e9" * 17
     else:
@@ -431,10 +444,29 @@ def stop_fleet(fleet):
     fleet._run_gen += 1
 
 
+def test_sending_status_tracks_run(sender_setup):
+    sender, fleet, clock, _ = sender_setup
+    run, fleet.run = fleet.run, None
+    sender.set_enabled(True)
+    assert sender.tick() == 0
+    assert sender.snapshot()["routes"] > 0
+    assert sender.snapshot()["sending"] is False
+    fleet.run = run
+    fleet._staging = {}
+    assert sender.tick() == 0
+    assert sender.snapshot()["sending"] is False
+    fleet._staging = None
+    assert sender.tick() == 1
+    assert sender.snapshot()["sending"] is True
+    assert tick_at(sender, clock, run["t0"] + fleet.shows["alias"]["duration"] + 31) == 0
+    assert sender.snapshot()["sending"] is False
+
+
 def test_observed_stop_cadence_and_remembered_entries(sender_setup):
     sender, fleet, clock, packets = sender_setup
     sender.set_enabled(True)
     assert sender.tick() == 1
+    assert sender.snapshot()["sending"] is True
     stop_fleet(fleet)
     fleet.shows = {}
     fleet.links["alias"]._samples.clear()
@@ -442,10 +474,12 @@ def test_observed_stop_cadence_and_remembered_entries(sender_setup):
     for step in range(300):
         expected = int(step < 25 or step % 5 == 0)
         assert tick_at(sender, clock, 101 + step / 5) == expected
+        assert sender.snapshot()["sending"] is True
         if expected:
             assert wire_entry(packets[-1][0]) == (
                 "actual-host", "abc", 3, 0, clock.now + 30, 0, 0)
     assert tick_at(sender, clock, 161) == 0
+    assert sender.snapshot()["sending"] is False
     assert tick_at(sender, clock, 200) == 0
 
 
@@ -484,7 +518,7 @@ def test_new_start_replaces_stop(sender_setup):
     assert wire_entry(packets[-1][0])[:3] == ("actual-host", "new", 1)
 
 
-def test_raising_socket_is_counted_and_rebuilt(sender_setup):
+def test_raising_socket_is_counted_and_rebuilt(sender_setup, monkeypatch):
     _, fleet, clock, packets = sender_setup
     made = []
 
@@ -493,18 +527,95 @@ def test_raising_socket_is_counted_and_rebuilt(sender_setup):
         return made[-1]
 
     sender = beacon.BeaconSender(fleet, enabled=True, clock=clock, sock_factory=factory)
+    assert sender.snapshot()["last_error_at"] is None
+    monkeypatch.setattr(beacon.time, "time", lambda: 1_700_000_000.0)
     assert sender.tick() == 0
     assert sender.snapshot()["errors"] == 1
     assert sender.snapshot()["last_error"] == "fake send failure"
+    assert sender.snapshot()["last_error_at"] == 1_700_000_000.0
     assert tick_at(sender, clock, 100.2) == 0
     assert len(made) == 1
-    assert tick_at(sender, clock, 110) == 1
+    refreshed = threading.Event()
+    refresh = sender._refresh_routes
+
+    def notify_refresh(token):
+        refresh(token)
+        refreshed.set()
+
+    monkeypatch.setattr(sender, "_refresh_routes", notify_refresh)
+    sent = tick_at(sender, clock, 110)
+    assert refreshed.wait(5)
+    if not sent:
+        assert tick_at(sender, clock, 110.2) == 1
     assert len(made) == 2
     sender.set_enabled(False)
     sender.set_enabled(True)
     reset = sender.snapshot()
     assert (reset["sent"], reset["errors"], reset["last_error"]) == (0, 0, None)
+    assert reset["last_error_at"] is None
     sender.stop()
+
+
+def test_slow_and_failed_refresh_keeps_sending(sender_setup, monkeypatch):
+    sender, _, clock, packets = sender_setup
+    sender.set_enabled(True)
+    assert sender.tick() == 1
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+    attempts = []
+    refresh = sender._refresh_routes
+
+    def fail_refresh():
+        attempts.append(clock.now)
+        entered.set()
+        if not release.wait(5):
+            raise RuntimeError("test did not release resolver")
+        raise OSError("route refresh failed")
+
+    def notify_refresh(token):
+        refresh(token)
+        finished.set()
+
+    monkeypatch.setattr(sender, "_resolve_routes", fail_refresh)
+    monkeypatch.setattr(sender, "_refresh_routes", notify_refresh)
+    try:
+        assert tick_at(sender, clock, 110) == 1
+        assert entered.wait(5)
+        assert tick_at(sender, clock, 110.2) == 1
+    finally:
+        release.set()
+        assert finished.wait(5)
+    assert tick_at(sender, clock, 110.4) == 1
+    assert attempts == [110]
+    assert len(packets) == 4
+    status = sender.snapshot()
+    assert status["routes"] == 1
+    assert status["errors"] == 1
+    assert status["last_error"] == "route refresh failed"
+    finished.clear()
+    assert tick_at(sender, clock, 120) == 1
+    assert finished.wait(5)
+    assert attempts == [110, 120]
+    assert sender.snapshot()["errors"] == 2
+
+
+@pytest.mark.parametrize("override,local", [
+    ([], ["192.168.1.4"]),
+    (None, ["10.0.0.4"]),
+])
+def test_zero_routes_are_reported(fleet_clock, monkeypatch, override, local):
+    fleet, clock = fleet_clock
+    fleet.links["alias"].address = "192.168.1.9"
+    routes = beacon._routes
+    monkeypatch.setattr(beacon, "_routes",
+                        lambda ips, _, override, port: routes(ips, local, override, port))
+    packets = []
+    sender = beacon.BeaconSender(fleet, enabled=True, clock=clock, destinations=override,
+                                 unicast=False, sock_factory=lambda *_: Socket(packets))
+    assert sender.tick() == 0
+    assert sender.snapshot()["routes"] == 0
+    assert sender.snapshot()["sending"] is False
+    assert sender.snapshot()["destinations"] == []
+    assert packets == []
 
 
 def test_destination_selection():
@@ -626,13 +737,24 @@ def test_server_toggle(tmp_path):
      (True, ["192.168.51.255"], False), []),
     ({"beacon": True, "beacon_to": ["192.168.51.255"]},
      (True, ["192.168.51.255"], True), []),
-    ({"beacon": True, "beacon_to": ["192.168.51.255", "bad"]},
-     (True, None, True), ["beacon_to", "bad", "/24 broadcasts are used instead"]),
-    ({"beacon": "true", "beacon_unicast": "false"},
-     (False, None, True), ["beacon value 'true'", "beacon_unicast value 'false'"]),
+    ({"beacon": True, "beacon_to": ["192.168.51.255", "bad", 7, "192.168.52.255"]},
+     (True, ["192.168.51.255", "192.168.52.255"], True),
+     ['fleet.json: "beacon_to" entries must be IPv4 strings (got \'bad\')',
+      'fleet.json: "beacon_to" entries must be IPv4 strings (got 7)']),
+    ({"beacon_to": ["bad"]}, (False, None, True),
+     ['fleet.json: "beacon_to" has no valid entries', "/24 broadcasts are used instead"]),
+    ({"beacon_to": [], "beacon_unicast": False}, (False, [], False), []),
+    ({"beacon": "yes", "beacon_unicast": "false"},
+     (False, None, True),
+     ['fleet.json: "beacon" must be true or false (got \'yes\') '
+      '- the beacon stays off; tick it on the Units tab.',
+      'fleet.json: "beacon_unicast" must be true or false (got \'false\') '
+      '- unicast stays on; set it to false to disable unicast.']),
     ({"beacon": None, "beacon_unicast": 0, "beacon_to": 7},
-     (False, None, True), ["beacon value None", "beacon_unicast value 0",
-                          "beacon_to value 7", "/24 broadcasts are used instead"]),
+     (False, None, True), ['fleet.json: "beacon" must be true or false (got None)',
+                          'fleet.json: "beacon_unicast" must be true or false (got 0)',
+                          'IPv4 strings (got 7) - replace it or remove the setting.',
+                          "/24 broadcasts are used instead"]),
     ({}, (False, None, True), []),
 ])
 def test_serve_beacon_boot_option(tmp_path, monkeypatch, capsys, config, expected, warnings):
@@ -655,5 +777,7 @@ def test_serve_beacon_boot_option(tmp_path, monkeypatch, capsys, config, expecte
     output = capsys.readouterr().out
     for warning in warnings:
         assert output.count(warning) == 1
+    if expected[1] is not None:
+        assert "/24 broadcasts are used instead" not in output
     if not warnings:
-        assert "Warning: invalid beacon" not in output
+        assert 'Warning: fleet.json: "beacon' not in output
