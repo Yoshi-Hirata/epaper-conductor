@@ -876,6 +876,29 @@ def test_the_same_serial_on_a_unit_not_running_or_not_synced_runs(tmp_path):
         unit.close()
 
 
+def test_an_http_stop_never_queues_behind_show_lock(tmp_path):
+    # Final review: show_lock is held through player calls (an HTTP
+    # run/hold, the beacon - whose stop can wait 2 s in the settle). An
+    # HTTP /show/stop waits for it only a moment, then goes ahead.
+    unit = Real(tmp_path, serve=True)
+    try:
+        stops = []
+        stop = unit.player.stop
+        unit.player.stop = lambda *a, **k: (stops.append(1), stop(*a, **k))[1]
+        assert unit.agent.show_lock.acquire(timeout=1)     # someone else has it
+        try:
+            began = time.monotonic()
+            status, _ = post(unit.agent, "/show/stop", {}, serial(99, 5))
+            took = time.monotonic() - began
+        finally:
+            unit.agent.show_lock.release()
+        assert status == 200 and stops == [1]
+        assert took < 1.5                         # not the 2 s of a settle wait
+        assert unit.agent.show_cmd_serial == (99, 5)       # stamped all the same
+    finally:
+        unit.close()
+
+
 def test_http_run_and_beacon_cannot_both_run_one_serial(tmp_path):
     # V2: the HTTP run holds show_lock from the stamp through the player
     # call. Gate the player inside one path's call and deliver the other

@@ -29,6 +29,9 @@ _FAST_WINDOW_S = 20        # Repeat changes quickly while units catch up (§4).
 _STOP_FAST_S = 5           # Repeat STOP quickly when first observed (§4).
 _STOP_TAIL_S = 60          # Give units that missed STOP time to hear it (§4).
 _ROUTE_REFRESH_S = 10      # Pick up changes to the show's Wi-Fi routes (§4).
+# Empty route refreshes in a row before "no route" replaces the last usable
+# routes (about 30 s at the 10 s refresh).
+_EMPTY_REFRESHES = 3
 _NO_OFFSET = "clock not measured yet - needs one good /status reply first"
 
 
@@ -162,6 +165,7 @@ class BeaconSender:
         self._skipped = {}
         self._refresh_at = -math.inf
         self._refreshing = None
+        self._empty_refreshes = 0
         self._forget()
 
     def _forget(self):
@@ -303,6 +307,18 @@ class BeaconSender:
         with self._lock:
             if self._refreshing is not refresh:
                 return
+            if not routes[0] and self._routes and self._empty_refreshes < _EMPTY_REFRESHES:
+                # A refresh that finds NO route while the last one had some is
+                # more often a hiccup (a name that did not resolve, the Wi-Fi
+                # blinking) than the truth: keep sending on the last routes and
+                # ask again; only after a few in a row is "no route" believed
+                # and shown (final review, 2026-11-20).
+                self._empty_refreshes += 1
+                self._refreshing = None
+                self._network_skipped = routes[2]
+                self._error("route refresh found no route - keeping the last ones")
+                return
+            self._empty_refreshes = 0
             refresh_at = self._refresh_at
             self._close_sockets()
             self._refresh_at = refresh_at

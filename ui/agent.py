@@ -168,6 +168,9 @@ API_VERSION = 1
 # never decides it). conductor/fleet.py's T0_TOLERANCE_S, the
 # supervision's own "in step".
 SAME_T0_S = 0.05
+# How long an HTTP /show/stop waits for show_lock before it goes ahead
+# without it: a STOP must never queue behind another command.
+STOP_LOCK_WAIT_S = 0.25
 
 
 def _clock() -> dict:
@@ -473,6 +476,20 @@ class Agent:
                     return True
                 self._stamp(serial)
                 return self._dispatch(path, body, serial)
+        if path == "/show/stop":
+            # A STOP never queues (final review, 2026-11-20): show_lock is
+            # held through the player call by an HTTP run/hold and by the
+            # beacon - whose own stop can sit in the player's settle wait
+            # for up to 2 s. The stamp wants the lock (so the beacon's
+            # re-check sees it), but only for a bounded moment; past
+            # that the STOP goes ahead, as it did before the lock existed.
+            got = self.show_lock.acquire(timeout=STOP_LOCK_WAIT_S)
+            try:
+                self._stamp(serial)
+            finally:
+                if got:
+                    self.show_lock.release()
+            return self._dispatch(path, body, serial)
         with self.show_lock:
             self._stamp(serial)
         return self._dispatch(path, body, serial)

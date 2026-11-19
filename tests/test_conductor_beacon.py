@@ -598,6 +598,39 @@ def test_slow_and_failed_refresh_keeps_sending(sender_setup, monkeypatch):
     assert sender.snapshot()["errors"] == 2
 
 
+def test_an_empty_refresh_keeps_the_last_routes_until_it_repeats(sender_setup, monkeypatch):
+    # Final review: a refresh that finds no route while the last one had
+    # some (a name that did not resolve, the Wi-Fi blinking) must not stop
+    # the sending; only a few empty refreshes in a row are believed.
+    sender, _, clock, packets = sender_setup
+    sender.set_enabled(True)
+    assert sender.tick() == 1
+    finished = threading.Event()
+    refresh = sender._refresh_routes
+
+    def notify_refresh(token):
+        refresh(token)
+        finished.set()
+
+    monkeypatch.setattr(sender, "_resolve_routes", lambda: ([], {}, {}, []))
+    monkeypatch.setattr(sender, "_refresh_routes", notify_refresh)
+    now = 100.0
+    for attempt in range(beacon._EMPTY_REFRESHES):
+        now += 10.0
+        finished.clear()
+        assert tick_at(sender, clock, now) == 1          # still on the last routes
+        assert finished.wait(5)
+        status = sender.snapshot()
+        assert status["routes"] == 1 and status["errors"] == attempt + 1
+        assert "keeping the last ones" in status["last_error"]
+    now += 10.0
+    finished.clear()
+    tick_at(sender, clock, now)
+    assert finished.wait(5)
+    assert sender.snapshot()["routes"] == 0              # now it is believed
+    assert tick_at(sender, clock, now + 0.2) == 0
+
+
 @pytest.mark.parametrize("override,local", [
     ([], ["192.168.1.4"]),
     (None, ["10.0.0.4"]),
