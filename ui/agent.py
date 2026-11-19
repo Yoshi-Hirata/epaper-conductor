@@ -104,6 +104,10 @@ a show.
     "pending" is {"profile", "in_s"} while a deferred switch (below)
     counts down, else null
 
+    /status also carries "beacon": the one-way UDP listener's counters
+    (ui/beacon.py, docs/BEACON.md section 3), null with --no-beacon. A
+    beacon acts through show_command(), the same code as POST /show/*
+
     POST /wifi/select  {"profile": <NetworkManager connection name>,
                         "after_s": 0-120 (default 0)}
                        switch this unit's Wi-Fi - Wifi.switch() exactly
@@ -144,12 +148,14 @@ tries bounds the error to a few milliseconds on a quiet WLAN.
 from __future__ import annotations
 
 import hmac
+import itertools
 import json
 import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .beacon import gen_older
 from .config import WIFI_FIELDS, WIFI_MAX_AFTER_S
 from .remote import DEV_NUMBER_BRAND, RemoteError, RemoteSession
 from .showplay import HOLDING, LOADED, RUNNING
@@ -157,10 +163,29 @@ from .showplay import HOLDING, LOADED, RUNNING
 DEFAULT_PORT = 8787
 MAX_BODY = 4 * 1024 * 1024      # a show: cues x boards x 2 x 128 hex chars
 API_VERSION = 1
+# A /show/run carrying the serial of the run already applied, with a T0
+# this close to it, is the same START delivered twice (beacon and HTTP),
+# not a new one (review V1, 2026-11-20: by command identity - a T0 alone
+# never decides it). conductor/fleet.py's T0_TOLERANCE_S, the
+# supervision's own "in step".
+SAME_T0_S = 0.05
 
 
 def _clock() -> dict:
     return {"mono": time.monotonic(), "wall": time.time()}
+
+
+def _header_serial(headers) -> "tuple[int, int] | None":
+    """(cid, gen) from X-Beacon-Cid / X-Run-Gen when both are there and
+    are numbers (docs/BEACON.md section 7 A1), else None."""
+    try:
+        cid = (headers or {}).get("X-Beacon-Cid")
+        gen = (headers or {}).get("X-Run-Gen")
+        if cid is not None and gen is not None:
+            return int(cid), int(gen) & 0xFFFFFFFF
+    except (TypeError, ValueError):
+        pass
+    return None
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -258,39 +283,8 @@ class _Handler(BaseHTTPRequestHandler):
                                               "demos": demos.list()})
                 return self._answer(404, {"error": "not found"})
             if self.path.startswith("/show/"):
-                if player is None:
-                    raise RemoteError("this unit has no show player")
-                # A demo (never a PC-driven show, is_demo is False for
-                # those) that is RUNNING/HOLDING - or still writing its
-                # pictures after KEY1 (LOADED, burn "burning": review
-                # finding F7) - owns the unit until the operator stops
-                # it locally or the PC sends /show/stop - load/preset/run
-                # must not retime or replace it under someone's feet;
-                # hold/stop still work, since those are exactly how the
-                # PC takes the unit back.
-                if (self.path in ("/show/load", "/show/preset", "/show/run",
-                                  "/show/clear")
-                        and player.is_demo):
-                    if player.state in (RUNNING, HOLDING):
-                        raise RemoteError("a show is running - stop it first")
-                    burn = (player.status() or {}).get("burn") or {}
-                    if player.state == LOADED and burn.get("state") == "burning":
-                        raise RemoteError("a demo is writing its pictures - "
-                                          "stop it first")
-                if self.path == "/show/load":
-                    player.load(body)
-                elif self.path == "/show/preset":
-                    player.preset(bool(body.get("force", False)))
-                elif self.path == "/show/run":
-                    player.run(float(body["t0"]), body.get("show"),
-                               bool(body.get("force", False)))
-                elif self.path == "/show/hold":
-                    player.hold()
-                elif self.path == "/show/stop":
-                    player.stop()
-                elif self.path == "/show/clear":
-                    player.clear_pictures(body.get("show"))
-                else:
+                if not self.agent.show_command(self.path, body,
+                                               headers=self.headers):
                     return self._answer(404, {"error": "not found"})
             elif (player is not None and player.running
                   and self.path in ("/prepare", "/fire", "/standby")):
@@ -393,6 +387,35 @@ class Agent:
         self.name = name or socket.gethostname()
         self._server: "ThreadingHTTPServer | None" = None
         self._started = time.monotonic()
+        # When the last HTTP /show/* command arrived (show_command()),
+        # and the Conductor's (cid, run gen) it carried in X-Beacon-Cid /
+        # X-Run-Gen, None without them: the beacon drops what is older
+        # (docs/BEACON.md G5a, by serial; G5, by time, only while the
+        # serial is None). show_lock makes stamp and beacon call atomic
+        # against each other (section 7 A4): HTTP holds it to stamp only.
+        self.show_cmd_at: "float | None" = None
+        self.show_cmd_serial: "tuple[int, int] | None" = None
+        self.show_lock = threading.Lock()
+        # HTTP /show/stop arrivals. A STOP never takes show_lock (it must
+        # never wait); instead whoever holds or waited for the lock looks
+        # at this count: an HTTP run/hold that a STOP overtook while it
+        # queued is dropped, and the beacon stops again a unit its own
+        # run/hold landed on after a STOP (final review, 2026-11-20).
+        self.stops_seen = 0
+        self._stop_counter = itertools.count(1)
+        self.beacon = None             # ui.beacon.Beacon, or None
+        # The newest (cid, gen) the beacon accepted for this unit - an
+        # applied run/hold/stop, or an entry that found the unit already
+        # there (set under show_lock, newer only; V4) - and the cid it
+        # has heard a valid entry for this unit from, this boot (V3c).
+        # Together with show_cmd_serial they are the watermark an HTTP
+        # run/hold of an older gen is late against (_late()).
+        self.beacon_serial: "tuple[int, int] | None" = None
+        self.beacon_seen_cid: "int | None" = None
+        # (cid, gen, t0) of the last /show/run with a serial the player
+        # actually ran, by either path: the identity a duplicate START
+        # is recognised by (V1). None after a run without a serial.
+        self.applied_run: "tuple[int, int, float] | None" = None
 
     def status(self) -> dict:
         # Stamped first, before any of the work below - the PC's offset
@@ -412,8 +435,192 @@ class Agent:
                         "demos": len(self.demos.list()) if self.demos
                         else 0,
                         "wifi": self._wifi(),
+                        "beacon": self._beacon(),
                         "clock": clock})
         return payload
+
+    def show_command(self, path: str, body: dict, via: str = "http",
+                     headers=None, serial=None) -> bool:
+        """One /show/* command - the HTTP handler's and the beacon's
+        (ui/beacon.py) one code path: the demo gate, then the player.
+        False for a path that is not a show command (the handler's
+        404); a refusal raises RemoteError, a bad body KeyError /
+        TypeError / ValueError, as before.
+
+        An HTTP command records its arrival first, whatever becomes of
+        it, with the (cid, gen) of `headers` when it carries both: a
+        beacon datagram of an older gen (or, without them, SENT before
+        it) must not undo it (docs/BEACON.md G5a/G5 and section 7,
+        2026-11-19). The beacon passes its datagram's (cid, gen) as
+        `serial` and holds show_lock around the whole call.
+
+        Review rulings V1-V3 (2026-11-20):
+        - /show/run and /show/hold over HTTP hold show_lock from the
+          stamp through the player call, so neither can interleave with
+          a beacon call; stop/load/preset/clear stamp under it and run
+          outside it, as before.
+        - An HTTP run/hold of an OLDER gen than this unit has accepted
+          from that Conductor is late and answered without acting
+          (nothing stamped) - only once the beacon has been heard from
+          that cid this boot. A /show/stop is always executed.
+        - A /show/run with the serial of the run already applied and the
+          same T0 (SAME_T0_S), on a unit running it, is that START
+          delivered twice: answered without calling player.run(), which
+          would take a T0 still ahead as a fresh start and fire the 0:00
+          cue a second time."""
+        if via != "http":
+            return self._dispatch(path, body, serial)
+        serial = _header_serial(headers)
+        if self.beacon_seen_cid is None:
+            # No beacon entry for this unit has been heard this boot (the
+            # Conductor's switch is off, or this unit is out of its
+            # reach): the HTTP path is what it was before the beacon -
+            # no lock, no same-START no-op, nothing dropped. Only the
+            # stamps are kept (plain assignments, read by the beacon
+            # alone), so that its first datagram is ordered against what
+            # HTTP already did (final review, 2026-11-20).
+            self._stamp(serial)
+            if path == "/show/stop":
+                self._count_stop()
+            return self._dispatch(path, body, serial, dedupe=False)
+        if path in ("/show/run", "/show/hold"):
+            stops = self.stops_seen             # before any wait
+            with self.show_lock:
+                if self.stops_seen != stops:
+                    # A /show/stop arrived while this command waited for
+                    # the lock: without the lock it would have reached the
+                    # player BEFORE that STOP, and the STOP would have had
+                    # the last word. Running it now would undo the STOP.
+                    print(f"{path} overtaken by a /show/stop while it "
+                          "waited - dropped", flush=True)
+                    return True
+                newest = self._late(serial)
+                if newest is not None:
+                    # The journal only (the LCD has the beacon's lines).
+                    print(f"late {path} (gen {serial[1]} older than "
+                          f"{newest}) - ignored", flush=True)
+                    return True
+                self._stamp(serial)
+                return self._dispatch(path, body, serial)
+        if path == "/show/stop":
+            # A STOP never waits (final review, 2026-11-20): show_lock is
+            # held through the player call by an HTTP run/hold and by the
+            # beacon, whose own stop can sit in the player's settle wait
+            # for up to 2 s. It goes straight to the player, as it did
+            # before the lock existed; stops_seen tells the others.
+            # Stamp BEFORE the count: a beacon call that read the count
+            # after this STOP then also sees its stamp (and drops an
+            # older run), and one that read it before sees it change
+            # (and stops the unit again).
+            self._stamp(serial)
+            self._count_stop()
+            return self._dispatch(path, body, serial)
+        # load, preset, clear: stamped and dispatched as before the lock.
+        self._stamp(serial)
+        return self._dispatch(path, body, serial)
+
+    def _count_stop(self) -> None:
+        # No lock: a STOP never waits for anything, not even another STOP.
+        # next() on a count is atomic, so two STOPs at once get different
+        # numbers and the value changes whichever assignment lands last.
+        self.stops_seen = next(self._stop_counter)
+
+    def _late(self, serial) -> "int | None":
+        """The newest gen this unit accepted from that Conductor, by
+        either path, when an HTTP run/hold's gen is older than it (V3),
+        else None - asked only once the beacon has been heard from that
+        cid: with the beacon off, the HTTP path is exactly what it was
+        before it."""
+        if serial is None or self.beacon_seen_cid != serial[0]:
+            return None
+        newest = None
+        for seen in (self.beacon_serial, self.show_cmd_serial):
+            if seen is not None and seen[0] == serial[0] and (
+                    newest is None or gen_older(newest, seen[1])):
+                newest = seen[1]
+        if newest is not None and gen_older(serial[1], newest):
+            return newest
+        return None
+
+    def _stamp(self, serial) -> None:
+        self.show_cmd_at = time.monotonic()
+        last = self.show_cmd_serial
+        # Never back to an older gen of the same Conductor: a late
+        # command must not reopen G5a for what it replaced.
+        if not (serial is not None and last is not None
+                and serial[0] == last[0] and gen_older(serial[1], last[1])):
+            self.show_cmd_serial = serial
+
+    def _dispatch(self, path: str, body: dict, serial,
+                  dedupe: bool = True) -> bool:
+        player = self.player
+        if player is None:
+            raise RemoteError("this unit has no show player")
+        # A demo (never a PC-driven show, is_demo is False for
+        # those) that is RUNNING/HOLDING - or still writing its
+        # pictures after KEY1 (LOADED, burn "burning": review
+        # finding F7) - owns the unit until the operator stops
+        # it locally or the PC sends /show/stop - load/preset/run
+        # must not retime or replace it under someone's feet;
+        # hold/stop still work, since those are exactly how the
+        # PC takes the unit back.
+        if (path in ("/show/load", "/show/preset", "/show/run",
+                     "/show/clear")
+                and player.is_demo):
+            if player.state in (RUNNING, HOLDING):
+                raise RemoteError("a show is running - stop it first")
+            burn = (player.status() or {}).get("burn") or {}
+            if player.state == LOADED and burn.get("state") == "burning":
+                raise RemoteError("a demo is writing its pictures - "
+                                  "stop it first")
+        if path == "/show/load":
+            player.load(body)
+        elif path == "/show/preset":
+            player.preset(bool(body.get("force", False)))
+        elif path == "/show/run":
+            t0, show_id = float(body["t0"]), body.get("show")
+            if dedupe and self._same_run(serial, t0, show_id):
+                print("show/run: already running this command - "
+                      "not restarted", flush=True)
+                return True                  # V1: this START, delivered again
+            player.run(t0, show_id, bool(body.get("force", False)))
+            self.applied_run = (None if serial is None
+                                else (serial[0], serial[1], t0))
+        elif path == "/show/hold":
+            player.hold()
+        elif path == "/show/stop":
+            player.stop()
+        elif path == "/show/clear":
+            player.clear_pictures(body.get("show"))
+        else:
+            return False
+        return True
+
+    def _same_run(self, serial, t0: float, show_id: "str | None") -> bool:
+        """V1, by command identity: the serial of the run the player
+        already ran, its T0 within SAME_T0_S, and the player still
+        RUNNING that show on that T0 from the PC. Anything else - no
+        serial, another gen (a SEEK 40 ms away is a new gen), a moved
+        T0, a unit not running - goes to the player."""
+        applied = self.applied_run
+        if (serial is None or applied is None
+                or (serial[0], serial[1]) != applied[:2]
+                or abs(t0 - applied[2]) > SAME_T0_S):
+            return False
+        status = self.player.status() or {}
+        return (status.get("state") == RUNNING and bool(status.get("synced"))
+                and show_id in (None, status.get("id"))
+                and status.get("t0") is not None
+                and abs(status["t0"] - applied[2]) <= SAME_T0_S)
+
+    def _beacon(self) -> "dict | None":
+        # In-memory counters; never an exception out of /status either.
+        if self.beacon is None:
+            return None
+        try:
+            return self.beacon.status()
+        except Exception:               # noqa: BLE001 - null is an answer
+            return None
 
     def _wifi(self) -> dict:
         # The reader's cache, copied - never a question to nmcli here,
