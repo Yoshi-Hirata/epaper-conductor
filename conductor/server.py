@@ -28,9 +28,13 @@ client's, not the repo's):
     fleet.json      optional: {"units": {"radxa-01": "host:port", ...},
                     "token": "..."} when the units are not at their
                     usual 192.168.51.1NN:8787 (conductor/fleet.py)
-                    "beacon": false controls the one-way UDP backup.
-                    "beacon_to": ["a.b.c.255"] overrides broadcast targets.
-                    "beacon_unicast": true enables the unicast copies.
+                    "beacon": true also broadcasts the run over UDP
+                    (docs/BEACON.md). Default false. The Units tab checkbox
+                    writes it.
+                    "beacon_to": [...] gives broadcast addresses instead
+                    of using each unit's /24.
+                    "beacon_unicast": false skips the per-unit unicast
+                    copy (default: sent).
 
 Undo covers show.json - the timeline, the show's length and the unit
 assignments - and is kept on disk, so it survives a reload of the page

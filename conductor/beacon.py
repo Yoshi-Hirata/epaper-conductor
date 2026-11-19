@@ -1,4 +1,8 @@
-"""Wire format and read-only UDP sender for the one-way beacon."""
+"""Broadcast the fleet's run to units whose HTTP replies cannot get back.
+
+The sender reads fleet state and uses measured unit clocks. See
+docs/BEACON.md sections 2, 4 and 7 for the wire, cadence and HTTP ordering.
+"""
 
 import hashlib
 import hmac
@@ -13,24 +17,39 @@ from urllib.parse import urlsplit
 from .fleet import pc_clock
 
 
+# Keep in step with ui/beacon.py; tests/goldens/beacon_v1.json pins the wire.
 _HEADER = struct.Struct("!4sBBBBIII")
 _ENTRY = struct.Struct("!BBddd")
 _OVERHEAD = _HEADER.size + hashlib.sha256().digest_size
-_LIMIT = 1200
+_LIMIT = 1200              # Fit below the MTU (docs/BEACON.md §2).
+_PORT = 8788               # The units' listening port (docs/BEACON.md §2).
+_FAST_TICK_S = 0.2         # Repeat throughout countdown for units that miss a packet (§4).
+_FAST_WINDOW_S = 20        # Repeat changes quickly while units catch up (§4).
+_STOP_FAST_S = 5           # Repeat STOP quickly when first observed (§4).
+_STOP_TAIL_S = 60          # Give units that missed STOP time to hear it (§4).
+_ROUTE_REFRESH_S = 10      # Pick up changes to the show's Wi-Fi routes (§4).
+_NO_OFFSET = "clock not measured yet - needs one good /status reply first"
 
 
 def beacon_key(token):
+    # Keep in step with ui/beacon.py; tests/goldens/beacon_v1.json pins the wire.
+    # An unset token hashes as an empty string (docs/BEACON.md §7).
     return hashlib.sha256(b"epaper-beacon-v1\0" + (token or "").encode("utf-8")).digest()
 
 
 def _encode(entry):
     host = entry["host"].encode("utf-8")
-    show = entry["show"].encode("ascii")
+    try:
+        show = entry["show"].encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError("show ID must be ASCII") from exc
     if not (1 <= len(host) <= 32 and 1 <= len(show) <= 32):
         raise ValueError("beacon host and show must each occupy 1–32 bytes")
     state, flags = entry["state"], entry["flags"]
     times = entry["now"], entry["t0"], entry["pos"]
-    if state not in (1, 2, 3) or flags not in (0, 1) or not all(map(math.isfinite, times)):
+    if not all(map(math.isfinite, times)):
+        raise ValueError("non-finite beacon time")
+    if state not in (1, 2, 3) or flags not in (0, 1):
         raise ValueError("invalid beacon entry")
     return bytes([len(host)]) + host + bytes([len(show)]) + show + _ENTRY.pack(
         state, flags, *times)
@@ -68,6 +87,7 @@ def _unit_ip(address):
 
 
 def _network(ip):
+    # The show Wi-Fi uses /24; beacon_to can supply other broadcast addresses (§4).
     return ipaddress.IPv4Network((ip, 24), strict=False)
 
 
@@ -75,7 +95,7 @@ def _unicast_target(ip):
     return "127.0.0.1" if ip.is_loopback else str(ip)
 
 
-def _routes(ips, local, override):
+def _routes(ips, local, override, port=_PORT):
     if local is None:
         try:
             local = set(socket.gethostbyname_ex(socket.gethostname())[2])
@@ -85,7 +105,7 @@ def _routes(ips, local, override):
         for ip in representatives.values():
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-                    probe.connect((str(ip), 8788))
+                    probe.connect((str(ip), port))
                     local.add(probe.getsockname()[0])
             except OSError:
                 continue
@@ -112,8 +132,8 @@ def destinations(addresses, local=None, override=None):
 
 
 class BeaconSender:
-    def __init__(self, fleet, token=None, enabled=False, port=8788,
-                 destinations=None, clock=pc_clock, tick_s=0.2, sock_factory=None,
+    def __init__(self, fleet, token=None, enabled=False, port=_PORT,
+                 destinations=None, clock=pc_clock, tick_s=_FAST_TICK_S, sock_factory=None,
                  *, unicast=True):
         self._fleet = fleet
         self._token = token
@@ -137,12 +157,14 @@ class BeaconSender:
         self._network_skipped = {}
         self._skipped = {}
         self._refresh_at = -math.inf
+        self._refreshing = None
         self._forget()
 
     def _forget(self):
         self._signature = None
         self._changed_at = self._last_send = -math.inf
         self._interval = None
+        # Tell STOP only to units told the run, so a stale STOP is never broadcast (§4).
         self._announced = {}
         self._stop_at = None
 
@@ -181,6 +203,7 @@ class BeaconSender:
         self._routes = []
         self._unit_targets = {}
         self._refresh_at = -math.inf
+        self._refreshing = None
 
     def set_enabled(self, on):
         with self._lock:
@@ -190,6 +213,9 @@ class BeaconSender:
                 self._skipped = {}
                 self._network_skipped = {}
                 self._close_sockets()
+            if on:
+                self._sent = self._errors = 0
+                self._last_error = None
 
     def snapshot(self):
         with self._lock:
@@ -203,21 +229,19 @@ class BeaconSender:
         self._errors += 1
         self._last_error = str(exc)
 
-    def _refresh(self, now):
-        self._close_sockets()
-        self._refresh_at = now + 10
-        ips, self._network_skipped = {}, {}
+    def _resolve_routes(self):
+        ips, skipped = {}, {}
         for name, link in self._fleet.links.items():
             try:
                 ips[name] = _unit_ip(link.address)
             except (OSError, ValueError) as exc:
-                self._network_skipped[name] = f"unit address: {exc}"
-        routes, missing = _routes(ips.values(), None, self._override)
+                skipped[name] = f"unit address: {exc}"
+        routes, missing = _routes(ips.values(), None, self._override, self._port)
         for name, ip in ips.items():
             if _network(ip) in missing:
-                self._network_skipped[name] = f"no local address on {_network(ip)}"
-        self._routes = [route for route in routes if route[2] or self._unicast]
-        self._unit_targets = {name: _unicast_target(ip) for name, ip in ips.items()}
+                skipped[name] = f"this computer is not on {_network(ip)} - join the show Wi-Fi"
+        return ([route for route in routes if route[2] or self._unicast],
+                {name: _unicast_target(ip) for name, ip in ips.items()}, skipped)
 
     def _send(self, data, route):
         local, target, broadcast = route
@@ -248,10 +272,37 @@ class BeaconSender:
 
     def tick(self, now=None):
         with self._lock:
+            if not self._enabled or self._refreshing is not None:
+                return 0
+            refresh = None
+            try:
+                if (self._clock() if now is None else now) >= self._refresh_at:
+                    refresh = self._refreshing = object()
+            except Exception as exc:
+                self._error(exc)
+                return 0
+        if refresh is not None:
+            # Resolve first so DNS cannot age the clock sample in beacon_view().
+            try:
+                routes = self._resolve_routes()
+            except Exception as exc:
+                with self._lock:
+                    if self._refreshing is refresh:
+                        self._refreshing = None
+                        self._error(exc)
+                return 0
+        with self._lock:
+            # Disabling the sender invalidates any routes still resolving.
+            if not self._enabled or self._refreshing is not refresh:
+                return 0
             sent = self._sent
             try:
-                if self._enabled:
-                    self._tick(self._clock() if now is None else now)
+                now = self._clock() if now is None else now
+                if refresh is not None:
+                    self._close_sockets()
+                    self._routes, self._unit_targets, self._network_skipped = routes
+                    self._refresh_at = now + _ROUTE_REFRESH_S
+                self._tick(now)
             except Exception as exc:
                 self._error(exc)
             return self._sent - sent
@@ -271,15 +322,21 @@ class BeaconSender:
             if self._stop_at is None:
                 self._stop_at = now
             elapsed = now - self._stop_at
-            if elapsed >= 60:
+            if elapsed >= _STOP_TAIL_S:
                 self._forget()
                 return
-            interval = self._tick_s if elapsed < 5 else 1.0
+            interval = self._tick_s if elapsed < _STOP_FAST_S else 1.0
             entries = {}
+            duplicate_units = view["duplicate_units"]
+            duplicate_hosts = set(duplicate_units.values())
             for name, entry in self._announced.items():
+                host = duplicate_units.get(name, entry["host"])
+                if host in duplicate_hosts:
+                    self._skipped[name] = f"two units report the hostname {host}"
+                    continue
                 offset = view["offsets"].get(name)
                 if offset is None:
-                    self._skipped[name] = "no offset"
+                    self._skipped[name] = _NO_OFFSET
                     continue
                 entries[name] = dict(entry, state=3, flags=0, now=view["now"] + offset,
                                      t0=0.0, pos=0.0)
@@ -291,19 +348,27 @@ class BeaconSender:
             self._stop_at = None
             if signature != self._signature:
                 self._changed_at = now
-            fast = now - self._changed_at < 20 or any(e["pos"] < 0 for e in entries.values())
+        valid = {}
+        for name, entry in entries.items():
+            try:
+                _encode(entry)
+            except ValueError as exc:
+                self._skipped[name] = str(exc)
+            else:
+                valid[name] = entry
+        if state != "stopped":
+            fast = (now - self._changed_at < _FAST_WINDOW_S
+                    or any(e["pos"] < 0 for e in valid.values()))
             interval = self._tick_s if fast else 1.0
         changed = signature != self._signature or interval != self._interval
         self._signature = signature
         self._interval = interval
         if changed:
             self._last_send = -math.inf
-        if not entries or now - self._last_send + 1e-9 < interval:
+        if not valid or now - self._last_send + 1e-9 < interval:
             return
         self._last_send = now
-        if now >= self._refresh_at:
-            self._refresh(now)
-        self._transmit(gen, entries, state)
+        self._transmit(gen, valid, state)
 
     def _transmit(self, gen, entries, state):
         if self._key is None:

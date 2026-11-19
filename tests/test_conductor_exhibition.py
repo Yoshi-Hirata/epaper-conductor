@@ -1263,7 +1263,7 @@ def test_wifi_select_tells_every_online_unit_and_this_host_last(tmp_path):
             super().__init__(name, "stopped")
             self.address = address
 
-        def post(self, path, body, learn=True, timeout=None):
+        def post(self, path, body, learn=True, timeout=None, serial=None):
             order.append((self.name, path, body, learn))
             if self.name == "radxa-02":
                 raise RuntimeError("a show is running on this unit")
@@ -4038,7 +4038,7 @@ class RefusingPresetLink(StubLink):
         super().__init__(name, show_state)
         self.why = why
 
-    def post(self, path, body, learn=True, timeout=None):
+    def post(self, path, body, learn=True, timeout=None, serial=None):
         if path == "/show/preset":
             self.posted.append((path, body))
             raise RuntimeError(self.why)
@@ -4243,7 +4243,7 @@ def test_two_starts_together_do_not_both_stage():
     link = fleet.links["radxa-01"]
     real_post = link.post
 
-    def slow_post(path, body, learn=True, timeout=None):
+    def slow_post(path, body, learn=True, timeout=None, serial=None):
         entered.set()
         gate.wait(5)
         return real_post(path, body, learn, timeout)
@@ -4317,7 +4317,7 @@ class StillRunningLink(StubLink):
         super().__init__(name, "running")
         self.refusals = refusals
 
-    def post(self, path, body, learn=True, timeout=None):
+    def post(self, path, body, learn=True, timeout=None, serial=None):
         if path == "/show/preset":
             self.posted.append((path, body))
             if self.refusals is None or self.refusals > 0:

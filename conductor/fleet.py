@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import math
 import secrets
 import socket
 import threading
@@ -314,20 +315,24 @@ class UnitLink:
         return True
 
     def post(self, path: str, body: dict, learn: bool = True,
-             timeout: "float | None" = None) -> dict:
+             timeout: "float | None" = None, *, serial=None) -> dict:
         """A command, on a connection of its own (any thread may call).
         `learn=False` skips feeding this round trip into the clock model:
         a reply whose timing has nothing to do with the network (writing
         a demo to eMMC, say) would poison the offset with a false "slow
         path". `timeout` overrides the usual 2x poll timeout for a
-        command known to run long."""
+        command known to run long. A show command can carry the serial
+        of its earlier decision (docs/BEACON.md §7)."""
+        headers = None
+        if path.startswith("/show/"):
+            if serial is None and self.show_serial is not None:
+                serial = self.show_serial()
+            if serial is not None:
+                cid, gen = serial
+                headers = {"X-Beacon-Cid": str(cid), "X-Run-Gen": str(gen & 0xFFFFFFFF)}
         conn = self._connect(timeout if timeout is not None
                              else self._timeout * 2)
         try:
-            headers = None
-            if path.startswith("/show/") and self.show_serial is not None:
-                cid, gen = self.show_serial()
-                headers = {"X-Beacon-Cid": str(cid), "X-Run-Gen": str(gen)}
             payload, sent, received = self._exchange(conn, "POST", path, body, headers)
         finally:
             conn.close()
@@ -1148,9 +1153,20 @@ class Fleet:
             state = "stopped" if stopped else None
         view = dict(now=now, gen=gen, state=state, entries={}, skipped={},
                     shows={name: show["id"] for name, show in shows.items()},
-                    offsets={})
+                    offsets={}, duplicate_units={})
         if state is None:
             return view
+        hosts = {name: (link.status or {}).get("host") for name, link in self.links.items()}
+        seen, duplicates = set(), set()
+        for host in hosts.values():
+            if isinstance(host, str) and host:
+                if host in seen:
+                    duplicates.add(host)
+                seen.add(host)
+        for name, host in hosts.items():
+            if isinstance(host, str) and host in duplicates:
+                view["duplicate_units"][name] = host
+                view["skipped"][name] = f"two units report the hostname {host}"
         # A STOP can need offsets for units removed from the current show set.
         names = self.links if state == "stopped" else shows
         for name in names:
@@ -1158,17 +1174,25 @@ class Fleet:
             offset = link.offset if link is not None else None
             if offset is not None:
                 view["offsets"][name] = offset
-            if name not in shows:
+            if name not in shows or name in view["skipped"]:
                 continue
             show = shows[name]
-            host = ((link.status or {}).get("host") if link is not None else None)
+            host = hosts.get(name)
+            try:
+                valid_host = isinstance(host, str) and 1 <= len(host.encode("utf-8")) <= 32
+            except UnicodeEncodeError:
+                valid_host = False
             pos = ((run.get("held_at") or now) - run["t0"]) if run else 0.0
             if offset is None:
-                view["skipped"][name] = "no offset"
-            elif not isinstance(host, str) or not 1 <= len(host.encode("utf-8")) <= 32:
-                view["skipped"][name] = "unknown or invalid host"
+                view["skipped"][name] = "clock not measured yet - needs one good /status reply first"
+            elif not valid_host:
+                view["skipped"][name] = "hostname not known yet - needs one good /status reply first"
+            elif not all(map(math.isfinite, (now, offset, pos))):
+                view["skipped"][name] = "non-finite beacon time"
+            # Match supervision's grace period (docs/BEACON.md §4).
+            # Keep in step with ui/beacon.py; tests/goldens/beacon_v1.json pins the wire.
             elif state == "running" and pos > float(show.get("duration", 0)) + 30:
-                view["skipped"][name] = "show over"
+                view["skipped"][name] = "show has ended - nothing to send"
             else:
                 view["entries"][name] = dict(
                     host=host, show=show["id"], now=now + offset, pos=pos,
@@ -1792,6 +1816,7 @@ class Fleet:
             if not self.run or self.run["state"] != "running":
                 return {}
             t0 = self.run["t0"]
+            serial = self.beacon_cid, self._run_gen
             # START's `force` belongs to the whole run: the unit's own
             # gate must wave the same failed boards through for every
             # SEEK/RESUME/NEXT of this run too, not just the first /show/run.
@@ -1827,7 +1852,7 @@ class Fleet:
                 raise RuntimeError("has not taken this show yet")
             link.post("/show/run", {"t0": t0 + offset,
                                     "show": show["id"] if show else None,
-                                    "force": force or link.name in forced})
+                                    "force": force or link.name in forced}, serial=serial)
             return {}
         return self._each(list(names), action)
 
@@ -2704,7 +2729,8 @@ class Fleet:
                 return {}
             self.run.update(state="holding", held_at=self._clock())
             self._t0_moved()
-        return self.simple(self._targets(), "/show/hold")
+            serial = self.beacon_cid, self._run_gen
+        return self.simple(self._targets(), "/show/hold", serial=serial)
 
     def resume(self) -> "dict[str, dict]":
         self._cancel_armed_clear()
@@ -2761,7 +2787,8 @@ class Fleet:
             self.run = None
             self.start_at = 0.0
             self._t0_moved()
-        results = self.simple(targets, "/show/stop")
+            serial = self.beacon_cid, self._run_gen
+        results = self.simple(targets, "/show/stop", serial=serial)
         if clear:
             # ARMED, not sent. STOP is also how a director aborts a show
             # half way through - the ordinary reason to press it - and a
@@ -2889,7 +2916,7 @@ class Fleet:
                 # Once per unit and STOP: a unit that missed it. One that
                 # runs again after that was started by someone, on purpose.
                 self._stop_told.add(link.name)
-                link.post("/show/stop", {})
+                link.post("/show/stop", {}, serial=(self.beacon_cid, gen))
                 self._corrected[link.name] = now
                 self.corrections.append(f"{time.strftime('%H:%M:%S')} "
                                         f"{link.name}: stopped (missed STOP)")
@@ -2953,7 +2980,7 @@ class Fleet:
                 with self._run_lock:
                     if self._run_gen != gen:
                         return
-                link.post("/show/hold", {})
+                link.post("/show/hold", {}, serial=(self.beacon_cid, gen))
                 why = why or "put on hold"
         else:
             expected = run["t0"] + link.offset
@@ -2982,7 +3009,7 @@ class Fleet:
                         link, now, "/show/run",
                         {"t0": expected, "show": show["id"],
                          "force": self._rejoin_force(run, link.name)},
-                        "run"):
+                        "run", serial=(self.beacon_cid, gen)):
                     return
                 why = why or ("started late" if unit.get("t0") is None
                               else "T0 confirmed after its restart"
@@ -3075,7 +3102,7 @@ class Fleet:
         return self._clock() - float(moved_at) >= self.clear_after_move_s
 
     def _post_or_refused(self, link: UnitLink, now: float, path: str,
-                         body: dict, what: str) -> bool:
+                         body: dict, what: str, **post_options) -> bool:
         """A supervision command to one unit. The unit is marked
         corrected BEFORE the post, so a refusal (409 - "board 7 did not
         take the burn", "unit is busy") is not retried on the very next
@@ -3086,7 +3113,7 @@ class Fleet:
         entry is forgotten when a post to that unit lands."""
         self._corrected[link.name] = now
         try:
-            link.post(path, body)
+            link.post(path, body, **post_options)
         except Exception as exc:            # noqa: BLE001 - said, not raised
             reason = str(exc) or exc.__class__.__name__
             if self._refused.get(link.name) != (what, reason):
@@ -3212,10 +3239,10 @@ class Fleet:
         return link.post("/bus/recover", {}, learn=False,
                          timeout=RECOVER_TIMEOUT_S)
 
-    def simple(self, names, path: str) -> "dict[str, dict]":
+    def simple(self, names, path: str, **post_options) -> "dict[str, dict]":
         """cancel / standby / release."""
         return self._each(list(names), lambda link: {
-            "phase": link.post(path, {}).get("phase")})
+            "phase": link.post(path, {}, **post_options).get("phase")})
 
     def forget_shows(self) -> None:
         """This conductor no longer knows what the units hold - the

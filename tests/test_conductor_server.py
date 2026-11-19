@@ -2726,6 +2726,9 @@ def test_the_fleet_snapshot_carries_the_start_position_and_the_show_length(tmp_p
         assert snap == {"units": [], "last_fire": None, "run": None,
                         "shows": {}, "corrections": [], "prepared": {},
                         "start_at": 0.0, "show_duration": None,
+                        # The one-way beacon's sender (docs/BEACON.md): null
+                        # without a fleet, like the speaker.
+                        "beacon": None,
                         # EXHIBITION mode: the Loop is always an object,
                         # the speaker is null without --speaker.
                         "loop": {"on": False, "wait_s": 45, "next_in_s": None,

@@ -5612,8 +5612,8 @@ function renderFleet() {
         <span style="flex:1"></span>
         <button id="fleet-standby">All units STANDBY (white)</button>
         <button id="fleet-release">Release units to on-device control</button>
-        <label class="meta"><input type="checkbox" id="fleet-beacon" disabled>
-          One-way beacon <span id="fleet-beacon-counts"></span></label>
+        <label class="meta" title="Also broadcast START/HOLD/STOP over UDP for units whose Wi-Fi replies do not reach the router. Units cannot answer it: a unit that follows it may still show as unreachable here. Only ONE Conductor may have this on. Saved in fleet.json - stays on after a restart. Switch it on or off only while stopped."><input type="checkbox" id="fleet-beacon" disabled>
+          Backup broadcast (beacon)</label> <span class="meta" id="fleet-beacon-counts"></span>
       </div>
       <div class="meta" id="go-log" style="margin-top:8px;white-space:pre-wrap">${esc(ui.goLog)}</div>
     </div>
@@ -6315,7 +6315,15 @@ function paintBeacon() {
   const beacon = fleet?.beacon;
   checkbox.disabled = beaconSaving || !beacon;
   if (!beaconSaving) checkbox.checked = !!beacon?.enabled;
-  counts.textContent = beacon ? `(${beacon.sent} sent, ${beacon.errors} errors)` : "";
+  const skipped = beacon?.enabled ? Object.entries(beacon.skipped) : [];
+  const status = beacon?.errors ? `${beacon.errors} send errors` : "sending";
+  counts.textContent = beacon?.enabled
+    ? `(${status})${skipped.length ? `, ${skipped.length} units left out` : ""}`
+    : "";
+  counts.title = beacon?.enabled
+    ? [...(beacon.last_error ? [`last error: ${beacon.last_error}`] : []),
+       ...skipped.map(([unit, reason]) => `${unit}: ${reason}`)].join("\n")
+    : "";
 }
 function renderTiles() {
   showClockText();

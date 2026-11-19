@@ -377,7 +377,7 @@ class StubLink:
         self.posted = []
         self.demos = []           # what a GET /demo/list would answer
 
-    def post(self, path, body, learn=True, timeout=None):
+    def post(self, path, body, learn=True, timeout=None, serial=None):
         self.posted.append((path, body))
         self.learned = learn      # last call's `learn`, for the demo tests
         return {}
@@ -395,7 +395,7 @@ class StubLink:
 class FailingLink(StubLink):
     """A unit that is offline (or refuses) for every command."""
 
-    def post(self, path, body, learn=True, timeout=None):
+    def post(self, path, body, learn=True, timeout=None, serial=None):
         raise RuntimeError("timed out")
 
     def get(self, path, learn=True, timeout=None):
@@ -891,7 +891,7 @@ class RefusingRunLink(StubLink):
     """A unit whose /show/run is refused (409 - a live board did not
     take the burn), every time."""
 
-    def post(self, path, body, learn=True, timeout=None):
+    def post(self, path, body, learn=True, timeout=None, serial=None):
         super().post(path, body, learn, timeout)
         if path == "/show/run":
             raise RuntimeError("board 7 did not take the burn - reload the show")
@@ -936,7 +936,7 @@ def test_supervise_forgets_a_refusal_once_the_unit_takes_the_command():
     fleet._supervise(link)
     assert "run refused" in fleet.corrections[-1]
     # The operator reloaded the show; the unit now takes /show/run.
-    link.post = lambda path, body, learn=True, timeout=None: (
+    link.post = lambda path, body, learn=True, timeout=None, serial=None: (
         link.posted.append((path, body)) or {})
     now[0] += SUPERVISE_EVERY_S
     fleet._supervise(link)
@@ -1328,7 +1328,7 @@ class RacingLink(StubLink):
         self._fleet = fleet
         self._raced = False
 
-    def post(self, path, body):
+    def post(self, path, body, serial=None):
         if not self._raced and path == "/show/load":
             self._raced = True
             self._fleet.seek(200.0, lead_s=1.0)        # the concurrent operator
@@ -1396,7 +1396,7 @@ def test_write_demo_does_not_touch_a_live_run():
 
 def test_write_demo_surfaces_a_409_refusal_per_unit():
     class Refusing(StubLink):
-        def post(self, path, body, learn=True, timeout=None):
+        def post(self, path, body, learn=True, timeout=None, serial=None):
             raise RuntimeError("HTTP 409: a show is running - stop it first")
     fleet = Fleet({}, clock=lambda: 1000.0)
     fleet.links = {"radxa-01": Refusing("radxa-01", "stopped")}
@@ -1472,7 +1472,7 @@ def test_delete_demo_reports_an_unknown_slug_as_failed():
     # into a RuntimeError (see _exchange), so _each() reports it as a
     # per-unit failure with no code of its own needed here.
     class UnknownSlugLink(StubLink):
-        def post(self, path, body, learn=True, timeout=None):
+        def post(self, path, body, learn=True, timeout=None, serial=None):
             raise RuntimeError(f"no such demo: {body['slug']}")
     fleet = Fleet({}, clock=lambda: 1000.0)
     fleet.links = {"radxa-01": UnknownSlugLink("radxa-01", "stopped")}
@@ -1754,7 +1754,7 @@ def test_a_write_and_a_delete_update_the_cache_from_their_own_answer():
     # the tiles are right at once, without waiting out the ten seconds or
     # spending a request of their own.
     class MenuLink(StubLink):
-        def post(self, path, body, learn=True, timeout=None):
+        def post(self, path, body, learn=True, timeout=None, serial=None):
             StubLink.post(self, path, body, learn, timeout)
             if path == "/demo/save":
                 self.demos = [_demo_entry("demo-paris", body["name"], "showA")]
@@ -1925,7 +1925,7 @@ def test_a_unit_still_being_retried_keeps_the_clear_armed():
     class Flaky(StubLink):
         tried = 0
 
-        def post(self, path, body, learn=True, timeout=None):
+        def post(self, path, body, learn=True, timeout=None, serial=None):
             if path == "/show/clear":
                 Flaky.tried += 1
                 if Flaky.tried == 1:
@@ -2048,7 +2048,7 @@ def test_a_unit_out_of_reach_when_the_window_closed_is_asked_again():
         fails = 2
         tried = 0
 
-        def post(self, path, body, learn=True, timeout=None):
+        def post(self, path, body, learn=True, timeout=None, serial=None):
             if path == "/show/clear":
                 Flaky.tried += 1
                 if Flaky.tried <= Flaky.fails:
@@ -2228,7 +2228,7 @@ def test_an_agent_too_old_to_clear_is_said_not_raised():
     class OldAgent(StubLink):
         tried = 0
 
-        def post(self, path, body, learn=True, timeout=None):
+        def post(self, path, body, learn=True, timeout=None, serial=None):
             if path == "/show/clear":
                 OldAgent.tried += 1
                 raise RuntimeError("not found")     # ui/agent.py's own 404

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from conductor import beacon
+from conductor import beacon, server as conductor_server
 from conductor.fleet import Fleet, UnitLink
 from conductor.server import make_server
 
@@ -65,17 +65,19 @@ def test_fleet_view(fleet_clock):
     assert running["entries"] == {
         "alias": dict(host="actual-host", show="abc", state=1, flags=1,
                       now=110.0, t0=115.0, pos=-5.0)}
-    assert running["skipped"] == {"other": "no offset"}
+    assert running["skipped"] == {
+        "other": "clock not measured yet - needs one good /status reply first"}
     fleet.links["other"]._samples.append((0.01, 20.0))
     fleet.links["other"].status = {}
-    assert "host" in fleet.beacon_view()["skipped"]["other"]
+    assert fleet.beacon_view()["skipped"]["other"] == (
+        "hostname not known yet - needs one good /status reply first")
     fleet.run.update(state="holding", held_at=111.0, force=True, forced=[])
     clock.now = 120.0
     held = fleet.beacon_view()["entries"]["alias"]
     assert (held["state"], held["pos"], held["flags"], held["now"]) == (2, 6, 1, 130)
     fleet.run.update(state="running", held_at=None)
     clock.now = 236.0
-    assert fleet.beacon_view()["skipped"]["alias"] == "show over"
+    assert fleet.beacon_view()["skipped"]["alias"] == "show has ended - nothing to send"
     fleet._staging = {"state": "preset"}
     assert fleet.beacon_view()["state"] is None
     fleet._staging = None
@@ -87,13 +89,11 @@ def test_fleet_view(fleet_clock):
                            now=246.0, t0=0.0, pos=0.0)
 
 
-def test_show_post_serial_is_current_and_limited_to_show_posts(fleet_clock, monkeypatch):
-    fleet, clock = fleet_clock
-    fleet.shows.pop("other")
-    link = fleet.links["alias"]
-    link.last_seen = clock.now
-    link.status["show"] = {"id": "abc"}
+@pytest.fixture
+def show_requests(fleet_clock, monkeypatch):
+    fleet, _ = fleet_clock
     requests = []
+    connected = []
 
     class Connection:
         status = 200
@@ -110,16 +110,20 @@ def test_show_post_serial_is_current_and_limited_to_show_posts(fleet_clock, monk
         def close(self):
             pass
 
-    monkeypatch.setattr(UnitLink, "_connect", lambda *_: Connection())
+    def connect(*_):
+        connected.append(fleet._run_gen)
+        fleet._run_gen += 1  # Another decision lands while connect is in flight.
+        return Connection()
+
+    monkeypatch.setattr(UnitLink, "_connect", connect)
+    return requests, connected
+
+
+def test_show_post_serial_is_current_and_limited_to_show_posts(fleet_clock, show_requests):
+    fleet, _ = fleet_clock
+    link = fleet.links["alias"]
+    requests, connected = show_requests
     assert 0 < fleet.beacon_cid <= 0xFFFFFFFF
-    fleet.run = None
-    assert fleet.start_show()["alias"]["ok"]
-    start_gen = fleet._run_gen
-    assert fleet.hold()["alias"]["ok"]
-    hold_gen = fleet._run_gen
-    assert hold_gen > start_gen
-    assert fleet.stop_show()["alias"]["ok"]
-    stop_gen = fleet._run_gen
     fleet._run_gen = (1 << 32) + 23
     link.post("/show/load", {"show": "abc"})
     link.post("/prepare", {})
@@ -127,19 +131,65 @@ def test_show_post_serial_is_current_and_limited_to_show_posts(fleet_clock, monk
     assert link.poll()
     UnitLink("standalone", "127.0.0.1").post("/show/run", {})
 
-    serial_posts = [("POST", "/show/run", start_gen), ("POST", "/show/hold", hold_gen),
-                    ("POST", "/show/stop", stop_gen), ("POST", "/show/load", 23)]
-    assert len(requests) == 8
-    for (method, path, _, headers), (expected_method, expected_path, gen) in zip(
-            requests, serial_posts):
-        assert (method, path) == (expected_method, expected_path)
-        assert headers["X-Beacon-Cid"] == str(fleet.beacon_cid)
-        assert headers["X-Run-Gen"] == str(gen)
-    assert json.loads(requests[3][2]) == {"show": "abc"}
-    assert [(method, path) for method, path, _, _ in requests[4:]] == [
+    method, path, body, headers = requests[0]
+    assert (method, path, json.loads(body)) == ("POST", "/show/load", {"show": "abc"})
+    assert headers["X-Beacon-Cid"] == str(fleet.beacon_cid)
+    assert headers["X-Run-Gen"] == "23"
+    assert connected[0] == (1 << 32) + 23
+    assert [(method, path) for method, path, _, _ in requests[1:]] == [
         ("POST", "/prepare"), ("POST", "/status"), ("GET", "/status"), ("POST", "/show/run")]
-    for _, _, _, headers in requests[4:]:
+    for _, _, _, headers in requests[1:]:
         assert "X-Beacon-Cid" not in headers and "X-Run-Gen" not in headers
+
+
+@pytest.mark.parametrize("command,path", [
+    ("start_show", "/show/run"), ("seek", "/show/run"), ("resume", "/show/run"),
+    ("next_cue", "/show/run"), ("hold", "/show/hold"), ("stop_show", "/show/stop"),
+    ("supervise_run", "/show/run"), ("supervise_hold", "/show/hold"),
+    ("supervise_stop", "/show/stop"),
+])
+def test_show_post_carries_decision_serial(fleet_clock, show_requests, monkeypatch, command, path):
+    fleet, clock = fleet_clock
+    requests, connected = show_requests
+    del fleet.shows["other"]
+    del fleet.links["other"]
+    link = fleet.links["alias"]
+    link.last_seen = clock.now
+    link.status["show"] = {"id": "abc", "state": "running"}
+    fleet.shows["alias"]["cues"] = [{"sent": 20.0}]
+    if command in ("start_show", "supervise_stop"):
+        fleet.run = None
+    if command == "supervise_stop":
+        fleet._stopped = True
+    if command in ("resume", "supervise_hold"):
+        fleet.run.update(state="holding", held_at=clock.now)
+
+    decisions = []
+    post = link.post
+
+    def after_decision(*args, **kwargs):
+        decisions.append(fleet._run_gen)
+        fleet._run_gen += 1  # Advance before post() even takes its fallback serial.
+        return post(*args, **kwargs)
+
+    monkeypatch.setattr(link, "post", after_decision)
+    if command.startswith("supervise_"):
+        fleet._supervise(link)
+    elif command == "seek":
+        assert fleet.seek(10.0)[1]["alias"]["ok"]
+    else:
+        assert getattr(fleet, command)()["alias"]["ok"]
+
+    [(method, sent_path, body, headers)] = requests
+    [gen] = decisions
+    assert (method, sent_path) == ("POST", path)
+    assert connected == [gen + 1]
+    assert headers["X-Beacon-Cid"] == str(fleet.beacon_cid)
+    assert headers["X-Run-Gen"] == str(gen)
+    if path == "/show/run":
+        assert json.loads(body)["t0"] == fleet.run["t0"] + 10.0
+    else:
+        assert json.loads(body) == {}
 
 
 def test_beacon_rejoin_force_reads_without_recording(fleet_clock):
@@ -185,7 +235,8 @@ class Socket:
 def sender_setup(fleet_clock, monkeypatch):
     fleet, clock = fleet_clock
     routes = beacon._routes
-    monkeypatch.setattr(beacon, "_routes", lambda ips, local, override: routes(ips, [], override))
+    monkeypatch.setattr(beacon, "_routes",
+                        lambda ips, local, override, port: routes(ips, [], override, port))
     packets = []
     sender = beacon.BeaconSender(fleet, clock=clock, sock_factory=lambda *_: Socket(packets))
     return sender, fleet, clock, packets
@@ -204,6 +255,127 @@ def wire_entry(data):
         names.append(data[i + 1:i + 1 + length].decode())
         i += length + 1
     return (*names, *struct.unpack_from("!BBddd", data, i))
+
+
+@pytest.mark.parametrize("bad,reason", [
+    ("non_ascii_show", "ASCII"),
+    ("long_show", "bytes"),
+    ("long_host", "hostname not known yet - needs one good /status reply first"),
+    ("offset", "non-finite beacon time"),
+    ("now", "non-finite beacon time"),
+    ("t0", "non-finite beacon time"),
+])
+def test_bad_entry_does_not_block_healthy_unit(sender_setup, bad, reason):
+    sender, fleet, clock, packets = sender_setup
+    other = fleet.links["other"]
+    other._samples.append((0.01, 20.0))
+    alias = fleet.links["alias"]
+    if bad == "non_ascii_show":
+        fleet.shows["alias"]["id"] = "\u00e9"
+    elif bad == "long_show":
+        fleet.shows["alias"]["id"] = "s" * 33
+    elif bad == "long_host":
+        alias.status["host"] = "\u00e9" * 17
+    else:
+        alias._samples.clear()
+        if bad == "offset":
+            alias._samples.append((0.01, float("nan")))
+        else:
+            # Only the alias's translated clock overflows.
+            alias._samples.append((0.01, 1e308))
+            fleet.run.update(state="holding", held_at=105.0)
+            if bad == "now":
+                clock.now = 1e308
+            else:
+                fleet.run.update(t0=1e308, held_at=1e308)
+
+    sender.set_enabled(True)
+    assert sender.tick() == 1
+    assert wire_entry(packets[0][0])[:2] == ("other-host", "def")
+    assert packets[0][0][6] == 1  # Only the healthy entry is in the datagram.
+    status = sender.snapshot()
+    assert status["errors"] == 0
+    assert list(status["skipped"]) == ["alias"]
+    assert reason in status["skipped"]["alias"]
+
+
+def test_duplicate_host_excludes_both_units(sender_setup):
+    sender, fleet, _, packets = sender_setup
+    fleet.links["third"] = UnitLink("third", "127.0.0.4")
+    fleet.links["third"].status = {"host": "third-host"}
+    fleet.links["third"]._samples.append((0.01, 20.0))
+    fleet.shows["third"] = {"id": "ghi", "duration": 100}
+    fleet.links["other"].status["host"] = "actual-host"
+    fleet.links["other"]._samples.append((0.01, 20.0))
+    sender.set_enabled(True)
+    assert sender.tick() == 1
+    assert packets[0][0][6] == 1
+    assert wire_entry(packets[0][0])[:2] == ("third-host", "ghi")
+    assert sender.snapshot()["skipped"] == {
+        name: "two units report the hostname actual-host" for name in ("alias", "other")}
+
+
+@pytest.mark.parametrize("disable", [False, True])
+def test_route_resolution_precedes_view_and_releases_lock(fleet_clock, monkeypatch, disable):
+    fleet, clock = fleet_clock
+    fleet.links["alias"].address = "192.168.1.9"
+    entered, release = threading.Event(), threading.Event()
+    packets, probes = [], []
+
+    def resolve(_):
+        entered.set()
+        if not release.wait(5):
+            raise RuntimeError("test did not release resolver")
+        clock.now += 2.0
+        return ("conductor", [], ["192.168.1.4"])
+
+    class Probe:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def connect(self, address):
+            probes.append(address)
+
+        def getsockname(self):
+            return ("192.168.1.4", 0)
+
+    monkeypatch.setattr(beacon.socket, "gethostbyname_ex", resolve)
+    monkeypatch.setattr(beacon.socket, "socket", lambda *_: Probe())
+    sender = beacon.BeaconSender(fleet, enabled=True, port=9000, clock=clock,
+                                 sock_factory=lambda *_: Socket(packets))
+    worker = threading.Thread(target=sender.tick)
+    worker.start()
+    observed = []
+
+    def read_and_toggle():
+        observed.append(sender.snapshot()["enabled"])
+        if disable:
+            sender.set_enabled(False)
+
+    operator = threading.Thread(target=read_and_toggle)
+    try:
+        assert entered.wait(5)
+        operator.start()
+        operator.join(2)
+        assert not operator.is_alive()
+        assert observed == [True]
+    finally:
+        release.set()
+        worker.join(5)
+        if operator.ident is not None:
+            operator.join(5)
+
+    assert probes == [("192.168.1.9", 9000)]
+    if disable:
+        assert sender.snapshot()["destinations"] == []
+        assert packets == []
+    else:
+        assert len(packets) == 2
+        assert wire_entry(packets[0][0])[4] == 112.0
+        assert packets[0][1] == ("192.168.1.255", 9000)
 
 
 def test_off_countdown_and_steady_cadence(sender_setup):
@@ -297,6 +469,10 @@ def test_raising_socket_is_counted_and_rebuilt(sender_setup):
     assert len(made) == 1
     assert tick_at(sender, clock, 110) == 1
     assert len(made) == 2
+    sender.set_enabled(False)
+    sender.set_enabled(True)
+    reset = sender.snapshot()
+    assert (reset["sent"], reset["errors"], reset["last_error"]) == (0, 0, None)
     sender.stop()
 
 
@@ -322,7 +498,8 @@ def test_broadcast_and_optional_identical_unicast(fleet_clock, monkeypatch, unic
     del fleet.shows["other"]
     routes = beacon._routes
     monkeypatch.setattr(beacon, "_routes",
-                        lambda ips, local, override: routes(ips, ["192.168.1.4"], override))
+                        lambda ips, local, override, port:
+                        routes(ips, ["192.168.1.4"], override, port))
     packets = []
     sender = beacon.BeaconSender(fleet, enabled=True, clock=clock, unicast=unicast,
                                  sock_factory=lambda *_: Socket(packets))
@@ -344,7 +521,8 @@ def test_split_broadcasts_all_chunks_but_unicasts_only_the_matching_chunk(monkey
         fleet.shows[name] = {"id": "a" * 32, "duration": 100}
     routes = beacon._routes
     monkeypatch.setattr(beacon, "_routes",
-                        lambda ips, local, override: routes(ips, ["192.168.1.4"], override))
+                        lambda ips, local, override, port:
+                        routes(ips, ["192.168.1.4"], override, port))
     packets = []
     sender = beacon.BeaconSender(fleet, enabled=True, clock=clock,
                                  sock_factory=lambda *_: Socket(packets))
@@ -389,3 +567,24 @@ def test_server_toggle(tmp_path):
         server.shutdown()
         thread.join()
         server.server_close()
+
+
+@pytest.mark.parametrize("config,enabled", [
+    ({"beacon": True}, True), ({"beacon": "true"}, False), ({}, False),
+])
+def test_serve_beacon_boot_option(tmp_path, monkeypatch, config, enabled):
+    (tmp_path / "fleet.json").write_text(json.dumps(config), encoding="utf-8")
+    monkeypatch.setattr(Fleet, "start", lambda self: None)
+    monkeypatch.setattr(beacon.BeaconSender, "start", lambda self: None)
+    monkeypatch.setattr(conductor_server.OtherConductorWatch, "start", lambda self: None)
+    monkeypatch.setattr(conductor_server.OtherConductorWatch, "stop", lambda self: None)
+    monkeypatch.setattr(conductor_server.OtherConductorWatch, "check", lambda self: None)
+    monkeypatch.setattr(conductor_server, "reachable_urls", lambda *_: [])
+    booted = []
+
+    def serve_forever(server):
+        booted.append(server.RequestHandlerClass.beacon.snapshot()["enabled"])
+
+    monkeypatch.setattr(conductor_server.ThreadingHTTPServer, "serve_forever", serve_forever)
+    assert conductor_server.serve(tmp_path, port=0) == 0
+    assert booted == [enabled]
