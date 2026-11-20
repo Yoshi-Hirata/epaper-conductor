@@ -4781,3 +4781,33 @@ def test_the_page_names_the_missing_garments_under_start_on_the_exhibition_only(
     block = block[:block.index("\n}\n")]
     assert "p.exhibition" in block and "p.missing" in block
     assert "START goes without" in block
+
+
+def test_the_show_pc_names_who_start_goes_without_under_start():
+    # "START without units that do not answer" (2026-11-20): the line under
+    # START comes from the server's start_without before the press and from
+    # run.left_out during the run, the broadcast named only when it is on.
+    block = PAGE_TEXT[PAGE_TEXT.index("function silentNote()"):]
+    block = block[:block.index("\n}\n")]
+    assert "fleet?.start_without_silent" in block and "fleet.start_without " in block
+    assert "run.left_out" in block and "fleet.beacon?.enabled" in block
+    assert "Not answering: " in block
+    assert ("if it is still not answering and its other checks pass, START can "
+            "go without it; ") in block
+    assert ("if they are still not answering and their other checks pass, START "
+            "can go without them; ") in block
+    assert "in this run (not answering)" in block and "run.silent" in block
+    assert "fleet.start_without_why" in block
+    # No HTTP START reaches a silent unit (round 3): the beacon decides the
+    # wording, and every rejoin is qualified.
+    assert ("it may be following the backup broadcast; it joins fully when it "
+            "answers again, if it is still ready.") in block
+    assert ("it joins when it answers again, if it is still ready (the backup "
+            "broadcast is off).") in block
+    assert ("it may follow the backup broadcast, and joins fully when it answers "
+            "again, if it is still ready.") in block
+    assert ("it stays as it is until it answers again, and joins then if it is "
+            "still ready (the backup broadcast is off).") in block
+    assert 'id="fleet-start-without-silent"' in PAGE_TEXT
+    assert "Not used with 'Preset before START' or by Loop restarts." in PAGE_TEXT
+    assert '"/api/fleet/start_without_silent"' in PAGE_TEXT

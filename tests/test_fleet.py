@@ -2366,3 +2366,756 @@ def test_the_unit_snapshot_passes_the_clear_through():
     # An agent too old to clear has no key at all, which is not an error.
     real.status = {"phase": "ready"}
     assert real.snapshot()["clear"] is None
+
+
+# ---- "START without units that do not answer" (start_without_silent) ----
+# The show PC's backup (hardware check 2026-11-20, F1): with the switch on,
+# a START goes without a unit that is only "not answering" instead of
+# refusing for all seven; any other reason refuses exactly as before.
+
+class _SilentClock:
+    def __init__(self, now=1000.0):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+
+SILENT_CUE0 = {"id": "q00", "at": 0, "sent": -8.0, "refresh_s": 8.0, "span": 0.0}
+
+
+def _silent_fleet(clock, on=True, offline=("radxa-03",), **kw):
+    """Three garments holding showA with every picture written; `offline`
+    stopped answering. The switch as `on` says."""
+    fleet = Fleet({}, clock=clock, **kw)
+    fleet.links = {}
+    for name in ("radxa-01", "radxa-02", "radxa-03"):
+        link = StubLink(name, "loaded")
+        link.status["host"] = name
+        link.status["show"].update(t0=None, applied=None, dirty=False,
+                                   burn={"state": "burned", "done": 48,
+                                         "total": 48, "failed": []})
+        link.online = name not in offline
+        fleet.links[name] = link
+    fleet.shows = {name: {"id": "showA", "cues": [dict(SILENT_CUE0)], "duration": 600.0}
+                   for name in fleet.links}
+    fleet.start_without_silent = on
+    return fleet
+
+
+def _silent_posted(fleet, path):
+    return sorted(name for name, link in fleet.links.items()
+                  for p, _ in link.posted if p == path)
+
+
+def _refusal(fleet, **kw):
+    with pytest.raises(ValueError) as caught:
+        fleet.start_show(lead_s=3.0, **kw)
+    return str(caught.value)
+
+
+def test_silent_switch_off_refuses_exactly_as_before():
+    fleet = _silent_fleet(_SilentClock(), on=False)
+    assert _refusal(fleet) == "radxa-03: not answering"
+    assert _refusal(fleet, force=True) == "radxa-03: not answering"
+    assert fleet.run is None and fleet.corrections == []
+    assert _silent_posted(fleet, "/show/run") == []
+
+
+def test_silent_switch_on_starts_without_the_unit_that_does_not_answer():
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock)
+    results = fleet.start_show(lead_s=3.0)
+    assert sorted(results) == ["radxa-01", "radxa-02"]
+    assert _silent_posted(fleet, "/show/run") == ["radxa-01", "radxa-02"]
+    # No HTTP START at all to the silent unit (PM, round 3).
+    assert fleet.links["radxa-03"].posted == []
+    assert fleet.run["left_out"] == {"radxa-03": "not answering"}
+    assert fleet.snapshot()["run"]["left_out"] == {"radxa-03": "not answering"}
+    assert fleet.corrections[-1].endswith(" START without radxa-03 (not answering)")
+    # Still in `shows`: the beacon keeps announcing it to the unit HTTP
+    # cannot reach (row 14 of the hardware check: it starts on that alone).
+    assert "radxa-03" in fleet.shows
+    view = fleet.beacon_view()
+    assert view["entries"]["radxa-03"]["state"] == 1
+    assert view["entries"]["radxa-03"]["t0"] == fleet.run["t0"] + 5.0
+    assert "radxa-03" not in view["skipped"]
+
+
+def test_silent_switch_on_names_every_silent_unit_in_one_line():
+    fleet = _silent_fleet(_SilentClock(), offline=("radxa-02", "radxa-03"))
+    assert sorted(fleet.start_show(lead_s=3.0)) == ["radxa-01"]
+    assert fleet.run["left_out"] == {"radxa-02": "not answering",
+                                     "radxa-03": "not answering"}
+    assert fleet.corrections[-1].endswith(
+        " START without radxa-02, radxa-03 (not answering)")
+
+
+def _burning(link):
+    link.status["show"]["burn"] = {"state": "burning", "done": 12, "total": 48, "failed": []}
+
+
+def _other_show(link):
+    link.status["show"]["id"] = "showOLD"
+
+
+def _failed(link):
+    link.status["show"]["burn"] = {"state": "failed", "done": 46, "total": 48,
+                                   "failed": [[3, 5], [7, 5]]}
+
+
+def _cleared(link):
+    link.status["show"]["burn"] = {"state": "cleared", "done": 0, "total": 48,
+                                   "failed": []}
+
+
+def _no_show(link):
+    link.status["show"] = {}
+
+
+@pytest.mark.parametrize("spoil", [_burning, _other_show, _failed, _cleared, _no_show])
+def test_silent_switch_on_still_refuses_every_other_reason(spoil):
+    # Byte-for-byte the refusal of the switch OFF - the silent unit named too.
+    messages = []
+    for on in (False, True):
+        fleet = _silent_fleet(_SilentClock(), on=on)
+        spoil(fleet.links["radxa-02"])
+        messages.append(_refusal(fleet))
+        assert fleet.run is None and fleet.corrections == []
+        assert _silent_posted(fleet, "/show/run") == []
+    assert messages[0] == messages[1]
+    assert messages[1].startswith("radxa-02: ") and messages[1].endswith(
+        "; radxa-03: not answering")
+
+
+def test_silent_switch_on_still_refuses_another_reason_with_nobody_silent():
+    for on in (False, True):
+        fleet = _silent_fleet(_SilentClock(), on=on, offline=())
+        _burning(fleet.links["radxa-02"])
+        assert _refusal(fleet) == "radxa-02: still writing 12/48"
+
+
+def test_silent_switch_on_refuses_when_nobody_answers():
+    fleet = _silent_fleet(_SilentClock(), offline=("radxa-01", "radxa-02", "radxa-03"))
+    assert _refusal(fleet) == ("radxa-01: not answering; radxa-02: not answering; "
+                               "radxa-03: not answering")
+    assert fleet.run is None and fleet.corrections == []
+
+
+def test_silent_switch_on_force_still_waves_failed_boards_only():
+    fleet = _silent_fleet(_SilentClock())
+    _failed(fleet.links["radxa-02"])
+    assert _refusal(fleet).startswith("radxa-02: 2 of 48 pictures not written")
+    results = fleet.start_show(lead_s=3.0, force=True)
+    assert sorted(results) == ["radxa-01", "radxa-02"]
+    assert fleet.run["left_out"] == {"radxa-03": "not answering"}
+
+
+def _silent_after_paint(fleet, clock, *names):
+    for name in names:
+        fleet.links[name].status["show"]["applied"] = "q00"
+    fleet._staging_tick()
+    clock.now += 8.6
+    fleet._staging_tick()
+
+
+def test_silent_switch_is_not_used_by_a_staged_start():
+    # "Preset before START" (PM ruling 2026-11-20): a silent unit refuses
+    # the staged START as it always did, switch on or off - nothing is
+    # preset to anybody.
+    for on in (False, True):
+        fleet = _silent_fleet(_SilentClock(), on=on)
+        assert _refusal(fleet, preset_first=True) == "radxa-03: not answering"
+        assert fleet.preset_state() is None and fleet.run is None
+        assert _silent_posted(fleet, "/show/preset") == []
+        assert fleet.corrections == []
+        _other_show(fleet.links["radxa-01"])
+        assert _refusal(fleet, preset_first=True) == (
+            "radxa-01: has not taken this show yet; radxa-03: not answering")
+
+
+def test_silent_switch_is_changed_only_while_no_show_runs():
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock, offline=())
+    with pytest.raises(ValueError, match="true or false"):
+        fleet.set_start_without_silent(1)
+    fleet.start_show(lead_s=3.0, preset_first=True)          # a PRESET stage
+    refused = (r"^Stop the show first \(or let it reach its end\) - this can't "
+               r"be changed during a show, a HOLD or the preset countdown\.$")
+    with pytest.raises(ValueError, match=refused):
+        fleet.set_start_without_silent(False)
+    _silent_after_paint(fleet, clock, "radxa-01", "radxa-02", "radxa-03")
+    assert fleet.run is not None                              # live
+    with pytest.raises(ValueError, match=refused):
+        fleet.set_start_without_silent(False)
+    fleet.hold()                                              # held: still live
+    with pytest.raises(ValueError, match=refused):
+        fleet.set_start_without_silent(False)
+    assert fleet.start_without_silent is True
+    fleet.resume()
+    clock.now = fleet.run["t0"] + 601.0                       # ENDED: allowed
+    fleet.set_start_without_silent(False)
+    assert fleet.start_without_silent is False and fleet.run is not None
+    fleet.stop_show()                                         # stopped: allowed
+    fleet.set_start_without_silent(True)
+    assert fleet.start_without_silent is True
+
+
+def test_silent_switch_save_failure_publishes_nothing():
+    fleet = _silent_fleet(_SilentClock(), on=False)
+    saved = []
+
+    def broken(value):
+        raise RuntimeError("fleet.json does not parse")
+
+    with pytest.raises(RuntimeError):
+        fleet.set_start_without_silent(True, save=broken)
+    assert fleet.start_without_silent is False
+    assert _refusal(fleet) == "radxa-03: not answering"
+    fleet.set_start_without_silent(True, save=saved.append)
+    assert saved == [True] and fleet.start_without_silent is True
+    # Refused (a live run): not saved either.
+    fleet.start_show(lead_s=3.0)
+    with pytest.raises(ValueError):
+        fleet.set_start_without_silent(False, save=saved.append)
+    assert saved == [True]
+
+
+def test_silent_switch_is_refused_on_exhibition():
+    fleet = _silent_fleet(_SilentClock(), on=False, start_present=True)
+    saved = []
+    with pytest.raises(ValueError, match="show PC only"):
+        fleet.set_start_without_silent(True, save=saved.append)
+    assert saved == [] and fleet.start_without_silent is False
+
+
+@pytest.mark.parametrize("spoil", [_burning, _other_show, _failed, _cleared, _no_show])
+@pytest.mark.parametrize("force", [False, True])
+def test_silent_switch_never_masks_a_fault_on_record(spoil, force):
+    # Rule A: the silent unit's LAST word must say ready, without any force
+    # waiver - a fault on record refuses exactly as with the switch off.
+    messages = []
+    for on in (False, True):
+        fleet = _silent_fleet(_SilentClock(), on=on)
+        spoil(fleet.links["radxa-03"])
+        messages.append(_refusal(fleet, force=force))
+        assert fleet.run is None and _silent_posted(fleet, "/show/run") == []
+        assert fleet.start_without() == []
+    assert messages == ["radxa-03: not answering"] * 2
+
+
+def test_silent_switch_refuses_a_unit_never_heard_from():
+    fleet = _silent_fleet(_SilentClock())
+    fleet.links["radxa-03"].status = None       # no /status since this Conductor started
+    assert _refusal(fleet) == "radxa-03: not answering"
+    assert fleet.start_without() == []
+
+
+class _FlipLink(StubLink):
+    """A unit whose cached status reads one way the first time it is read
+    and another way after - what a poll landing between two reads does."""
+
+    @property
+    def status(self):
+        self.reads = getattr(self, "reads", 0) + 1
+        return self._seq[0] if self.reads == 1 else self._seq[1]
+
+    @status.setter
+    def status(self, value):
+        self._seq = [value, value]
+
+
+def _flip(fleet, first, then):
+    old = fleet.links["radxa-03"]
+    link = _FlipLink("radxa-03", "loaded")
+    link.online = False
+    burned = old.status
+    link._seq = [dict(burned, show=dict(burned["show"], burn=first)),
+                 dict(burned, show=dict(burned["show"], burn=then))]
+    fleet.links["radxa-03"] = link
+    return link
+
+
+def test_silent_switch_judges_each_unit_from_one_read():
+    burning = {"state": "burning", "done": 12, "total": 48, "failed": []}
+    burned = {"state": "burned", "done": 48, "total": 48, "failed": []}
+    # Writing at the one read, done at any later one: still refused.
+    fleet = _silent_fleet(_SilentClock())
+    link = _flip(fleet, burning, burned)
+    assert _refusal(fleet) == "radxa-03: not answering"
+    assert link.reads == 1
+    # Ready at the one read, not ready when observed again before the
+    # commit (round 5): decided again on the new word, and refused as OFF.
+    fleet = _silent_fleet(_SilentClock())
+    link = _flip(fleet, burned, burning)
+    assert _refusal(fleet) == "radxa-03: not answering"
+    assert link.reads == 3 and fleet.run is None
+    # Ready at every read: left out.
+    fleet = _silent_fleet(_SilentClock())
+    link = _flip(fleet, burned, burned)
+    assert sorted(fleet.start_show(lead_s=3.0)) == ["radxa-01", "radxa-02"]
+    assert fleet.run["left_out"] == {"radxa-03": "not answering"}
+
+
+def test_silent_unit_does_not_take_the_run_wide_force():
+    # Rule H: the operator's "start anyway?" was about radxa-02's boards;
+    # radxa-03, left out unseen, is never announced or rejoined with force.
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock)
+    _failed(fleet.links["radxa-02"])
+    fleet.start_show(lead_s=3.0, force=True)
+    assert fleet.run["force"] is True and fleet.run["silent"] == ["radxa-03"]
+    assert ("/show/run", {"t0": fleet.run["t0"] + 5.0, "show": "showA",
+                          "force": True}) in fleet.links["radxa-02"].posted
+    entries = fleet.beacon_view()["entries"]
+    assert entries["radxa-03"]["flags"] == 0 and entries["radxa-02"]["flags"] == 1
+    link = fleet.links["radxa-03"]
+    assert link.posted == []
+    clock.now += 5.0
+    link.online = True
+    fleet._supervise(link)
+    assert link.posted == [("/show/run", {"t0": fleet.run["t0"] + 5.0,
+                                          "show": "showA", "force": False})]
+    # The forced garment itself is unchanged: a rejoin of it still forces.
+    fleet._corrected.clear()
+    radxa02 = fleet.links["radxa-02"]
+    radxa02.posted.clear()
+    radxa02.status["show"].update(state="loaded", t0=None)
+    fleet._supervise(radxa02)
+    assert radxa02.posted[-1][1]["force"] is True
+
+
+def test_silent_switch_forced_restart_over_a_running_show_leaves_it_out_again():
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock)
+    fleet.start_show(lead_s=3.0)
+    clock.now += 30.0
+    results = fleet.start_show(lead_s=3.0, force=True)     # "Start it again?"
+    assert sorted(results) == ["radxa-01", "radxa-02"]
+    assert fleet.run["left_out"] == {"radxa-03": "not answering"}
+    assert fleet.run["silent"] == ["radxa-03"]
+    assert len([c for c in fleet.corrections
+                if c.endswith(" START without radxa-03 (not answering)")]) == 2
+    assert fleet.beacon_view()["entries"]["radxa-03"]["flags"] == 0
+    assert fleet.links["radxa-03"].posted == []
+
+
+def test_silent_unit_follows_hold_and_seek_on_the_beacon():
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock)
+    fleet.start_show(lead_s=3.0)
+    clock.now += 20.0
+    fleet.hold()
+    entry = fleet.beacon_view()["entries"]["radxa-03"]
+    assert entry["state"] == 2 and entry["pos"] == pytest.approx(17.0)
+    fleet.resume()
+    clock.now += 1.0
+    fleet.seek(100.0, 3.0)
+    entry = fleet.beacon_view()["entries"]["radxa-03"]
+    assert entry["state"] == 1 and entry["t0"] == fleet.run["t0"] + 5.0
+    assert fleet.run["t0"] == pytest.approx(clock.now + 3.0 - 100.0)
+    assert fleet.run["left_out"] == {"radxa-03": "not answering"}
+
+
+def test_start_without_says_who_a_start_would_go_without():
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock, on=False)
+    assert fleet.start_without() == []                      # switch off
+    fleet.start_without_silent = True
+    assert fleet.start_without() == ["radxa-03"]
+    _burning(fleet.links["radxa-02"])                      # START would refuse
+    assert fleet.start_without() == []
+    fleet.links["radxa-02"].status["show"]["burn"] = {"state": "burned"}
+    fleet.start_show(lead_s=3.0)
+    assert fleet.start_without() == []                      # a live run
+    clock.now = fleet.run["t0"] + 601.0                     # ENDED
+    assert fleet.start_without() == ["radxa-03"]
+
+
+def test_silent_unit_gets_no_run_wide_force_from_seek_resume_or_next():
+    # M1: every /show/run body asks the one predicate (_run_force_for).
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock)
+    later = {"id": "q01", "at": 300, "sent": 292.0, "refresh_s": 8.0, "span": 0.0}
+    for show in fleet.shows.values():
+        show["cues"].append(dict(later))
+    _failed(fleet.links["radxa-02"])
+    fleet.start_show(lead_s=3.0, force=True)
+    clock.now += 20.0
+    fleet.links["radxa-03"].online = True                  # it comes back
+
+    def bodies():
+        out = {name: [body["force"] for path, body in link.posted if path == "/show/run"]
+               for name, link in fleet.links.items()}
+        for link in fleet.links.values():
+            link.posted.clear()
+        return out
+
+    bodies()
+    fleet.seek(100.0, 3.0)
+    assert bodies() == {"radxa-01": [True], "radxa-02": [True], "radxa-03": [False]}
+    fleet.hold()
+    fleet.resume()
+    assert bodies() == {"radxa-01": [True], "radxa-02": [True], "radxa-03": [False]}
+    assert fleet.next_cue(3.0)
+    assert bodies() == {"radxa-01": [True], "radxa-02": [True], "radxa-03": [False]}
+    # An explicit per-unit force (a rescue Upload) still wins.
+    fleet.run["forced"] = ["radxa-03"]
+    fleet.seek(150.0, 3.0)
+    assert bodies()["radxa-03"] == [True]
+
+
+def test_unit_link_observe_takes_status_and_reachability_together():
+    now = [100.0]
+    link = UnitLink("radxa-03", "127.0.0.1:1", clock=lambda: now[0])
+    assert link.observe() == (None, False)
+    link.status, link.last_seen = {"phase": "local"}, 99.0
+    assert link.observe() == ({"phase": "local"}, True)
+    now[0] = 1000.0
+    assert link.observe() == ({"phase": "local"}, False)
+
+
+class _ObservedLink(StubLink):
+    """A unit whose one observation (observe) disagrees with its separate
+    attributes - the silent rule must classify from observe() alone."""
+
+    def observe(self):
+        return self.observed
+
+
+def test_silent_switch_classifies_from_the_one_observation():
+    fleet = _silent_fleet(_SilentClock())
+    old = fleet.links["radxa-03"]
+    link = _ObservedLink("radxa-03", "loaded")
+    link.status, link.online = old.status, False                # attributes: ready
+    link.observed = (dict(old.status, show=dict(old.status["show"], burn={
+        "state": "burning", "done": 1, "total": 48, "failed": []})), False)
+    fleet.links["radxa-03"] = link
+    assert _refusal(fleet) == "radxa-03: not answering"
+    link.observed = (old.status, False)                          # observed ready
+    assert sorted(fleet.start_show(lead_s=3.0)) == ["radxa-01", "radxa-02"]
+
+
+def test_the_switch_cannot_change_while_a_start_is_being_decided():
+    # Round 4 (PM): mutual exclusion, not a retry - a START decides and
+    # commits under the value it read at its entry; a toggle meanwhile is
+    # refused, nothing saved, and that START goes on as it began.
+    for hook in ("_burn_problems", "_send_run"):
+        fleet = _silent_fleet(_SilentClock())
+        saved, refused = [], []
+        real = getattr(fleet, hook)
+
+        def inside(*args, real=real, fleet=fleet, saved=saved, refused=refused, **kw):
+            try:
+                fleet.set_start_without_silent(False, save=saved.append)
+            except ValueError as exc:
+                refused.append(str(exc))
+            return real(*args, **kw)
+
+        setattr(fleet, hook, inside)
+        assert sorted(fleet.start_show(lead_s=3.0)) == ["radxa-01", "radxa-02"]
+        assert refused == ["START is being decided - try again in a moment."]
+        assert saved == [] and fleet.start_without_silent is True
+        assert fleet.run["left_out"] == {"radxa-03": "not answering"}
+        assert fleet._starting == 0
+
+
+def test_starting_is_back_to_zero_after_every_kind_of_start():
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock, loop_settings=lambda: (0.0, 3.0), loop_retry_s=5.0)
+    fleet.start_show(lead_s=3.0)                              # went ahead
+    assert fleet._starting == 0
+    fleet.stop_show()
+    fleet.start_without_silent = False
+    assert _refusal(fleet) == "radxa-03: not answering"       # refused
+    assert fleet._starting == 0
+
+    def broken(*args, **kw):
+        raise RuntimeError("boom")
+
+    real = fleet._start_targets
+    fleet._start_targets = broken                             # an exception
+    with pytest.raises(RuntimeError):
+        fleet.start_show(lead_s=3.0)
+    assert fleet._starting == 0
+    fleet._start_targets = real
+    fleet.links["radxa-03"].online = True
+    fleet.start_show(lead_s=3.0, preset_first=True)           # staged
+    assert fleet.preset_state() is not None and fleet._starting == 0
+    _silent_after_paint(fleet, clock, "radxa-01", "radxa-02", "radxa-03")
+    assert fleet.run is not None and fleet._starting == 0     # the stage's start
+    clock.now = fleet.run["t0"] + 700.0
+    fleet._loop_tick()                                        # end -> arms the wait
+    fleet._loop_tick()                                        # a Loop lap
+    assert fleet.run["loops"] == 1 and fleet._starting == 0
+
+
+def test_switch_off_publishes_the_waiver_where_main_does():
+    # Before /show/run goes out, as on main: a Loop reading _waved while an
+    # operator's forced START is still sending sees the new waiver.
+    fleet = _silent_fleet(_SilentClock(), on=False, offline=())
+    _failed(fleet.links["radxa-02"])
+    fleet._waved = {"earlier": ("sig",)}
+    seen = []
+    real = fleet._send_run
+
+    def sending(names):
+        seen.append(dict(fleet._waved))
+        return real(names)
+
+    fleet._send_run = sending
+    fleet.start_show(lead_s=3.0, force=True)
+    assert set(seen[0]) == {"radxa-02"}
+    # ...and a refused START leaves it alone, as on main (refused at the gate).
+    other = _silent_fleet(_SilentClock(), on=False)
+    other._waved = {"earlier": ("sig",)}
+    assert _refusal(other, force=True) == "radxa-03: not answering"
+    assert other._waved == {"earlier": ("sig",)}
+
+
+def test_an_armed_clear_is_cancelled_exactly_as_on_main():
+    # The operator's START cancels it at entry, refused or not; the start at
+    # the end of a stage (expect_gen) does not.
+    for on in (False, True):
+        fleet = _silent_fleet(_SilentClock(), on=on)
+        _other_show(fleet.links["radxa-01"])                  # START refuses
+        cancelled = []
+        fleet._cancel_armed_clear = lambda: cancelled.append(True)
+        with pytest.raises(ValueError):
+            fleet.start_show(lead_s=3.0)
+        assert cancelled == [True]
+        cancelled.clear()
+        with pytest.raises(ValueError):
+            fleet.start_show(lead_s=3.0, expect_gen=fleet._run_gen)
+        assert cancelled == []
+
+
+def _change_at_the_gate(fleet, change):
+    """Run `change` the first time the burn gate is asked - after the
+    START has decided whom to go without, before it commits."""
+    real = fleet._burn_problems
+    calls = []
+
+    def gate(names, force=False, forced=()):
+        calls.append(list(names))
+        if len(calls) == 1:
+            change()
+        return real(names, force=force, forced=forced)
+
+    fleet._burn_problems = gate
+    return calls
+
+
+def _back_with(spoil):
+    def change(link):
+        link.online = True
+        spoil(link)
+    return change
+
+
+@pytest.mark.parametrize("spoil", [_failed, _cleared, _other_show])
+def test_a_silent_unit_that_comes_back_faulty_refuses_as_main(spoil):
+    # R5-1: the unit left out answers, with a fault, before the commit: the
+    # START decides again, the unit is an ordinary target, and the gate
+    # refuses with main's message - exactly what the switch OFF says.
+    off = _silent_fleet(_SilentClock(), on=False, offline=())
+    spoil(off.links["radxa-03"])
+    expected = _refusal(off)
+    fleet = _silent_fleet(_SilentClock())
+    link = fleet.links["radxa-03"]
+    calls = _change_at_the_gate(fleet, lambda: _back_with(spoil)(link))
+    assert _refusal(fleet) == expected
+    assert len(calls) == 2 and "radxa-03" in calls[1]
+    assert fleet.run is None and fleet.corrections == []
+    assert all(l.posted == [] for l in fleet.links.values())
+
+
+def test_a_silent_unit_whose_last_word_turns_faulty_is_not_left_out():
+    # Still offline, but its cached report is no longer ready: decided
+    # again, it is a target again, and "not answering" refuses as OFF.
+    fleet = _silent_fleet(_SilentClock())
+    link = fleet.links["radxa-03"]
+    _change_at_the_gate(fleet, lambda: _burning(link))
+    assert _refusal(fleet) == "radxa-03: not answering"
+    assert fleet.run is None
+
+
+def test_a_silent_unit_that_comes_back_ready_is_started_with_the_others():
+    fleet = _silent_fleet(_SilentClock())
+    link = fleet.links["radxa-03"]
+    _change_at_the_gate(fleet, lambda: setattr(link, "online", True))
+    admitted = []
+    results = fleet.start_show(lead_s=3.0, admitted=admitted)
+    assert sorted(results) == ["radxa-01", "radxa-02", "radxa-03"]
+    assert ("/show/run", {"t0": fleet.run["t0"] + 5.0, "show": "showA",
+                          "force": False}) in link.posted
+    assert fleet.run["left_out"] == {} and "silent" not in fleet.run
+    assert admitted == [] and fleet.corrections == []
+
+
+class _FlappingLink(StubLink):
+    """A silent unit whose observations follow a script (the burn gate
+    never reads it: it is skipped in both passes)."""
+
+    def observe(self):
+        return self.script.pop(0)
+
+
+def test_a_silent_unit_that_flaps_twice_refuses_the_start():
+    from conductor.fleet import SILENT_CAME_BACK
+
+    fleet = _silent_fleet(_SilentClock())
+    fleet._waved = {"earlier": ("sig",)}
+    old = fleet.links["radxa-03"]
+    link = _FlappingLink("radxa-03", "loaded")
+    link.status, link.online = old.status, False
+    gone, back = (old.status, False), (old.status, True)
+    # pass 1: decided silent, then seen back; pass 2: silent, then back again
+    link.script = [gone, back, gone, back]
+    fleet.links["radxa-03"] = link
+    assert _refusal(fleet, force=True) == SILENT_CAME_BACK
+    assert link.script == []
+    assert fleet.run is None and fleet.corrections == []
+    assert fleet._waved == {"earlier": ("sig",)}            # nothing published
+    assert all(l.posted == [] for l in fleet.links.values())
+
+
+def test_the_switch_off_never_observes_again():
+    fleet = _silent_fleet(_SilentClock(), on=False, offline=())
+
+    def never(names):
+        raise AssertionError("re-observed with the switch off")
+
+    fleet._still_silent = never
+    assert sorted(fleet.start_show(lead_s=3.0)) == ["radxa-01", "radxa-02", "radxa-03"]
+    on = _silent_fleet(_SilentClock(), offline=())            # on, nobody silent
+    on._still_silent = never
+    assert sorted(on.start_show(lead_s=3.0)) == ["radxa-01", "radxa-02", "radxa-03"]
+
+
+def test_start_reports_the_units_it_admitted_without():
+    fleet = _silent_fleet(_SilentClock())
+    admitted = []
+    fleet.start_show(lead_s=3.0, admitted=admitted)
+    assert admitted == ["radxa-03"]
+    fleet.stop_show()
+    off = _silent_fleet(_SilentClock(), on=False, offline=())
+    admitted = []
+    off.start_show(lead_s=3.0, admitted=admitted)
+    assert admitted == []
+
+
+def test_start_without_says_why_it_would_not_help():
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock)
+    assert fleet.start_without_state() == {"units": ["radxa-03"],
+                                           "silent": ["radxa-03"], "why": None}
+    fleet.links["radxa-03"].status = None
+    assert fleet.start_without_state() == {
+        "units": [], "silent": ["radxa-03"],
+        "why": ("START will refuse on radxa-03: not heard from since this "
+                "Conductor started - it must answer once first.")}
+    fleet = _silent_fleet(clock, offline=("radxa-02", "radxa-03"))
+    _burning(fleet.links["radxa-02"])
+    _cleared(fleet.links["radxa-03"])
+    assert fleet.start_without_state()["why"] == (
+        "START will refuse: radxa-02, radxa-03 were not ready when they were "
+        "last heard.")
+    fleet = _silent_fleet(clock)
+    _other_show(fleet.links["radxa-01"])
+    assert fleet.start_without_state()["why"] == (
+        "START will refuse: another garment is not ready.")
+    # Nobody answers at all: said (round 3); nobody silent: nothing to say.
+    fleet = _silent_fleet(clock, offline=("radxa-01", "radxa-02", "radxa-03"))
+    assert fleet.start_without_state()["why"] == (
+        "START will refuse: no garment is answering.")
+    fleet = _silent_fleet(clock, offline=())
+    assert fleet.start_without_state() == {"units": [], "silent": [], "why": None}
+    # The switch off: nothing at all.
+    fleet = _silent_fleet(clock, on=False)
+    assert fleet.start_without_state() == {"units": [], "silent": [], "why": None}
+
+
+def test_a_forced_restart_after_the_rejoin_grants_the_force_again():
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock)
+    fleet.start_show(lead_s=3.0)
+    clock.now += 20.0
+    fleet.links["radxa-03"].online = True                  # back, and ready
+    for link in fleet.links.values():
+        link.posted.clear()
+    fleet.start_show(lead_s=3.0, force=True)               # "Start it again?"
+    assert "silent" not in fleet.run and fleet.run["left_out"] == {}
+    assert ("/show/run", {"t0": fleet.run["t0"] + 5.0, "show": "showA",
+                          "force": True}) in fleet.links["radxa-03"].posted
+    assert fleet.beacon_view()["entries"]["radxa-03"]["flags"] == 1
+
+
+def test_a_loop_lap_after_a_silent_start_gives_it_no_force():
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock, loop_settings=lambda: (0.0, 3.0), loop_retry_s=5.0)
+    _failed(fleet.links["radxa-02"])
+    fleet.start_show(lead_s=3.0, force=True)
+    clock.now = fleet.run["t0"] + 700.0
+    fleet._loop_tick()                                      # end -> arms the wait
+    # ENDED with the Loop's wait pending: the switch may change, no STOP.
+    fleet.set_start_without_silent(True)
+    fleet._loop_tick()                                      # refused: grace
+    clock.now += 61.0
+    fleet._loop_tick()
+    assert fleet.run["loops"] == 1 and fleet.run["force"] is False
+    assert "silent" not in fleet.run
+    assert fleet.beacon_view()["entries"]["radxa-03"]["flags"] == 0
+    assert fleet.beacon_view()["entries"]["radxa-02"]["flags"] == 1   # still waved
+    link = fleet.links["radxa-03"]
+    link.posted.clear()
+    link.online = True
+    fleet._corrected.clear()
+    fleet._supervise(link)
+    assert [body["force"] for path, body in link.posted if path == "/show/run"] == [False]
+
+
+def test_silent_switch_left_out_unit_is_started_late_when_it_answers_again():
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock)
+    fleet.start_show(lead_s=3.0)
+    t0 = fleet.run["t0"]
+    clock.now += 20.0
+    link = fleet.links["radxa-03"]
+    link.online = True                                       # answers again
+    fleet._supervise(link)
+    assert link.posted == [("/show/run", {"t0": t0 + 5.0, "show": "showA",
+                                          "force": False})]
+    assert fleet.corrections[-1].endswith(" radxa-03: started late")
+    link.status["show"].update(state="running", t0=t0 + 5.0)
+    assert fleet.snapshot()["run"]["left_out"] == {}
+
+
+def test_silent_switch_does_not_touch_the_loop_grace():
+    # A Loop lap is not the operator's START: the silent unit gets the
+    # Loop's own 60 s grace and is then left out by it, as before.
+    clock = _SilentClock()
+    fleet = _silent_fleet(clock, loop_settings=lambda: (0.0, 3.0), loop_retry_s=5.0)
+    fleet.start_show(lead_s=3.0)
+    clock.now = fleet.run["t0"] + 700.0
+    fleet._loop_tick()                                        # end -> arms the wait
+    fleet._loop_tick()                                        # the restart: refused
+    assert fleet.run["loops"] == 0
+    assert fleet.loop_state()["problem"] == "radxa-03: not answering"
+    clock.now += 61.0
+    fleet._loop_tick()
+    assert fleet.run["loops"] == 1
+    assert fleet.run["left_out"] == {"radxa-03": "not answering"}
+    assert any("Loop: run 1 started without radxa-03 (not ready: radxa-03: "
+               "not answering)" in c for c in fleet.corrections)
+
+
+def test_silent_switch_is_ignored_in_exhibition_mode():
+    # start_present already goes with whoever is there; the switch changes
+    # nothing about it (the same run, the same line).
+    runs = []
+    for on in (False, True):
+        fleet = _silent_fleet(_SilentClock(), on=on, start_present=True)
+        fleet.start_show(lead_s=3.0)
+        runs.append((fleet.run["left_out"], fleet.corrections[-1][9:]))
+    assert runs[0] == runs[1]

@@ -140,6 +140,9 @@ STAGING_BUSY = "The show is starting (preset first) - wait for the countdown, or
 # EXHIBITION mode's START when not one garment of the timeline answers
 # (Fleet.start_present).
 NO_GARMENT = "no garment is connected"
+# start_without_silent: a unit the START meant to go without changed twice
+# while the START was deciding (Fleet._start_show) - refused, not looped.
+SILENT_CAME_BACK = "A garment came back while START was deciding - press START again."
 # The fleet-wide Wi-Fi switch (EXHIBITION mode): the side that must move
 # first gets the short lead, the other side the long one, so the hotspot is
 # up before its clients look for it and down only after they have left.
@@ -370,6 +373,15 @@ class UnitLink:
         return (self.last_seen is not None
                 and self._clock() - self.last_seen < STALE_S)
 
+    def observe(self) -> "tuple[dict | None, bool]":
+        """(the last status, online) taken together under the lock _learn
+        writes both under - so a poll landing in between cannot pair an
+        old status with fresh reachability (start_without_silent's one
+        observation per unit, review 2026-11-20)."""
+        with self._lock:
+            return self.status, (self.last_seen is not None
+                                 and self._clock() - self.last_seen < STALE_S)
+
     def snapshot(self) -> dict:
         with self._lock:
             best = self._best()
@@ -504,6 +516,23 @@ class Fleet:
         # ("started late") when they come back. Off on the show PC: START
         # there refuses on any unit not ready, exactly as before.
         self.start_present = start_present
+        # The show PC's backup for a garment whose replies do not reach the
+        # router (hardware check 2026-11-20, F1): with this on, the
+        # operator's START goes without a unit that is only "not answering"
+        # whose last word said ready - named in run.left_out and the
+        # corrections - instead of refusing for all seven; such a unit still
+        # starts by the beacon (it stays in `shows`) or by supervision when
+        # it answers again. Every other reason still refuses, and so does a
+        # silent unit with a fault (or no word at all) on record. Not used
+        # by a staged START (Preset before START) or a Loop restart. Off
+        # unless fleet.json says "start_without_silent": true (the server
+        # sets it); changed only while no show runs
+        # (set_start_without_silent). EXHIBITION refuses it - start_present
+        # already goes with whoever is there.
+        self.start_without_silent = False
+        # STARTs being decided right now (start_show; under _run_lock):
+        # while any is, set_start_without_silent refuses.
+        self._starting = 0
         self.poll_s = poll_s
         # EXHIBITION mode's Loop: `loop_settings()` answers (wait_s, lead_s)
         # while THE SHOW's Loop is on, None while it is off - the server
@@ -888,8 +917,13 @@ class Fleet:
         restart (no signature then, so not in `forced`) and rejoins now
         with its failure still the same (the signature re-checked here).
         Without it the rejoin posts force:False and is refused for the
-        whole run (review of ef61d26, MED-1)."""
-        if bool(run.get("force")) or name in (run.get("forced") or ()):
+        whole run (review of ef61d26, MED-1).
+
+        A unit the START left out as silent (run["silent"],
+        start_without_silent) does not take the run-wide `force`: the
+        operator's "start anyway?" was about the garments they could see,
+        not one whose state nobody saw (review 2026-11-20)."""
+        if self._run_force_for(run, name) or name in (run.get("forced") or ()):
             return True
         if self.start_present and self._failure_signature(name) is not None:
             # EXHIBITION: a garment back with failed boards plays with the
@@ -1130,7 +1164,8 @@ class Fleet:
 
     def _beacon_force(self, run: dict, name: str) -> bool:
         """Read the same force decision as supervision without recording a rejoin."""
-        if run.get("force") or name in (run.get("forced") or ()):
+        # A unit start_without_silent left out never takes the run-wide force.
+        if self._run_force_for(run, name) or name in (run.get("forced") or ()):
             return True
         if not self.start_present and not run.get("loops"):
             return False
@@ -1837,7 +1872,7 @@ class Fleet:
             # SEEK/RESUME/NEXT of this run too, not just the first /show/run.
             # A mid-show rescue Upload adds only the units it rescued
             # (`forced`), so the rest of the fleet keeps its own gate.
-            force = bool(self.run.get("force"))
+            run = dict(self.run)
             forced = set(self.run.get("forced") or ())
         # The polls already in flight still show the old T0; give this
         # one time to land before the supervision second-guesses it.
@@ -1867,9 +1902,22 @@ class Fleet:
                 raise RuntimeError("has not taken this show yet")
             link.post("/show/run", {"t0": t0 + offset,
                                     "show": show["id"] if show else None,
-                                    "force": force or link.name in forced}, serial=serial)
+                                    "force": (self._run_force_for(run, link.name)
+                                              or link.name in forced)},
+                      serial=serial)
             return {}
         return self._each(list(names), action)
+
+    @staticmethod
+    def _run_force_for(run: dict, name: str) -> bool:
+        """Whether the run-wide `force` (START's "start anyway?", a restart
+        over a running show) applies to this unit - the ONE answer every
+        /show/run body and beacon flag uses (_send_run, _rejoin_force,
+        _beacon_force). Not to a unit start_without_silent left out
+        (run["silent"]): the operator never saw its state (review
+        2026-11-20). An explicit per-unit force (`forced`, a rescue
+        Upload) is the caller's own and still wins."""
+        return bool(run.get("force")) and name not in (run.get("silent") or ())
 
     def _targets(self) -> "list[str]":
         """The units a run is about: the ones holding this conductor's show
@@ -1938,7 +1986,8 @@ class Fleet:
                    loop: bool = False, skip=(),
                    expect_gen: "int | None" = None,
                    forced_units=(), preset_first: bool = False,
-                   left_why: "dict | None" = None) -> "dict[str, dict]":
+                   left_why: "dict | None" = None,
+                   admitted: "list | None" = None) -> "dict[str, dict]":
         """Begin the show `lead_s` from now, `at` seconds into it (0.0 for
         the top). The caller resolves `at` itself - normally
         `fleet.start_at`, where a SEEK made before the show started (or
@@ -1975,7 +2024,32 @@ class Fleet:
         operator's START, one corrections line. Refused only when no unit
         is ready: with the problems of the units that DO answer (so the
         page's "start anyway?" still comes up for failed boards), or
-        NO_GARMENT when none answers."""
+        NO_GARMENT when none answers.
+
+        `admitted`, when given, is a list this START extends with the units
+        start_without_silent left out of it (the server's START note).
+
+        start_without_silent is read once, here, and a START in progress
+        (`_starting`, every kind: the operator's, a stage's end, a Loop
+        lap) makes set_start_without_silent refuse - so a START decides
+        and commits under one value, and a toggle never reports success
+        for a value an in-flight START did not use (PM, 2026-11-20)."""
+        with self._run_lock:
+            self._starting += 1
+            wanted = self.start_without_silent
+        try:
+            return self._start_show(lead_s, at, force, loop, skip, expect_gen,
+                                    forced_units, preset_first, left_why,
+                                    admitted, wanted)
+        finally:
+            with self._run_lock:
+                self._starting -= 1
+
+    def _start_show(self, lead_s: float, at: float, force: bool, loop: bool,
+                    skip, expect_gen: "int | None", forced_units,
+                    preset_first: bool, left_why: "dict | None",
+                    admitted: "list | None", wanted: bool) -> "dict[str, dict]":
+        """start_show() itself, with start_without_silent as it was read."""
         # Before the gate: a STOP's clear that is still inside its window
         # has not deleted anything, so dropping it is what lets START run
         # the show again (the director's mid-show abort, taken back).
@@ -2006,6 +2080,22 @@ class Fleet:
         if not 0 <= at <= duration:
             raise ValueError(f"The show is {timeline.format_clock(0)} to "
                              f"{timeline.format_clock(duration)}.")
+        # start_without_silent (2026-11-20): only the show PC's operator
+        # START pressed without "Preset before START" (a staged START, and
+        # the start at the end of a stage, refuse a silent unit as before),
+        # never a Loop restart (its own grace). The units it leaves out are
+        # skipped like the Loop's, with their reason.
+        # Reusable collections: the second decision below reads them again
+        # (a one-shot iterator would be empty by then). () and sets as the
+        # callers pass them are unchanged in value.
+        if wanted:
+            skip, forced_units = tuple(skip), tuple(forced_units)
+        given = skip, left_why, forced_units
+        silent = (self._silent_units(skip, force, forced_units)
+                  if wanted and not self.start_present and not loop
+                  and not preset_first and expect_gen is None else [])
+        if silent:
+            skip, left_why = self._skip_silent(given, silent)
         targets, left, forced_units = self._start_targets(skip, force, forced_units,
                                                           left_why)
         # Every picture is meant to already be sitting in its slot: START
@@ -2015,6 +2105,23 @@ class Fleet:
         burning = self._burn_problems(targets, force=force, forced=forced_units)
         if burning:
             raise ValueError("; ".join(burning))
+        if silent and not self._still_silent(silent):
+            # A unit left out has changed since it was observed (it answers
+            # now, or its last word is no longer ready): the gate never read
+            # it, so this START does not go on the old decision - it decides
+            # once more from scratch (a unit that answers is then an ordinary
+            # target of the gate), before anything is published (review
+            # round 5). Changed again: refused, not looped.
+            silent = self._silent_units(given[0], force, given[2])
+            skip, left_why = (self._skip_silent(given, silent) if silent
+                              else given[:2])
+            targets, left, forced_units = self._start_targets(
+                skip, force, given[2], left_why)
+            burning = self._burn_problems(targets, force=force, forced=forced_units)
+            if burning:
+                raise ValueError("; ".join(burning))
+            if silent and not self._still_silent(silent):
+                raise ValueError(SILENT_CAME_BACK)
         if not loop:
             # What the operator waved through with this START, per unit
             # (nothing on a plain START): the Loop's restarts force exactly
@@ -2055,6 +2162,12 @@ class Fleet:
                         # absent garments, the Loop's skipped ones); a unit
                         # leaves it once it runs the show ("started late").
                         "left_out": dict(left)}
+            if silent:
+                # ...and of those, the ones start_without_silent left out:
+                # the run-wide `force` is not theirs (nobody saw their
+                # state) - _run_force_for. Only there when used, so the
+                # switch off leaves the run as it always was.
+                self.run["silent"] = list(silent)
             self.start_at = 0.0
             # A new run: nobody has been asked to clear anything yet, and
             # a unit that was too old last time may have been updated.
@@ -2062,6 +2175,16 @@ class Fleet:
             self._t0_moved()
         if left and expect_gen is None:
             self._say_left_out(left)
+        if admitted is not None:
+            # This START's own left-out units, for the caller's note -
+            # never read back off `run`, which a STOP may already have taken.
+            admitted.extend(silent)
+        # No HTTP START to the units left out as silent, on purpose (PM,
+        # 2026-11-20): a unit whose replies do not reach this Conductor
+        # never completes the TCP handshake, so the post could not land in
+        # the case this exists for, and a late one could carry an old T0
+        # past a STOP. They start by the beacon (when it is on) or join
+        # through supervision when they answer again ("started late").
         return self._send_run(targets)
 
     def _say_left_out(self, left: "dict[str, str]") -> None:
@@ -2083,6 +2206,190 @@ class Fleet:
             link = self.links.get(name)
             if link is not None and link.online and name not in self.shows:
                 self._adopt_show(link)
+
+    def set_start_without_silent(self, on: bool, save=None) -> None:
+        """Switch start_without_silent. Never during a LIVE run or a PRESET
+        stage (a show never changes what its START was decided on halfway);
+        after the END it may - an ENDED rehearsal must not need a STOP,
+        which can arm the picture clear. `save(on)` (the server's fleet.json
+        write) runs first, under the same lock: a failed save raises and
+        nothing is published, and two toggles can never be saved in the
+        opposite order to the one they took effect in (review 2026-11-20).
+        Nor while a START is being decided (`_starting`): that START uses
+        the value it read at its entry, and a toggle must not report
+        success for a value it did not use (PM, 2026-11-20).
+        The show PC's option only: EXHIBITION refuses it."""
+        if not isinstance(on, bool):
+            raise ValueError("on must be true or false")
+        if self.start_present:
+            raise ValueError("This option is for the show PC only - the "
+                             "exhibition's START already goes with the "
+                             "garments that are connected.")
+        with self._run_lock:
+            # A START in progress first: until it returns, its run (or its
+            # stage) is not yet the whole story.
+            if self._starting > 0:
+                raise ValueError("START is being decided - try again in a moment.")
+            if self._staging is not None or (
+                    self.run is not None and not self._over(self.run)):
+                raise ValueError("Stop the show first (or let it reach its "
+                                 "end) - this can't be changed during a show, "
+                                 "a HOLD or the preset countdown.")
+            # The fleet.json write under the run lock, accepted (PM): it can
+            # only happen with no live run and no START in progress, so
+            # nothing that drives the units waits on it.
+            if save is not None:
+                save(on)
+            self.start_without_silent = on
+
+    def _over(self, run: dict) -> bool:
+        """run_is_over() for a run already in hand (no lock taken)."""
+        duration = self.show_duration()
+        return (run["state"] == "running" and duration > 0
+                and self._clock() - run["t0"] >= duration)
+
+    def _ready_by(self, name: str, status, forced=(), force: bool = False,
+                  cached: bool = False) -> bool:
+        """Whether `status` (ONE /status of this unit, the online bit left
+        out) says it is ready for this START: holding the show this
+        Conductor uploaded, every picture written. The same states
+        _burn_problems waves through - except with `cached` (the last word
+        of a unit that is not answering now), which takes nothing on
+        trust: no failed boards whatever the force, no older agent without
+        a burn report (2026-11-20 review: silence must not mask a fault,
+        and the operator never saw that unit's state to wave it)."""
+        show = (status or {}).get("show")
+        if not isinstance(show, dict):
+            return False
+        expected = (self.shows.get(name) or {}).get("id")
+        if expected is None or show.get("id") != expected:
+            return False
+        if "burn" not in show:
+            return not cached               # an older agent: not held up live
+        burn = show.get("burn")
+        if not isinstance(burn, dict):
+            return False
+        state = burn.get("state")
+        if state == "burned":
+            return True
+        return (not cached and state == "failed"
+                and bool(force or name in forced))
+
+    def _observe(self, name: str) -> "tuple[bool, dict | None]":
+        """(online, last status) of one unit from ONE observation, taken
+        together (UnitLink.observe); (False, None) for a unit with no link."""
+        link = self.links.get(name)
+        if link is None:
+            return False, None
+        observe = getattr(link, "observe", None)
+        if observe is not None:
+            status, online = observe()
+        else:                                   # a test double without the lock
+            status, online = link.status, link.online
+        return online, status
+
+    @staticmethod
+    def _skip_silent(given, silent) -> "tuple[set, dict]":
+        """(skip, left_why) of a START (`given`: its own skip, left_why,
+        forced) with `silent` added - skipped like the Loop's, with their
+        reason."""
+        skip, left_why, _forced = given
+        return (set(skip) | set(silent),
+                dict(left_why or {}, **{name: "not answering" for name in silent}))
+
+    def _still_silent(self, names) -> bool:
+        """Whether every unit a START is about to go without is, observed
+        once more, still not answering with a last word that says ready -
+        the check between the burn gate and the commit (_start_show): a
+        unit left out is never re-read by the gate itself."""
+        for name in names:
+            online, status = self._observe(name)
+            if online or not self._ready_by(name, status, cached=True):
+                return False
+        return True
+
+    def _silent_units(self, skip=(), force: bool = False, forced=()) -> "list[str]":
+        """The units start_without_silent would leave out of a START now
+        (see _silent_verdict) - [] when it would not help."""
+        return self._silent_verdict(skip, force, forced)[0]
+
+    def _silent_verdict(self, skip=(), force: bool = False,
+                        forced=()) -> "tuple[list[str], list[str], str | None]":
+        """(who start_without_silent would leave out, who is not answering,
+        why it would NOT help - one sentence, or None).
+
+        Left out: the units not answering whose last word says ready
+        (_ready_by, cached) - and only when every OTHER target is ready
+        too and at least one of them answers. Otherwise nobody, and the
+        gate refuses exactly as with the switch off. Each unit is judged
+        from ONE observation of its status and its reachability, taken
+        together (UnitLink.observe), so a poll landing between two reads
+        cannot turn a fault into "silent". The burn gate that follows reads
+        the ANSWERING units live once more; a disagreement there can only
+        make the START refuse (the safe direction, accepted - PM,
+        2026-11-20). The units left out are never read by that gate, so
+        _start_show observes each of them once more before it commits
+        (_still_silent) and decides again if one has changed.
+
+        The sentence is THE SHOW panel's (S1), stated only from this
+        evidence: a unit never heard from, a unit whose last word was not
+        ready, or another garment not ready now."""
+        skip = set(skip)
+        seen = {name: self._observe(name) for name in self._targets()
+                if name not in skip}
+        silent = sorted(name for name, (online, _) in seen.items() if not online)
+        if not silent:
+            return [], silent, None
+        if len(silent) == len(seen):
+            return [], silent, "START will refuse: no garment is answering."
+        never = [name for name in silent if seen[name][1] is None]
+        stale = [name for name in silent if seen[name][1] is not None
+                 and not self._ready_by(name, seen[name][1], cached=True)]
+        other = [name for name, (online, status) in seen.items()
+                 if online and not self._ready_by(name, status, forced, force)]
+        if never:
+            one = len(never) == 1
+            return [], silent, (
+                f"START will refuse on {', '.join(never)}: not heard from since "
+                f"this Conductor started - {'it' if one else 'they'} must answer "
+                "once first.")
+        if stale:
+            one = len(stale) == 1
+            return [], silent, (
+                f"START will refuse: {', '.join(stale)} {'was' if one else 'were'} "
+                f"not ready when {'it was' if one else 'they were'} last heard.")
+        if other:
+            return [], silent, ("START will refuse: another garment is not ready."
+                                if len(other) == 1 else
+                                "START will refuse: other garments are not ready.")
+        return silent, silent, None
+
+    def start_without(self) -> "list[str]":
+        """Who an operator START would go without right now under
+        start_without_silent (start_without_state()["units"])."""
+        return self.start_without_state()["units"]
+
+    def start_without_state(self) -> dict:
+        """/api/fleet's `start_without` and its `start_without_why`: who an
+        operator START would go without right now under
+        start_without_silent (the same _silent_verdict the START uses,
+        plain START, nothing forced), who is not answering, and - when
+        some unit is not answering but the switch would not help - why.
+        Nothing with the switch off, on EXHIBITION, during a live run or a
+        stage.
+
+        Documented limits (review round 3, PM): this does not run the
+        server's one-timeline gate (too costly for every poll), nor know an
+        explicit `from_s` the page may send with its START - the hint can
+        then say "START will go without ..." where START is refused for a
+        split upload, or differ for a START from a typed mark."""
+        with self._run_lock:
+            if (not self.start_without_silent or self.start_present
+                    or self._staging is not None
+                    or (self.run is not None and not self._over(self.run))):
+                return {"units": [], "silent": [], "why": None}
+        units, silent, why = self._silent_verdict()
+        return {"units": units, "silent": silent, "why": why}
 
     def _start_targets(self, skip, force: bool, forced_units,
                        left_why: "dict | None") -> "tuple[list[str], dict[str, str], set]":

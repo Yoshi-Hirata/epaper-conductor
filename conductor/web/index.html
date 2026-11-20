@@ -5562,7 +5562,9 @@ function renderFleet() {
       <div class="warn" id="show-degraded"></div>
       <!-- EXHIBITION only (/api/fleet's presence.exhibition): START goes with
            the garments that are connected; the others are named here, one
-           line, and do not block it (2026-10-19). -->
+           line, and do not block it (2026-10-19). On the show PC, the same
+           line says who START goes (or went) without under "START without
+           units that do not answer" (silentNote, 2026-11-20). -->
       <div class="warn" id="show-presence"></div>
       <div class="meta" id="show-log" style="margin-top:8px;white-space:pre-wrap">${esc(ui.showLog || "")}</div>
       <div class="meta" id="show-fix"></div>
@@ -5614,6 +5616,8 @@ function renderFleet() {
         <button id="fleet-release">Release units to on-device control</button>
         <label class="meta" title="Also broadcast START/HOLD/STOP over UDP for units whose Wi-Fi replies do not reach the router. Units cannot answer it: a unit that follows it may still show as unreachable here. Only ONE Conductor may have this on. Saved in fleet.json - stays on after a restart. Switch it on or off only while stopped."><input type="checkbox" id="fleet-beacon" disabled>
           Backup broadcast (beacon)</label> <span class="meta" id="fleet-beacon-counts"></span>
+        <label class="meta" title="③ START goes ahead without a garment that is only 'not answering' instead of refusing for everyone. It is named under THE SHOW ('START without ...') and joins as soon as it answers again if it is still ready; it may follow the backup broadcast meanwhile, only if that is on. Any other problem still refuses START, and so does a garment this Conductor has not heard from since it started. Not used with 'Preset before START' or by Loop restarts. Saved in fleet.json. Change only while no show is running."><input type="checkbox" id="fleet-start-without-silent" disabled>
+          START without units that do not answer</label>
       </div>
       <div class="meta" id="go-log" style="margin-top:8px;white-space:pre-wrap">${esc(ui.goLog)}</div>
     </div>
@@ -6261,11 +6265,58 @@ function degradedUnits() {
 // is not blocked by them. Empty otherwise.
 function presenceNote() {
   const p = fleet?.presence;
-  if (!p || !p.exhibition || !p.missing) return "";
+  if (!p || !p.exhibition) return silentNote();   // the show PC
+  if (!p.missing) return "";
   const groups = {};
   for (const [name, why] of Object.entries(p.missing).sort()) (groups[why] = groups[why] || []).push(name);
   const parts = Object.entries(groups).map(([why, names]) => `${names.join(", ")} (${why})`);
   return parts.length ? `START goes without ${parts.join("; ")} - they join when they come back.` : "";
+}
+// The show PC with "START without units that do not answer" on (2026-11-20):
+// said where START is, not only on the Units tab. Before the press: who the
+// START would go without (/api/fleet's start_without, the server's own rule)
+// or, when a unit is not answering and the switch would not help, the
+// server's own sentence why (start_without_why) - never guessed here. During
+// the run, HOLD included: the units this START left out as silent
+// (run.silent) that have not joined yet (still in run.left_out). The Loop's
+// own omissions are not this line's. Nothing at all with the switch off.
+function silentNote() {
+  if (!fleet?.start_without_silent) return "";
+  const run = fleet.run;
+  const one = n => n === 1;
+  if (run && run.state === "preset") return "";
+  if (run && !runIsOver()) {
+    const left = run.left_out || {};
+    const names = (run.silent || []).filter(name => name in left).sort();
+    if (!names.length) return "";
+    // No HTTP START reaches a silent unit: with the broadcast off it only
+    // joins when it answers again (supervision), and the line says so.
+    // Every rejoin is qualified: supervision only starts a unit that still
+    // holds the show with its pictures written when it answers.
+    const tail = fleet.beacon?.enabled
+      ? (one(names.length)
+         ? "it may be following the backup broadcast; it joins fully when it answers again, if it is still ready."
+         : "they may be following the backup broadcast; they join fully when they answer again, if they are still ready.")
+      : (one(names.length)
+         ? "it joins when it answers again, if it is still ready (the backup broadcast is off)."
+         : "they join when they answer again, if they are still ready (the backup broadcast is off).");
+    return `Without ${names.join(", ")} in this run (not answering) - ${tail}`;
+  }
+  const names = fleet.start_without || [];
+  if (!names.length) return fleet.start_without_why || "";
+  // A preview, not a promise: START runs its other checks when pressed.
+  const tail = fleet.beacon?.enabled
+    ? (one(names.length)
+       ? "it may follow the backup broadcast, and joins fully when it answers again, if it is still ready."
+       : "they may follow the backup broadcast, and join fully when they answer again, if they are still ready.")
+    : (one(names.length)
+       ? "it stays as it is until it answers again, and joins then if it is still ready (the backup broadcast is off)."
+       : "they stay as they are until they answer again, and join then if they are still ready (the backup broadcast is off).");
+  return `Not answering: ${names.join(", ")} - `
+    + (one(names.length)
+       ? "if it is still not answering and its other checks pass, START can go without it; "
+       : "if they are still not answering and their other checks pass, START can go without them; ")
+    + tail;
 }
 function degradedNote() {
   const who = degradedUnits();
@@ -6330,9 +6381,27 @@ function paintBeacon() {
        ...skipped.map(([unit, reason]) => `${unit}: ${reason}`)].join("\n")
     : "";
 }
+// "START without units that do not answer" (fleet.json start_without_silent,
+// conductor/fleet.py Fleet.start_without_silent, 2026-11-20): the show PC's
+// backup for a garment whose replies do not reach the router. Off by default;
+// the operator still checks every unit is online before START. Greyed out
+// on the server's own condition - a live run or a PRESET stage (an ENDED run
+// is fine: no STOP needed, which could arm the clear) - with no fleet
+// configured (null), and on the exhibition's Conductor, whose START already
+// goes with whoever is connected (the server refuses it there).
+let silentSaving = false;
+function paintStartWithoutSilent() {
+  const checkbox = $("#fleet-start-without-silent");
+  if (!checkbox) return;
+  const live = !!fleet?.run && (fleet.run.state !== "running" || !runIsOver());
+  checkbox.disabled = silentSaving || typeof fleet?.start_without_silent !== "boolean"
+    || live || !!fleet.presence?.exhibition;
+  if (!silentSaving) checkbox.checked = !!fleet?.start_without_silent;
+}
 function renderTiles() {
   showClockText();
   paintBeacon();
+  paintStartWithoutSilent();
   const box = $("#tiles");
   if (!box || !fleet) return;
   const picked = getSelection();
@@ -6896,6 +6965,21 @@ document.addEventListener("change", async e => {
     } finally {
       beaconSaving = false;
       paintBeacon();
+    }
+    return;
+  }
+  if (id === "fleet-start-without-silent") {
+    silentSaving = true;
+    paintStartWithoutSilent();
+    try {
+      const result = await api("/api/fleet/start_without_silent", {on: e.target.checked});
+      if (result.error) throw new Error(result.error);
+      fleet.start_without_silent = result.start_without_silent;
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      silentSaving = false;
+      paintStartWithoutSilent();
     }
     return;
   }

@@ -2729,6 +2729,11 @@ def test_the_fleet_snapshot_carries_the_start_position_and_the_show_length(tmp_p
                         # The one-way beacon's sender (docs/BEACON.md): null
                         # without a fleet, like the speaker.
                         "beacon": None,
+                        # "START without units that do not answer": no
+                        # fleet to switch (the page greys the box), nobody
+                        # a START would go without.
+                        "start_without_silent": None, "start_without": [],
+                        "start_without_why": None,
                         # EXHIBITION mode: the Loop is always an object,
                         # the speaker is null without --speaker.
                         "loop": {"on": False, "wait_s": 45, "next_in_s": None,
@@ -3585,6 +3590,232 @@ def test_get_fleet_demos_with_no_fleet_configured(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def _silent_server(tmp_path, fleet_json=None):
+    """A PC-show Conductor over three garments holding showA, radxa-03 not
+    answering (the hardware check's F1, 2026-11-20)."""
+    from conductor.fleet import Fleet
+
+    if fleet_json is not None:
+        (tmp_path / "fleet.json").write_text(json.dumps(fleet_json), encoding="utf-8")
+    fleet = Fleet({})
+    fleet.links = {}
+    for name in ("radxa-01", "radxa-02", "radxa-03"):
+        link = StubLink(name, "stopped")
+        link.status["show"]["burn"] = {"state": "burned", "done": 48,
+                                       "total": 48, "failed": []}
+        link.online = name != "radxa-03"
+        fleet.links[name] = link
+    fleet.shows = {name: {"id": "showA", "cues": [], "duration": 600}
+                   for name in fleet.links}
+    server = make_server(tmp_path, port=0, fleet=fleet)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, fleet
+
+
+def test_start_without_silent_switch_is_saved_and_reported(tmp_path):
+    server, fleet = _silent_server(tmp_path, {"beacon_unicast": False})
+    port = server.server_address[1]
+    path = tmp_path / "fleet.json"
+    try:
+        assert _get(port, "/api/fleet")["start_without_silent"] is False
+        for value in (True, False, True):
+            status, body = _post(port, "/api/fleet/start_without_silent", {"on": value})
+            assert status == 200 and body == {"start_without_silent": value}
+            assert fleet.start_without_silent is value
+            assert _get(port, "/api/fleet")["start_without_silent"] is value
+            assert json.loads(path.read_text(encoding="utf-8")) == {
+                "beacon_unicast": False, "start_without_silent": value}
+        status, body = _post(port, "/api/fleet/start_without_silent", {"on": 1})
+        assert status == 400 and "boolean" in body["error"]
+        assert fleet.start_without_silent is True
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_start_without_silent_switch_is_refused_during_a_live_run(tmp_path):
+    server, fleet = _silent_server(tmp_path)
+    port = server.server_address[1]
+    path = tmp_path / "fleet.json"
+    try:
+        assert _post(port, "/api/fleet/start_without_silent", {"on": True})[0] == 200
+        status, body = _post(port, "/api/fleet/start", {"lead_s": 3.0})
+        assert status == 200 and sorted(body["units"]) == ["radxa-01", "radxa-02"]
+        status, body = _post(port, "/api/fleet/start_without_silent", {"on": False})
+        assert status == 400
+        assert body["error"] == ("Stop the show first (or let it reach its end) - "
+                                 "this can't be changed during a show, a HOLD "
+                                 "or the preset countdown.")
+        assert fleet.start_without_silent is True
+        assert json.loads(path.read_text(encoding="utf-8")) == {"start_without_silent": True}
+        fleet._clock = lambda: fleet.run["t0"] + 601.0       # ENDED: allowed, no STOP
+        assert _post(port, "/api/fleet/start_without_silent", {"on": False})[0] == 200
+        assert fleet.run is not None
+        _post(port, "/api/fleet/stop", {})
+        assert _post(port, "/api/fleet/start_without_silent", {"on": True})[0] == 200
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_start_without_silent_save_failure_changes_nothing(tmp_path):
+    server, fleet = _silent_server(tmp_path)
+    port = server.server_address[1]
+    (tmp_path / "fleet.json").write_text("{not json", encoding="utf-8")
+    try:
+        status, _body = _post(port, "/api/fleet/start_without_silent", {"on": True})
+        assert status == 500
+        assert fleet.start_without_silent is False
+        assert _get(port, "/api/fleet")["start_without_silent"] is False
+        status, body = _post(port, "/api/fleet/start", {"lead_s": 3.0})
+        assert status == 400 and body["error"] == "radxa-03: not answering"
+        assert (tmp_path / "fleet.json").read_text(encoding="utf-8") == "{not json"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_start_without_silent_is_refused_on_exhibition(tmp_path):
+    server, fleet = _silent_server(tmp_path)
+    fleet.start_present = True
+    port = server.server_address[1]
+    try:
+        status, body = _post(port, "/api/fleet/start_without_silent", {"on": True})
+        assert status == 400 and "show PC only" in body["error"]
+        assert fleet.start_without_silent is False
+        assert not (tmp_path / "fleet.json").exists()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_start_without_silent_decides_the_operators_start(tmp_path):
+    server, fleet = _silent_server(tmp_path)
+    port = server.server_address[1]
+    try:
+        # Off (the default): refused for everyone, exactly the old answer.
+        assert _get(port, "/api/fleet")["start_without"] == []
+        status, body = _post(port, "/api/fleet/start", {"lead_s": 3.0})
+        assert status == 400 and body["error"] == "radxa-03: not answering"
+        assert fleet.run is None
+        _post(port, "/api/fleet/start_without_silent", {"on": True})
+        # THE SHOW panel's "START will go without ..." comes from here.
+        assert _get(port, "/api/fleet")["start_without"] == ["radxa-03"]
+        status, body = _post(port, "/api/fleet/start", {"lead_s": 3.0})
+        assert status == 200 and sorted(body["units"]) == ["radxa-01", "radxa-02"]
+        assert body["note"] == "Started without radxa-03 (not answering)."
+        snap = _get(port, "/api/fleet")
+        assert snap["start_without"] == []                  # a live run
+        assert snap["run"]["left_out"] == {"radxa-03": "not answering"}
+        assert snap["corrections"][-1].endswith(" START without radxa-03 (not answering)")
+        assert fleet.links["radxa-03"].posted == []
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_start_without_silent_is_not_used_with_preset_before_start(tmp_path):
+    server, fleet = _silent_server(tmp_path)
+    port = server.server_address[1]
+    fleet.start_without_silent = True
+    server.RequestHandlerClass.workspace.preset_before_start = lambda: True
+    try:
+        snap = _get(port, "/api/fleet")
+        assert snap["start_without"] == []
+        assert snap["start_without_why"] == (
+            "'START without units that do not answer' is not used with Preset "
+            "before START (a START from 0:00) - START will refuse on radxa-03 "
+            "(not answering).")
+        status, body = _post(port, "/api/fleet/start", {"lead_s": 3.0})
+        assert status == 400 and body["error"] == "radxa-03: not answering"
+        assert fleet.preset_state() is None and fleet.run is None
+        # From a mark a START does not preset (S6): the switch counts again.
+        fleet.start_at = 30.0
+        snap = _get(port, "/api/fleet")
+        assert snap["start_without"] == ["radxa-03"] and snap["start_without_why"] is None
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_start_without_silent_write_failure_changes_nothing(tmp_path, monkeypatch):
+    # M4: a real write failure (permissions, a full disk) is the same JSON 500.
+    server, fleet = _silent_server(tmp_path)
+    port = server.server_address[1]
+
+    def full(self, key, value):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Workspace, "set_fleet_option", full)
+    try:
+        status, body = _post(port, "/api/fleet/start_without_silent", {"on": True})
+        assert status == 500 and "No space left on device" in body["error"]
+        assert fleet.start_without_silent is False
+        assert _get(port, "/api/fleet")["start_without_silent"] is False
+        status, body = _post(port, "/api/fleet/start", {"lead_s": 3.0})
+        assert status == 400 and body["error"] == "radxa-03: not answering"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_start_without_silent_says_why_it_would_not_help(tmp_path):
+    server, fleet = _silent_server(tmp_path)
+    port = server.server_address[1]
+    fleet.start_without_silent = True
+    link = fleet.links["radxa-03"]
+    link.status = None                      # never answered this Conductor
+    link.snapshot = lambda: {"name": "radxa-03", "online": False, "show": None}
+    try:
+        snap = _get(port, "/api/fleet")
+        assert snap["start_without"] == []
+        assert snap["start_without_why"] == (
+            "START will refuse on radxa-03: not heard from since this Conductor "
+            "started - it must answer once first.")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("value,expected,warning", [
+    (True, True, None), (False, False, None), ("missing", False, None),
+    ("yes", False, "'yes'"), (1, False, "1"), (None, False, "None"),
+])
+def test_serve_reads_start_without_silent_strictly(tmp_path, monkeypatch, capsys,
+                                                   value, expected, warning):
+    from conductor import beacon as conductor_beacon
+    from conductor import server as conductor_server
+    from conductor.fleet import Fleet
+
+    config = {} if value == "missing" else {"start_without_silent": value}
+    (tmp_path / "fleet.json").write_text(json.dumps(config), encoding="utf-8")
+    order = []
+    monkeypatch.setattr(Fleet, "start", lambda self: order.append("poll"))
+    monkeypatch.setattr(conductor_beacon.BeaconSender, "start", lambda self: None)
+    monkeypatch.setattr(conductor_server.OtherConductorWatch, "start", lambda self: None)
+    monkeypatch.setattr(conductor_server.OtherConductorWatch, "stop", lambda self: None)
+    monkeypatch.setattr(conductor_server.OtherConductorWatch, "check", lambda self: None)
+    monkeypatch.setattr(conductor_server, "reachable_urls", lambda *_: [])
+    booted = []
+    monkeypatch.setattr(conductor_server.ThreadingHTTPServer, "serve_forever",
+                        lambda server: booted.append(
+                            server.RequestHandlerClass.fleet.start_without_silent))
+    real = Fleet.set_start_without_silent
+    monkeypatch.setattr(Fleet, "set_start_without_silent",
+                        lambda self, on, save=None: (order.append(on),
+                                                     real(self, on, save))[1])
+    assert conductor_server.serve(tmp_path, port=0) == 0
+    assert booted == [expected]
+    # Set through the one publish path, not by assignment - and before the
+    # fleet starts polling (a run adopted first would make it refuse).
+    assert order == ([True, "poll"] if expected else ["poll"])
+    lines = [line for line in capsys.readouterr().out.splitlines()
+             if "start_without_silent" in line]
+    assert lines == ([] if warning is None else [
+        f'Warning: fleet.json: "start_without_silent" must be true or false '
+        f'(got {warning}) - it stays off; tick it on the Units tab'])
 
 
 def test_get_fleet_demos_falls_back_to_compiling_when_nothing_was_uploaded(tmp_path):

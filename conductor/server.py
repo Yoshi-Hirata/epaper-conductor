@@ -35,6 +35,10 @@ client's, not the repo's):
                     of using each unit's /24.
                     "beacon_unicast": false skips the per-unit unicast
                     copy (default: sent).
+                    "start_without_silent": true lets the show PC's START
+                    go without the units that are only "not answering"
+                    and were last seen ready (Fleet.start_without_silent).
+                    Default false. The Units tab checkbox writes it.
 
 Undo covers show.json - the timeline, the show's length and the unit
 assignments - and is kept on disk, so it survives a reload of the page
@@ -3399,12 +3403,28 @@ class Handler(BaseHTTPRequestHandler):
                                        "loop": self._loop_object(None),
                                        "speaker": speaker,
                                        "beacon": beacon,
+                                       "start_without_silent": None,
+                                       "start_without": [],
+                                       "start_without_why": None,
                                        "timeline": self.workspace.written_state()})
                 with self.prepared_lock:
                     prepared = dict(self.prepared)
                 snap = self.fleet.snapshot()
+                # `start_without_silent`: the Units tab's "START without
+                # units that do not answer" (Fleet.start_without_silent;
+                # null above, with no fleet to switch). `start_without`: who
+                # a START pressed now would go without under it - the
+                # fleet's own rule, so THE SHOW panel can say so before the
+                # press - and `start_without_why`: the one sentence saying
+                # why it would NOT help when some unit is not answering
+                # (Fleet.start_without_state), never guessed by the page.
+                without, why = self._start_without()
                 return self._json(dict(snap, prepared=prepared, speaker=speaker,
                                        beacon=beacon,
+                                       start_without_silent=bool(getattr(
+                                           self.fleet, "start_without_silent", False)),
+                                       start_without=without,
+                                       start_without_why=why,
                                        loop=self._loop_object(snap.get("loop")),
                                        timeline=self.workspace.written_state()))
             if path == "/api/fleet/demos":
@@ -4155,6 +4175,29 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": str(exc) or exc.__class__.__name__},
                               status=502)
 
+    def _start_without(self) -> "tuple[list[str], str | None]":
+        """/api/fleet's (`start_without`, `start_without_why`) for the show
+        PC's "START without units that do not answer": the fleet's own
+        verdict, plus the one thing only the workspace knows - a START from
+        0:00 with "Preset before START" on is staged, and the switch is not
+        used there. The same start-position rule as START itself: from a
+        mark (fleet.start_at, a SEEK made before the START) it does not
+        preset, so the switch counts. show.json is read only when some unit
+        is not answering."""
+        state = getattr(self.fleet, "start_without_state", None)
+        if state is None:
+            return [], None
+        found = state()
+        if not found["silent"]:
+            return [], None
+        if (float(getattr(self.fleet, "start_at", 0.0) or 0.0) == 0.0
+                and self.workspace.preset_before_start()):
+            return [], ("'START without units that do not answer' is not used "
+                        "with Preset before START (a START from 0:00) - START "
+                        "will refuse on "
+                        f"{', '.join(found['silent'])} (not answering).")
+        return found["units"], found["why"]
+
     def _fleet_command(self, command: str, body: dict) -> None:
         if command == "beacon":
             on = body.get("on")
@@ -4170,6 +4213,26 @@ class Handler(BaseHTTPRequestHandler):
         fleet = self.fleet
         if fleet is None:
             return self._json({"error": "no fleet configured"}, status=400)
+        if command == "start_without_silent":
+            # The show PC's "START without units that do not answer"
+            # (Fleet.start_without_silent, 2026-11-20): the fleet refuses it
+            # during a live run or a stage (and on EXHIBITION), and saves it
+            # to fleet.json before it takes effect, under its run lock - a
+            # failed save is a 500 with nothing changed.
+            on = body.get("on")
+            if not isinstance(on, bool):
+                raise ValueError("start_without_silent on must be a boolean")
+            try:
+                fleet.set_start_without_silent(
+                    on, save=lambda value: self.workspace.set_fleet_option(
+                        "start_without_silent", value))
+            except (RuntimeError, OSError) as exc:
+                # fleet.json does not parse, or the write itself failed
+                # (permissions, a full disk, Windows' replace retries run
+                # out): said, not dropped - and nothing was published.
+                return self._json({"error": str(exc) or exc.__class__.__name__},
+                                  status=500)
+            return self._json({"start_without_silent": on})
         if command == "prepare":
             cue = f"m{int(time.time()) % 1000000:06d}"
             payloads, problems = self.workspace.compile_units(
@@ -4401,9 +4464,11 @@ class Handler(BaseHTTPRequestHandler):
                 # follows once every garment shows it (Fleet._staging_tick).
                 # A start from a mark never presets.
                 preset_first = at == 0.0 and self.workspace.preset_before_start()
+                silent: "list[str]" = []
                 try:
                     results = fleet.start_show(lead, at, force=bool(body.get("force")),
-                                               preset_first=preset_first)
+                                               preset_first=preset_first,
+                                               admitted=silent)
                 except ValueError as exc:
                     if str(exc) == STAGING_BUSY:
                         # The other of two STARTs landing together staged
@@ -4421,6 +4486,13 @@ class Handler(BaseHTTPRequestHandler):
                 if at > 0:
                     response["note"] = (f"Started from "
                                         f"{timeline.format_clock(at)}.")
+                # start_without_silent: the START log line names who THIS
+                # start went without (start_show's own `admitted`), not only
+                # the corrections (review 2026-11-20).
+                if silent:
+                    response["note"] = " ".join(filter(None, [
+                        response.get("note"),
+                        f"Started without {', '.join(silent)} (not answering)."]))
                 return self._json(response)
             results = fleet.next_cue(lead)
             return self._json({"units": results, "lead_s": lead, "note":
@@ -4833,9 +4905,20 @@ def serve(workspace, port: int = 8765, open_browser: bool = False,
     compiled, problems = {}, []
     if adopt:
         compiled, problems = offer_startup_shows(fleet, ws)
+    beacon_options = config._fleet_json()
+    # The show PC's "START without units that do not answer" (2026-11-20):
+    # strictly true or false, like "beacon" - anything else is off. Set
+    # through the one publish path, BEFORE the fleet starts polling: a run
+    # adopted from the units in between would make the setter refuse and
+    # stop the Conductor from booting.
+    silent = beacon_options.get("start_without_silent", False)
+    if not isinstance(silent, bool):
+        print(f'Warning: fleet.json: "start_without_silent" must be true or false '
+              f'(got {silent!r}) - it stays off; tick it on the Units tab')
+    if silent is True and not adopt:        # show PC only
+        fleet.set_start_without_silent(True)
     fleet.start()
     server.RequestHandlerClass.fleet = fleet
-    beacon_options = config._fleet_json()
     enabled = beacon_options.get("beacon", False)
     if not isinstance(enabled, bool):
         print(f'Warning: fleet.json: "beacon" must be true or false (got {enabled!r}) '
