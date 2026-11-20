@@ -400,7 +400,7 @@ gen they decided under, not whatever `_run_gen` is when the post goes out.
   unit playing its own demo ignores run, hold and stop. Real radios, the access
   point's behaviour with broadcast and a real unit's LCD were NOT proven by those
   tests; the hardware check of 2026-11-20 (section 10) covers the radio and the
-  broadcast, the LCD reading is still pending.
+  broadcast, and the LCD was read from the operator's video (rows 37-40).
 
 ### 8.4 Accepted limits
 
@@ -413,8 +413,12 @@ gen they decided under, not whatever `_run_gen` is when the post goes out.
   after TWO agreeing `/status` samples (not one poll; measured 2026-11-20, section
   10). On its own the unit restores its run from disk using its wall clock and, if
   that clock is right, lands on the right position (row 28); it is back in step
-  about 7 s after HTTP returns (row 29). With a wrong wall clock the restored
-  position is wrong (O2, section 10). v1.1: PC-clock fields in the datagram and
+  about 7 s after HTTP returns (row 29). After a COLD power cut the unit's clock
+  is lost (it came up 2 h 10 min behind, rows 41-42): it judges the saved run out
+  of range, stays `loaded` and plays nothing on its own, so no wrong picture; the
+  beacon cannot bring it back, HTTP does - the right position 2 s after HTTP
+  returns, about 40 s after power returns. Not tested: a saved clock that happens
+  to fall inside the show (O2, section 10). v1.1: PC-clock fields in the datagram and
   a one-way offset estimate on the unit.
 - **First datagram after boot vs an HTTP command already in flight.** HTTP
   commands that passed the agent's `beacon_seen_cid is None` check before the
@@ -506,10 +510,12 @@ online before START; the switch is the backup.
 
 ## 10. Hardware check, 2026-11-20 (summary)
 
-Raw record, with 36 rows, findings and observations:
+Raw record, with 42 rows, findings and observations:
 `docs/BEACON_HWCHECK_20261120.md` (raw logs in `docs/hwcheck-20261120-logs/`).
 Unit radxa-06 with board 3; radxa-08 with board 20 for the two-unit rows; test
-Conductors on the PC at 192.168.51.40; commit 1aa943d on the units.
+Conductors on the PC at 192.168.51.40; commit 1aa943d on the units for rows 1-36.
+All nine units (radxa-01..04, 06..10) are now on ab674dd (the LCD log-row fix
+below); origin/main = ab674dd, pushed 2026-11-20 15:15.
 
 **Proven on hardware.** The 0:00 picture is shown once with both paths;
 START / HOLD / RESUME / SEEK / NEXT / STOP by broadcast alone (unicast off); the
@@ -521,7 +527,15 @@ Conductor restart mid-show; the switch toggled mid-run; two Conductors (the unit
 stays with the first, `beacon skip: other PC`; takeover 5 s after the first falls
 silent); a wrong show id is refused; Loop with a unit that is not heard (no lap
 is started on it); START without a silent unit (section 9) with the beacon on and
-off, final build included.
+off, final build included; the LCD (rows 37-40: on radxa-06's REMOTE screen all
+four lines `beacon run, starts in 5s`, `beacon hold`, `beacon run, joined 23s`,
+`beacon stop` appear in full, with the header ARMED / READY and `SHOW HOLDING` /
+`SHOW STOPPED`); a COLD power cut mid-run, twice (rows 41-42, below).
+
+**LCD observations.** The newest log line was clipped by the hint strip: fixed in
+ab674dd (`ui/render.py`: the REMOTE screen's log rows are 14 px from y=133), on
+all nine units since 15:12. The log clock is UTC. radxa-06's LCD has a dead
+column (hardware).
 
 **Observations.**
 - **O1** When a run reaches a unit whose serial port is not open yet (just
@@ -534,12 +548,27 @@ off, final build included.
   the units reached NTP once (about 12:34 JST) a warm reboot restored the right
   position. Operating rule: battery swaps between shows, not during; a garment that
   lost power mid-show goes back on stage only after its picture is confirmed.
+  **Measured answer (COLD power cut, rows 41-42, 15:17 and 15:26):** the unit's
+  clock is NOT kept through a power cut (it came up 2 h 10 min behind). With its
+  clock lost it judges the saved run out of range, stays `loaded` and plays
+  nothing on its own - the feared wrong picture after a power cut did not happen.
+  The beacon alone cannot bring it back (clock out of step, by design). With HTTP
+  it is on the right position 2 s after HTTP returns, about 40 s after power
+  returns (boot 35 s). A warm reboot keeps the clock (RTC powered) and the unit
+  restores its run itself. Residual, not tested: a saved clock that happens to
+  fall inside the show (a boot or clock save during the same show, then a power
+  cut, and no HTTP).
 
-**Still open.** LCD: filmed by the operator on 2026-11-20 14:29, reading pending.
-A COLD power cycle (battery pulled; the RTC may not keep time) is untested. More
-than one deaf unit, a weak link and a full-length run with the beacon on are
-untested. Not exercised on hardware: `beacon skip: no show` / `own demo`,
-`beacon NG`, `beacon: STOP wins`.
+**Operating rule from the power cut.** A garment that loses power needs about 40 s
+after power returns and a working Wi-Fi link to the PC to rejoin; if its link does
+not reach the PC it stays as it is until it does.
+
+**Still open.** More than one deaf unit; a weak link (not a clean cut); a
+full-length 36:34 run with the beacon on; the skip and refusal lines on the LCD
+(`beacon skip: ...`, `beacon NG: ...` were not filmed). Not exercised on
+hardware: `beacon skip: no show` / `own demo`, `beacon NG`, `beacon: STOP wins`.
+Codex's two conditions "someone must read the LCD" and "a power cycle must be
+watched through to the right picture" are met by rows 37-42.
 
 **Decision for 2026-11-22 (Codex as test overseer).** Keep "Backup broadcast
 (beacon)" OFF unless the open items are closed and a rehearsal shows a real need.

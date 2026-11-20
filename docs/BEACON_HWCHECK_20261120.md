@@ -2,8 +2,8 @@
 
 Status: DONE except the open items below (2026-11-20). Raw record of the check; the summary is in `docs/BEACON.md`
 section 10, the START switch (rows 30-36, F1) in section 9.
-Open: a COLD power cycle (battery pulled); more than one deaf
-unit, a weak link and a full-length run with the beacon on. Observations O1 and O2 are at the end of the third round.
+Open: more than one deaf
+unit, a weak link and a full-length run with the beacon on (the cold power cycle is done: rows 41-42). Observations O1 and O2 are at the end of the third round.
 Decision (Codex as overseer): the beacon stays OFF on 2026-11-22 unless these are closed and a rehearsal shows a real need.
 (The setup below is as it was in round 1; the Wavlink went from WISP to router mode before round 3.)
 
@@ -124,9 +124,24 @@ operator wants. (L2) the log's clock is the unit's UTC (05:29 for 14:29 JST). (L
 line runs through the second character column of this unit's LCD (`f|res`, `S|HOW`, `0|5:29`) - the panel or its
 cover on radxa-06, not the software. The cue lines are ellipsized (`...q00 fi...`) as designed.
 
+COLD power cycle, 15:17-15:28: the operator pulled radxa-06's power mid-run (the board shares that supply, so board 3
+lost power too), waited about 10 s and plugged it back; a 10-minute test show (18 cues, one every 20 s); one sample every
+2 s with the unit's clock against the PC's (raw log: docs/hwcheck-20261120-logs/cold.log):
+
+| # | Step | Evidence | Verdict |
+|---|------|----------|---------|
+| 41 | HTTP cut on the PC side (tunnel killed after START); power pulled at 15:17:48 (position 33 s); the watcher re-opens HTTP 40 s after the unit answers again | SSH back 38 s after the cut (uptime 17 s, boot id changed); **unit clock - PC clock = -7784.9 s** (the clock is NOT kept through a power cut; `NTPSynchronized=no`); the UI answers at uptime 36 s: `state=loaded`, nothing restored, no cue fired; beacon `ignored='clock out of step'`, `dropped.now` 2 -> 23 over 22 s, nothing applied. HTTP re-opened at 15:19:11: at the next sample (2 s) `running pos=118.73` against the PC's 118.33, `synced=True`, correction "radxa-06: started late", log `beacon run, joined 118s`, `q05 fired slot 6 +18147 ms` (the current picture), then `q06 +1 ms` at 120 s, `q07 +1 ms`, `q08 +1 ms` | pass: with its clock lost the unit plays nothing on its own; back in step 2 s after HTTP returns |
+| 42 | The PC reaches the unit directly (HTTP available from boot), beacon on (broadcast + unicast); power pulled at 15:26:21 (position 26 s) | SSH back 38 s after the cut (uptime 15 s); unit clock - PC clock = -8298.9 s; the UI answers at uptime 35 s: one sample `running pos=-426.59` (the first late start still used the stale clock offset: T0 in the future, nothing fires, beacon `clock out of step`), 2 s later `running pos=89.4` against the PC's 88.99, log `beacon run, joined 88s`, `q04 fired slot 5 +8360 ms` (the current picture), `q05 +1 ms` at 100 s, `q06 +2 ms` | pass: about 39 s from power-on to the right picture (63 s from the cut, of which about 25 s without power) |
+
+What the cold power cycle shows: (a) O2's risk did not materialise - a unit that loses power comes up with a clock
+hours off, judges the saved run out of range and stays `loaded`; it does not play a wrong position by itself; (b) the
+beacon alone cannot bring it back (by design) - it needs HTTP polls; (c) with HTTP it is back within seconds of its UI
+starting, about 40 s after power returns. Not covered: a unit whose saved clock happens to fall inside the show (it
+would need a boot or a clock save during the same show followed by a power cut, and no HTTP).
+
 Still open after the third round: the PICTURE on the glass and the LCD have not been watched by a person in any of
-these; a COLD power cycle (battery pulled - the RTC may not keep time, and then the restore position is not known) has
-not been done; rows 28/29 again show two triggers 2-3 s apart (the current picture on joining, then the next cue).
+these (the LCD was read later, rows 37-40); a COLD power cycle had not been done at that point (done later, rows 41-42);
+rows 28/29 again show two triggers 2-3 s apart (the current picture on joining, then the next cue).
 
 Observations (not beacon defects as far as the PM can tell; for the overseer):
 - **O1** In row 21 the current picture was triggered twice 0.4 s apart when the run arrived on a unit whose serial port was
@@ -145,7 +160,7 @@ Observations (not beacon defects as far as the PM can tell; for the overseer):
 Still not tested after the third round (Loop with a unit that is not heard was done in row 27): crafted
 reorder/duplicate/bad-MAC packets on hardware (unit tests and tests/test_beacon_e2e.py cover them over real UDP on the
 PC); `own demo`, `beacon NG`, `STOP wins`; a unit beaconed while its pictures are being written; more than one deaf unit;
-a weak link; a full-length run (36:34) with the beacon on; a cold power cycle.
+a weak link; a full-length run (36:34) with the beacon on.
 
 ## Finding F1 (operational, not a beacon bug)
 In PC-show mode (the Kunitachi Conductor) START is refused when any garment of the timeline is "not answering", forced
@@ -158,6 +173,5 @@ the START (HOLD/RESUME/SEEK/NEXT/STOP and rejoin), not the START itself.
 (The list written at the start of the day was mostly closed: real reboot rows 19/26/28/29, broadcast alone and
 `starts in Ns` row 14, `other PC` / `clock off` rows 19/23, Loop row 27; F1 is fixed by rows 30-36.)
 - Not exercised on hardware: the skip lines `no show` and `own demo`; `beacon NG: ...`; `beacon: STOP wins`.
-- More than one deaf unit; a weak-signal link rather than a clean cut; a full-length (36:34) run with the beacon ON; a
-  COLD power cycle (battery pulled).
+- More than one deaf unit; a weak-signal link rather than a clean cut; a full-length (36:34) run with the beacon ON.
 - The LCD itself: done for START / HOLD / RESUME / STOP (rows 37-40); the skip and refusal lines (`beacon skip: ...`, `beacon NG: ...`) have not been filmed. The THE SHOW / START-switch texts are recorded in rows 34/35 and were read on the PC's page by the PM.

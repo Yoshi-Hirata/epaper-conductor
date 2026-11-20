@@ -1,0 +1,404 @@
+15:16:53 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored=None drop={} | clock+0.8s up=7481s | PC run=None pos=None 06=on sent=0
+15:16:55 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored=None drop={} | clock+0.8s up=7483s | PC run=None pos=None 06=on sent=0
+15:16:57 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored=None drop={} | clock+0.8s up=7485s | PC run=None pos=None 06=on sent=0
+15:16:59 corrections: []
+##### COLD1 15:17:09: cold power cycle of radxa-06 mid-run; HTTP cut on the PC side (tunnel killed after START); the watcher re-opens it 40 s after the unit answers again
+15:17:10 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 5.0, "from_s": 0.0}
+tunnel killed 3112
+15:17:16 | unit running pos=1.94    synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7504s | PC run=running pos=1.51 06=on sent=30
+15:17:18 | unit running pos=3.93    synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7506s | PC run=running pos=3.46 06=on sent=40
+15:17:20 | unit running pos=5.95    synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7508s | PC run=running pos=5.45 06=on sent=49
+15:17:22 | unit running pos=7.88    synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7510s | PC run=running pos=7.47 06=OFF sent=59
+15:17:24 | unit running pos=9.95    synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7512s | PC run=running pos=9.47 06=OFF sent=68
+15:17:26 | unit running pos=11.96   synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7514s | PC run=running pos=11.46 06=OFF sent=77
+15:17:28 | unit running pos=13.87   synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7516s | PC run=running pos=13.46 06=OFF sent=87
+15:17:30 | unit running pos=15.95   synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7518s | PC run=running pos=15.45 06=OFF sent=96
+15:17:32 | unit running pos=17.95   synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7520s | PC run=running pos=17.45 06=OFF sent=98
+15:17:34 | unit running pos=19.89   synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7522s | PC run=running pos=19.47 06=OFF sent=99
+15:17:36 | unit running pos=21.91   synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7524s | PC run=running pos=21.46 06=OFF sent=101
+        + 06:17:36 cue 1572245670:2:q01 fired slot 2 +1 ms
+15:17:38 | unit running pos=23.93   synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7526s | PC run=running pos=23.47 06=OFF sent=103
+15:17:40 | unit running pos=25.95   synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7528s | PC run=running pos=25.48 06=OFF sent=105
+15:17:42 | unit running pos=27.93   synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7530s | PC run=running pos=27.46 06=OFF sent=107
+15:17:44 | unit running pos=29.87   synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7532s | PC run=running pos=29.48 06=OFF sent=109
+        + 06:17:44 keep-away stop (43 s since the last stop, 11.5 s before 1572245670:2:q02)
+15:17:46 | unit running pos=31.97   synced=True err=None | beacon applied=None/None ignored='in step' drop={} | clock+0.8s up=7535s | PC run=running pos=31.47 06=OFF sent=111
+15:17:48 <<< radxa-06 does not answer (power off?) | PC run=running pos=33.46 06=OFF sent=113
+15:17:52 | unit: no answer for 4 s | PC run=running pos=37.53 06=OFF sent=116
+15:17:57 | unit: no answer for 8 s | PC run=running pos=41.64 06=OFF sent=120
+15:18:01 | unit: no answer for 12 s | PC run=running pos=45.73 06=OFF sent=124
+15:18:05 | unit: no answer for 16 s | PC run=running pos=49.82 06=OFF sent=128
+15:18:09 | unit: no answer for 20 s | PC run=running pos=53.89 06=OFF sent=132
+15:18:13 | unit: no answer for 25 s | PC run=running pos=57.99 06=OFF sent=136
+15:18:17 | unit: no answer for 29 s | PC run=running pos=62.06 06=OFF sent=140
+15:18:21 | unit: no answer for 33 s | PC run=running pos=66.14 06=OFF sent=143
+15:18:25 | unit: no answer for 37 s | PC run=running pos=70.23 06=OFF sent=147
+15:18:29 >>> radxa-06 answers again after 38 s; boot id CHANGED; uptime 17 s; unit clock - PC clock = -7784.9 s; NTP synced: no
+15:18:29 | unit: ssh up, UI not answering yet (uptime 17 s) | PC run=running pos=74.32 06=OFF sent=151
+15:18:31 | unit: ssh up, UI not answering yet (uptime 18 s) | PC run=running pos=76.33 06=OFF sent=153
+15:18:33 | unit: ssh up, UI not answering yet (uptime 20 s) | PC run=running pos=78.31 06=OFF sent=155
+15:18:35 | unit: ssh up, UI not answering yet (uptime 22 s) | PC run=running pos=80.31 06=OFF sent=157
+15:18:37 | unit: ssh up, UI not answering yet (uptime 24 s) | PC run=running pos=82.33 06=OFF sent=159
+15:18:39 | unit: ssh up, UI not answering yet (uptime 26 s) | PC run=running pos=84.33 06=OFF sent=161
+15:18:41 | unit: ssh up, UI not answering yet (uptime 28 s) | PC run=running pos=86.33 06=OFF sent=163
+15:18:43 | unit: ssh up, UI not answering yet (uptime 30 s) | PC run=running pos=88.32 06=OFF sent=164
+15:18:45 | unit: ssh up, UI not answering yet (uptime 32 s) | PC run=running pos=90.32 06=OFF sent=166
+15:18:47 | unit: ssh up, UI not answering yet (uptime 34 s) | PC run=running pos=92.32 06=OFF sent=168
+15:18:49 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 2} | clock-7784.8s up=36s | PC run=running pos=94.33 06=OFF sent=170
+15:18:51 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 3} | clock-7784.8s up=38s | PC run=running pos=96.31 06=OFF sent=172
+15:18:53 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 5} | clock-7784.8s up=40s | PC run=running pos=98.31 06=OFF sent=174
+15:18:55 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 7} | clock-7784.8s up=42s | PC run=running pos=100.32 06=OFF sent=176
+15:18:57 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 9} | clock-7784.8s up=44s | PC run=running pos=102.31 06=OFF sent=178
+15:18:59 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 11} | clock-7784.8s up=46s | PC run=running pos=104.32 06=OFF sent=180
+15:19:01 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 13} | clock-7784.8s up=48s | PC run=running pos=106.31 06=OFF sent=181
+15:19:03 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 15} | clock-7784.8s up=50s | PC run=running pos=108.31 06=OFF sent=183
+15:19:05 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 17} | clock-7784.8s up=52s | PC run=running pos=110.32 06=OFF sent=185
+15:19:07 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 18} | clock-7784.8s up=54s | PC run=running pos=112.33 06=OFF sent=187
+15:19:09 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 20} | clock-7784.8s up=56s | PC run=running pos=114.31 06=OFF sent=189
+15:19:11 | unit loaded  pos=None    synced=False err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 22} | clock-7784.8s up=58s | PC run=running pos=116.32 06=OFF sent=191
+15:19:11 === HTTP path to radxa-06 re-opened (tunnel) ===
+15:19:13 | unit running pos=118.73  synced=True err=None | beacon applied=run/1 ignored='clock out of step' drop={'now': 23} | clock-7784.8s up=60s | PC run=running pos=118.33 06=on sent=193
+        + 04:09:27 start REMOTE
+        + 04:09:28 port /dev/ttyACM0
+        + 04:09:28 boards 3 from the show (1-2,4-60 dropped, not probed)
+        + 04:09:28 panels online: 1/1
+        + 04:09:28 beacon run, joined 118s
+        + 04:09:28 cue 1572245670:1:q05 fired slot 6 +18147 ms
+15:19:15 | unit running pos=120.98  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=62s | PC run=running pos=120.31 06=on sent=195
+        + 04:09:30 cue 1572245670:1:q06 fired slot 7 +1 ms
+15:19:17 | unit running pos=123.0   synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.9s up=64s | PC run=running pos=122.33 06=on sent=197
+15:19:19 | unit running pos=124.95  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=66s | PC run=running pos=124.33 06=on sent=198
+15:19:21 | unit running pos=126.78  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=68s | PC run=running pos=126.33 06=on sent=200
+15:19:23 | unit running pos=128.79  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=70s | PC run=running pos=128.33 06=on sent=202
+15:19:25 | unit running pos=130.73  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=72s | PC run=running pos=130.33 06=on sent=204
+15:19:27 | unit running pos=132.8   synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=74s | PC run=running pos=132.33 06=on sent=206
+15:19:29 | unit running pos=134.78  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=76s | PC run=running pos=134.33 06=on sent=208
+15:19:31 | unit running pos=136.78  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=78s | PC run=running pos=136.32 06=on sent=210
+15:19:33 | unit running pos=138.76  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=80s | PC run=running pos=138.32 06=on sent=212
+15:19:35 | unit running pos=140.72  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=82s | PC run=running pos=140.32 06=on sent=213
+        + 04:09:50 cue 1572245670:1:q07 fired slot 8 +1 ms
+15:19:37 | unit running pos=142.82  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=84s | PC run=running pos=142.33 06=on sent=215
+15:19:39 | unit running pos=144.86  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=86s | PC run=running pos=144.34 06=on sent=217
+15:19:41 | unit running pos=146.84  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=88s | PC run=running pos=146.33 06=on sent=219
+15:19:43 | unit running pos=148.79  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=90s | PC run=running pos=148.34 06=on sent=221
+15:19:45 | unit running pos=150.84  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=92s | PC run=running pos=150.34 06=on sent=223
+15:19:47 | unit running pos=152.77  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=94s | PC run=running pos=152.32 06=on sent=225
+15:19:49 | unit running pos=154.81  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=96s | PC run=running pos=154.33 06=on sent=227
+15:19:51 | unit running pos=156.78  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=98s | PC run=running pos=156.33 06=on sent=229
+15:19:53 | unit running pos=158.76  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=100s | PC run=running pos=158.34 06=on sent=230
+        + 04:10:08 keep-away stop (40 s since the last stop, 2.3 s before 1572245670:1:q08)
+15:19:55 | unit running pos=160.82  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=102s | PC run=running pos=160.34 06=on sent=232
+        + 04:10:10 cue 1572245670:1:q08 fired slot 9 +1 ms
+15:19:57 | unit running pos=162.85  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=104s | PC run=running pos=162.34 06=on sent=234
+15:19:59 | unit running pos=164.73  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=106s | PC run=running pos=164.33 06=on sent=236
+15:20:01 | unit running pos=166.82  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=108s | PC run=running pos=166.32 06=on sent=238
+15:20:03 | unit running pos=168.83  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=110s | PC run=running pos=168.34 06=on sent=240
+15:20:05 | unit running pos=170.85  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=112s | PC run=running pos=170.34 06=on sent=242
+15:20:07 | unit running pos=172.82  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=114s | PC run=running pos=172.32 06=on sent=244
+15:20:09 | unit running pos=174.77  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=116s | PC run=running pos=174.32 06=on sent=246
+15:20:11 | unit running pos=176.8   synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=118s | PC run=running pos=176.35 06=on sent=247
+15:20:13 | unit running pos=178.76  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=120s | PC run=running pos=178.34 06=on sent=249
+15:20:15 | unit running pos=180.79  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=122s | PC run=running pos=180.33 06=on sent=251
+        + 04:10:30 cue 1572245670:1:q09 fired slot 10 +2 ms
+15:20:17 | unit running pos=182.84  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=124s | PC run=running pos=182.34 06=on sent=253
+15:20:19 | unit running pos=184.85  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=126s | PC run=running pos=184.32 06=on sent=255
+15:20:21 | unit running pos=186.77  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=128s | PC run=running pos=186.34 06=on sent=257
+15:20:23 | unit running pos=188.81  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=130s | PC run=running pos=188.33 06=on sent=259
+15:20:25 | unit running pos=190.73  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=132s | PC run=running pos=190.34 06=on sent=261
+15:20:27 | unit running pos=192.76  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=134s | PC run=running pos=192.33 06=on sent=263
+15:20:29 | unit running pos=194.81  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=136s | PC run=running pos=194.34 06=on sent=265
+15:20:31 | unit running pos=196.92  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'now': 23} | clock-7784.8s up=138s | PC run=running pos=196.34 06=on sent=266
+15:20:32 corrections: ['15:19:12 radxa-06: started late']
+15:21:20 | unit loaded  pos=None    synced=False err=None | beacon applied=run/1 ignored='stop: not running or holding' drop={'now': 23} | clock-7784.9s up=188s | PC run=None pos=None 06=on sent=0
+15:21:22 | unit loaded  pos=None    synced=False err=None | beacon applied=run/1 ignored='stop: not running or holding' drop={'now': 23} | clock-7784.8s up=189s | PC run=None pos=None 06=on sent=0
+15:21:24 corrections: []
+##### COLD2 15:21:24: cold power cycle again; this time the PC reaches radxa-06 directly (HTTP available from boot), beacon on with broadcast + unicast
+15:21:25 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 5.0, "from_s": 0.0}
+15:21:30 | unit running pos=1.07    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 27, 'now': 23} | clock-7784.8s up=197s | PC run=running pos=0.65 06=on sent=52
+15:21:32 | unit running pos=3.03    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 37, 'now': 23} | clock-7784.8s up=199s | PC run=running pos=2.61 06=on sent=72
+15:21:34 | unit running pos=5.11    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 46, 'now': 23} | clock-7784.8s up=201s | PC run=running pos=4.61 06=on sent=90
+15:21:36 | unit running pos=6.93    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 55, 'now': 23} | clock-7784.8s up=203s | PC run=running pos=6.6 06=on sent=110
+15:21:38 | unit running pos=9.02    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 65, 'now': 23} | clock-7784.8s up=205s | PC run=running pos=8.6 06=on sent=128
+15:21:40 | unit running pos=11.01   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 73, 'now': 23} | clock-7784.8s up=207s | PC run=running pos=10.62 06=on sent=148
+15:21:42 | unit running pos=13.09   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 82, 'now': 23} | clock-7784.8s up=209s | PC run=running pos=12.6 06=on sent=166
+15:21:44 | unit running pos=15.05   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 90, 'now': 23} | clock-7784.8s up=211s | PC run=running pos=14.63 06=on sent=184
+15:21:46 | unit running pos=17.09   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 93, 'now': 23} | clock-7784.8s up=213s | PC run=running pos=16.61 06=on sent=194
+15:21:48 | unit running pos=19.0    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 95, 'now': 23} | clock-7784.8s up=215s | PC run=running pos=18.63 06=on sent=198
+15:21:50 | unit running pos=21.16   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 97, 'now': 23} | clock-7784.8s up=217s | PC run=running pos=20.63 06=on sent=202
+        + 04:12:05 cue 1572245670:3:q01 fired slot 2 +2 ms
+15:21:52 | unit running pos=23.12   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 99, 'now': 23} | clock-7784.8s up=219s | PC run=running pos=22.6 06=on sent=204
+15:21:54 | unit running pos=25.14   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 101, 'now': 23} | clock-7784.8s up=221s | PC run=running pos=24.62 06=on sent=208
+15:21:56 | unit running pos=27.11   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 103, 'now': 23} | clock-7784.8s up=223s | PC run=running pos=26.63 06=on sent=212
+15:21:58 | unit running pos=29.12   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 105, 'now': 23} | clock-7784.8s up=225s | PC run=running pos=28.63 06=on sent=216
+15:22:00 | unit running pos=31.31   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 107, 'now': 23} | clock-7784.8s up=227s | PC run=running pos=30.62 06=on sent=220
+        + 04:12:16 keep-away stop (40 s since the last stop, 8.7 s before 1572245670:3:q02)
+15:22:02 | unit running pos=33.05   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 108, 'now': 23} | clock-7784.8s up=229s | PC run=running pos=32.62 06=on sent=224
+15:22:04 | unit running pos=35.07   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 110, 'now': 23} | clock-7784.8s up=231s | PC run=running pos=34.62 06=on sent=228
+15:22:06 | unit running pos=37.05   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 112, 'now': 23} | clock-7784.8s up=233s | PC run=running pos=36.61 06=on sent=232
+15:22:08 | unit running pos=39.1    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 114, 'now': 23} | clock-7784.8s up=235s | PC run=running pos=38.62 06=on sent=236
+15:22:10 | unit running pos=41.08   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 116, 'now': 23} | clock-7784.8s up=237s | PC run=running pos=40.63 06=on sent=238
+        + 04:12:25 cue 1572245670:3:q02 fired slot 3 +1 ms
+15:22:12 | unit running pos=43.08   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 118, 'now': 23} | clock-7784.8s up=239s | PC run=running pos=42.61 06=on sent=242
+15:22:14 | unit running pos=45.03   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 120, 'now': 23} | clock-7784.8s up=241s | PC run=running pos=44.61 06=on sent=246
+15:22:16 | unit running pos=46.97   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 121, 'now': 23} | clock-7784.8s up=243s | PC run=running pos=46.61 06=on sent=250
+15:22:18 | unit running pos=49.0    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 123, 'now': 23} | clock-7784.8s up=245s | PC run=running pos=48.62 06=on sent=254
+15:22:20 | unit running pos=51.06   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 125, 'now': 23} | clock-7784.8s up=247s | PC run=running pos=50.61 06=on sent=258
+15:22:22 | unit running pos=53.12   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 127, 'now': 23} | clock-7784.8s up=249s | PC run=running pos=52.63 06=on sent=262
+15:22:24 | unit running pos=55.07   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 129, 'now': 23} | clock-7784.8s up=251s | PC run=running pos=54.63 06=on sent=266
+15:22:26 | unit running pos=57.08   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 131, 'now': 23} | clock-7784.8s up=253s | PC run=running pos=56.61 06=on sent=270
+15:22:28 | unit running pos=59.11   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 133, 'now': 23} | clock-7784.8s up=255s | PC run=running pos=58.61 06=on sent=272
+15:22:30 | unit running pos=61.1    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 135, 'now': 23} | clock-7784.8s up=257s | PC run=running pos=60.62 06=on sent=276
+        + 04:12:45 cue 1572245670:3:q03 fired slot 4 +2 ms
+15:22:32 | unit running pos=63.1    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 137, 'now': 23} | clock-7784.8s up=259s | PC run=running pos=62.61 06=on sent=280
+15:22:34 | unit running pos=65.03   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 138, 'now': 23} | clock-7784.8s up=261s | PC run=running pos=64.61 06=on sent=284
+15:22:36 | unit running pos=67.1    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 140, 'now': 23} | clock-7784.8s up=263s | PC run=running pos=66.63 06=on sent=288
+15:22:38 | unit running pos=69.08   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 142, 'now': 23} | clock-7784.8s up=265s | PC run=running pos=68.62 06=on sent=292
+15:22:40 | unit running pos=71.14   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 144, 'now': 23} | clock-7784.8s up=267s | PC run=running pos=70.61 06=on sent=296
+15:22:42 | unit running pos=73.1    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 146, 'now': 23} | clock-7784.8s up=269s | PC run=running pos=72.63 06=on sent=300
+        + 04:12:56 keep-away stop (40 s since the last stop, 8.7 s before 1572245670:3:q04)
+15:22:44 | unit running pos=75.04   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 148, 'now': 23} | clock-7784.8s up=271s | PC run=running pos=74.63 06=on sent=304
+15:22:46 | unit running pos=77.07   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 150, 'now': 23} | clock-7784.8s up=273s | PC run=running pos=76.64 06=on sent=306
+15:22:48 | unit running pos=79.01   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 151, 'now': 23} | clock-7784.8s up=275s | PC run=running pos=78.63 06=on sent=310
+15:22:50 | unit running pos=81.1    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 153, 'now': 23} | clock-7784.8s up=277s | PC run=running pos=80.61 06=on sent=314
+        + 04:13:05 cue 1572245670:3:q04 fired slot 5 +1 ms
+15:22:52 | unit running pos=83.1    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 155, 'now': 23} | clock-7784.8s up=279s | PC run=running pos=82.61 06=on sent=318
+15:22:54 | unit running pos=85.11   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 156, 'now': 23} | clock-7784.8s up=281s | PC run=running pos=84.62 06=on sent=322
+15:22:56 | unit running pos=87.11   synced=True err=None | beacon applied=run/1 ignored='in step' drop={'seq': 157, 'now': 23} | clock-7784.8s up=283s | PC run=running pos=86.64 06=on sent=326
+15:22:58 | unit running pos=89.01   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 159, 'now': 23} | clock-7784.8s up=285s | PC run=running pos=88.62 06=on sent=330
+15:23:00 | unit running pos=91.17   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 161, 'now': 23} | clock-7784.8s up=287s | PC run=running pos=90.64 06=on sent=334
+15:23:02 | unit running pos=93.06   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 163, 'now': 23} | clock-7784.8s up=289s | PC run=running pos=92.62 06=on sent=338
+15:23:04 | unit running pos=95.12   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 165, 'now': 23} | clock-7784.8s up=291s | PC run=running pos=94.63 06=on sent=340
+15:23:06 | unit running pos=97.05   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 167, 'now': 23} | clock-7784.8s up=293s | PC run=running pos=96.63 06=on sent=344
+15:23:08 | unit running pos=99.04   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 169, 'now': 23} | clock-7784.8s up=295s | PC run=running pos=98.64 06=on sent=348
+15:23:10 | unit running pos=101.05  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'seq': 169, 'now': 23} | clock-7784.8s up=297s | PC run=running pos=100.64 06=on sent=352
+        + 04:13:25 cue 1572245670:3:q05 fired slot 6 +1 ms
+15:23:12 | unit running pos=103.13  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 171, 'now': 23} | clock-7784.8s up=299s | PC run=running pos=102.64 06=on sent=356
+15:23:14 | unit running pos=105.04  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 173, 'now': 23} | clock-7784.8s up=301s | PC run=running pos=104.64 06=on sent=360
+15:23:16 | unit running pos=107.08  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'seq': 174, 'now': 23} | clock-7784.8s up=303s | PC run=running pos=106.64 06=on sent=364
+15:23:18 | unit running pos=109.02  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 176, 'now': 23} | clock-7784.8s up=305s | PC run=running pos=108.63 06=on sent=368
+15:23:20 | unit running pos=111.01  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 178, 'now': 23} | clock-7784.8s up=307s | PC run=running pos=110.63 06=on sent=372
+15:23:22 | unit running pos=113.09  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 180, 'now': 23} | clock-7784.8s up=309s | PC run=running pos=112.62 06=on sent=374
+        + 04:13:36 keep-away stop (40 s since the last stop, 8.7 s before 1572245670:3:q06)
+15:23:24 | unit running pos=115.07  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 182, 'now': 23} | clock-7784.8s up=311s | PC run=running pos=114.64 06=on sent=378
+15:23:26 | unit running pos=117.2   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 184, 'now': 23} | clock-7784.8s up=313s | PC run=running pos=116.63 06=on sent=382
+15:23:28 | unit running pos=119.13  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 186, 'now': 23} | clock-7784.8s up=315s | PC run=running pos=118.64 06=on sent=386
+15:23:30 | unit running pos=121.1   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 187, 'now': 23} | clock-7784.8s up=317s | PC run=running pos=120.64 06=on sent=390
+        + 04:13:45 cue 1572245670:3:q06 fired slot 7 +2 ms
+15:23:32 | unit running pos=123.04  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 189, 'now': 23} | clock-7784.8s up=319s | PC run=running pos=122.62 06=on sent=394
+15:23:34 | unit running pos=125.14  synced=True err=None | beacon applied=run/1 ignored='in step' drop={'seq': 190, 'now': 23} | clock-7784.8s up=321s | PC run=running pos=124.64 06=on sent=398
+15:23:36 | unit running pos=127.07  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 192, 'now': 23} | clock-7784.8s up=323s | PC run=running pos=126.62 06=on sent=402
+15:23:38 | unit running pos=129.1   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 194, 'now': 23} | clock-7784.8s up=325s | PC run=running pos=128.62 06=on sent=406
+15:23:40 | unit running pos=131.15  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 196, 'now': 23} | clock-7784.8s up=327s | PC run=running pos=130.65 06=on sent=408
+15:23:42 | unit running pos=133.08  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 198, 'now': 23} | clock-7784.8s up=329s | PC run=running pos=132.64 06=on sent=412
+15:23:44 | unit running pos=135.13  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 200, 'now': 23} | clock-7784.9s up=331s | PC run=running pos=134.64 06=on sent=416
+15:23:46 | unit running pos=137.13  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 202, 'now': 23} | clock-7784.8s up=333s | PC run=running pos=136.62 06=on sent=420
+15:23:48 | unit running pos=139.12  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 203, 'now': 23} | clock-7784.8s up=335s | PC run=running pos=138.63 06=on sent=424
+15:23:50 | unit running pos=141.08  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 205, 'now': 23} | clock-7784.8s up=337s | PC run=running pos=140.64 06=on sent=428
+        + 04:14:05 cue 1572245670:3:q07 fired slot 8 +1 ms
+15:23:52 | unit running pos=143.16  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 207, 'now': 23} | clock-7784.8s up=339s | PC run=running pos=142.64 06=on sent=432
+15:23:54 | unit running pos=145.12  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 209, 'now': 23} | clock-7784.8s up=341s | PC run=running pos=144.64 06=on sent=436
+15:23:56 | unit running pos=147.06  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 211, 'now': 23} | clock-7784.8s up=343s | PC run=running pos=146.63 06=on sent=440
+15:23:58 | unit running pos=149.08  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 213, 'now': 23} | clock-7784.8s up=345s | PC run=running pos=148.64 06=on sent=442
+15:24:00 | unit running pos=151.06  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 215, 'now': 23} | clock-7784.8s up=347s | PC run=running pos=150.64 06=on sent=446
+15:24:02 | unit running pos=153.17  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 217, 'now': 23} | clock-7784.8s up=349s | PC run=running pos=152.65 06=on sent=450
+        + 04:14:16 keep-away stop (40 s since the last stop, 8.7 s before 1572245670:3:q08)
+15:24:04 | unit running pos=155.08  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 219, 'now': 23} | clock-7784.8s up=351s | PC run=running pos=154.64 06=on sent=454
+15:24:06 | unit running pos=157.05  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 220, 'now': 23} | clock-7784.8s up=353s | PC run=running pos=156.65 06=on sent=458
+15:24:08 | unit running pos=158.98  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 222, 'now': 23} | clock-7784.8s up=355s | PC run=running pos=158.64 06=on sent=462
+15:24:10 | unit running pos=161.13  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 224, 'now': 23} | clock-7784.8s up=357s | PC run=running pos=160.64 06=on sent=466
+        + 04:14:25 cue 1572245670:3:q08 fired slot 9 +2 ms
+15:24:12 | unit running pos=163.13  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 226, 'now': 23} | clock-7784.8s up=359s | PC run=running pos=162.65 06=on sent=470
+15:24:14 | unit running pos=165.16  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 228, 'now': 23} | clock-7784.8s up=361s | PC run=running pos=164.64 06=on sent=474
+15:24:16 | unit running pos=167.09  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 230, 'now': 23} | clock-7784.8s up=363s | PC run=running pos=166.64 06=on sent=476
+15:24:18 | unit running pos=169.06  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 232, 'now': 23} | clock-7784.8s up=365s | PC run=running pos=168.64 06=on sent=480
+15:24:20 | unit running pos=171.06  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 234, 'now': 23} | clock-7784.8s up=367s | PC run=running pos=170.63 06=on sent=484
+15:24:22 | unit running pos=173.05  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 235, 'now': 23} | clock-7784.8s up=369s | PC run=running pos=172.64 06=on sent=488
+15:24:24 | unit running pos=175.09  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 237, 'now': 23} | clock-7784.8s up=371s | PC run=running pos=174.64 06=on sent=492
+15:24:26 | unit running pos=177.09  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 239, 'now': 23} | clock-7784.8s up=373s | PC run=running pos=176.65 06=on sent=496
+15:24:28 | unit running pos=179.1   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 241, 'now': 23} | clock-7784.8s up=375s | PC run=running pos=178.64 06=on sent=500
+15:24:30 | unit running pos=181.15  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 243, 'now': 23} | clock-7784.8s up=377s | PC run=running pos=180.63 06=on sent=504
+        + 04:14:45 cue 1572245670:3:q09 fired slot 10 +1 ms
+15:24:32 | unit running pos=183.1   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 245, 'now': 23} | clock-7784.8s up=379s | PC run=running pos=182.63 06=on sent=508
+15:24:34 | unit running pos=185.1   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 247, 'now': 23} | clock-7784.8s up=381s | PC run=running pos=184.65 06=on sent=510
+15:24:36 | unit running pos=187.17  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 249, 'now': 23} | clock-7784.8s up=383s | PC run=running pos=186.63 06=on sent=514
+15:24:38 | unit running pos=189.15  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 251, 'now': 23} | clock-7784.8s up=385s | PC run=running pos=188.65 06=on sent=518
+15:24:40 | unit running pos=191.12  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 253, 'now': 23} | clock-7784.8s up=387s | PC run=running pos=190.65 06=on sent=522
+15:24:42 | unit running pos=193.03  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 254, 'now': 23} | clock-7784.8s up=389s | PC run=running pos=192.64 06=on sent=526
+        + 04:14:56 keep-away stop (40 s since the last stop, 8.7 s before 1572245670:3:q10)
+15:24:44 | unit running pos=195.06  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 256, 'now': 23} | clock-7784.8s up=391s | PC run=running pos=194.64 06=on sent=530
+15:24:46 | unit running pos=197.12  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 258, 'now': 23} | clock-7784.8s up=393s | PC run=running pos=196.63 06=on sent=534
+15:24:48 | unit running pos=199.07  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 260, 'now': 23} | clock-7784.8s up=395s | PC run=running pos=198.64 06=on sent=538
+15:24:50 | unit running pos=201.06  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 262, 'now': 23} | clock-7784.8s up=397s | PC run=running pos=200.66 06=on sent=542
+        + 04:15:05 cue 1572245670:3:q10 fired slot 11 +1 ms
+15:24:52 | unit running pos=203.05  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 264, 'now': 23} | clock-7784.8s up=399s | PC run=running pos=202.65 06=on sent=544
+15:24:54 | unit running pos=204.97  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 266, 'now': 23} | clock-7784.8s up=401s | PC run=running pos=204.65 06=on sent=548
+15:24:56 | unit running pos=207.07  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 268, 'now': 23} | clock-7784.8s up=403s | PC run=running pos=206.65 06=on sent=552
+15:24:58 | unit running pos=209.14  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 270, 'now': 23} | clock-7784.8s up=405s | PC run=running pos=208.63 06=on sent=556
+15:25:00 | unit running pos=211.1   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 271, 'now': 23} | clock-7784.8s up=407s | PC run=running pos=210.65 06=on sent=560
+15:25:02 | unit running pos=213.13  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 272, 'now': 23} | clock-7784.8s up=409s | PC run=running pos=212.66 06=on sent=564
+15:25:04 | unit running pos=215.14  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 274, 'now': 23} | clock-7784.8s up=411s | PC run=running pos=214.65 06=on sent=568
+15:25:06 | unit running pos=217.12  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 276, 'now': 23} | clock-7784.8s up=413s | PC run=running pos=216.63 06=on sent=572
+15:25:08 | unit running pos=219.11  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 278, 'now': 23} | clock-7784.8s up=415s | PC run=running pos=218.66 06=on sent=576
+15:25:10 | unit running pos=221.15  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 280, 'now': 23} | clock-7784.8s up=417s | PC run=running pos=220.64 06=on sent=578
+        + 04:15:25 cue 1572245670:3:q11 fired slot 12 +1 ms
+15:25:12 | unit running pos=223.1   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 282, 'now': 23} | clock-7784.8s up=419s | PC run=running pos=222.65 06=on sent=582
+15:25:14 | unit running pos=225.06  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 284, 'now': 23} | clock-7784.8s up=421s | PC run=running pos=224.66 06=on sent=586
+15:25:16 | unit running pos=227.15  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 286, 'now': 23} | clock-7784.8s up=423s | PC run=running pos=226.64 06=on sent=590
+15:25:18 | unit running pos=229.12  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 287, 'now': 23} | clock-7784.8s up=425s | PC run=running pos=228.64 06=on sent=594
+15:25:20 | unit running pos=231.14  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 289, 'now': 23} | clock-7784.8s up=427s | PC run=running pos=230.64 06=on sent=598
+15:25:22 | unit running pos=233.04  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 291, 'now': 23} | clock-7784.8s up=429s | PC run=running pos=232.64 06=on sent=602
+        + 04:15:36 keep-away stop (40 s since the last stop, 8.6 s before 1572245670:3:q12)
+15:25:24 | unit running pos=235.15  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 293, 'now': 23} | clock-7784.8s up=431s | PC run=running pos=234.65 06=on sent=606
+15:25:26 | unit running pos=237.13  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 295, 'now': 23} | clock-7784.8s up=433s | PC run=running pos=236.64 06=on sent=610
+15:25:28 | unit running pos=239.12  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 297, 'now': 23} | clock-7784.8s up=435s | PC run=running pos=238.64 06=on sent=612
+15:25:30 | unit running pos=241.08  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 299, 'now': 23} | clock-7784.8s up=437s | PC run=running pos=240.66 06=on sent=616
+        + 04:15:45 cue 1572245670:3:q12 fired slot 13 +1 ms
+15:25:32 | unit running pos=243.2   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 301, 'now': 23} | clock-7784.8s up=439s | PC run=running pos=242.64 06=on sent=620
+15:25:34 | unit running pos=245.08  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 303, 'now': 23} | clock-7784.8s up=441s | PC run=running pos=244.64 06=on sent=624
+15:25:36 | unit running pos=247.11  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 304, 'now': 23} | clock-7784.8s up=443s | PC run=running pos=246.66 06=on sent=628
+15:25:38 | unit running pos=249.09  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 306, 'now': 23} | clock-7784.8s up=445s | PC run=running pos=248.65 06=on sent=632
+15:25:40 | unit running pos=251.11  synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 308, 'now': 23} | clock-7784.8s up=447s | PC run=running pos=250.64 06=on sent=636
+##### COLD2b 15:25:50: (COLD2 restarted - no power cycle happened in it.) cold power cycle; the PC reaches radxa-06 directly (HTTP available from boot), beacon on
+15:25:50 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 5.0, "from_s": 0.0}
+15:25:56 | unit running pos=2.1     synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 361, 'now': 23} | clock-7784.8s up=463s | PC run=running pos=1.45 06=on sent=742
+15:25:58 | unit running pos=3.84    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 368, 'now': 23} | clock-7784.8s up=465s | PC run=running pos=3.39 06=on sent=760
+15:26:00 corrections: []
+15:26:05 | unit running pos=10.7    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 399, 'now': 23} | clock-7784.8s up=472s | PC run=running pos=10.25 06=on sent=824
+15:26:07 | unit running pos=12.64   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 408, 'now': 23} | clock-7784.8s up=474s | PC run=running pos=12.21 06=on sent=842
+15:26:09 | unit running pos=14.66   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 418, 'now': 23} | clock-7784.8s up=476s | PC run=running pos=14.23 06=on sent=862
+15:26:11 | unit running pos=16.65   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 422, 'now': 23} | clock-7784.8s up=478s | PC run=running pos=16.22 06=on sent=872
+15:26:13 | unit running pos=18.62   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 424, 'now': 23} | clock-7784.8s up=480s | PC run=running pos=18.23 06=on sent=876
+15:26:15 | unit running pos=20.7    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 426, 'now': 23} | clock-7784.8s up=482s | PC run=running pos=20.21 06=on sent=880
+        + 04:16:30 cue 1572245670:4:q01 fired slot 2 +2 ms
+15:26:17 | unit running pos=22.75   synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 428, 'now': 23} | clock-7784.8s up=484s | PC run=running pos=22.21 06=on sent=884
+15:26:19 | unit running pos=24.7    synced=True err=None | beacon applied=run/1 ignored='seen already' drop={'seq': 429, 'now': 23} | clock-7784.8s up=486s | PC run=running pos=24.23 06=on sent=888
+15:26:21 <<< radxa-06 does not answer (power off?) | PC run=running pos=26.21 06=on sent=892
+15:26:25 | unit: no answer for 4 s | PC run=running pos=30.29 06=on sent=900
+15:26:29 | unit: no answer for 8 s | PC run=running pos=34.36 06=OFF sent=908
+15:26:33 | unit: no answer for 12 s | PC run=running pos=38.46 06=OFF sent=914
+15:26:37 | unit: no answer for 16 s | PC run=running pos=42.52 06=OFF sent=922
+15:26:41 | unit: no answer for 20 s | PC run=running pos=46.6 06=OFF sent=930
+15:26:46 | unit: no answer for 24 s | PC run=running pos=50.67 06=OFF sent=938
+15:26:50 | unit: no answer for 29 s | PC run=running pos=54.74 06=OFF sent=946
+15:26:54 | unit: no answer for 33 s | PC run=running pos=58.82 06=OFF sent=954
+15:26:58 | unit: no answer for 37 s | PC run=running pos=62.88 06=OFF sent=962
+15:27:02 >>> radxa-06 answers again after 38 s; boot id CHANGED; uptime 15 s; unit clock - PC clock = -8298.9 s; NTP synced: no
+15:27:02 | unit: ssh up, UI not answering yet (uptime 15 s) | PC run=running pos=66.96 06=OFF sent=968
+15:27:04 | unit: ssh up, UI not answering yet (uptime 17 s) | PC run=running pos=68.96 06=OFF sent=972
+15:27:06 | unit: ssh up, UI not answering yet (uptime 19 s) | PC run=running pos=70.99 06=OFF sent=976
+15:27:08 | unit: ssh up, UI not answering yet (uptime 21 s) | PC run=running pos=72.98 06=OFF sent=980
+15:27:10 | unit: ssh up, UI not answering yet (uptime 23 s) | PC run=running pos=74.96 06=OFF sent=984
+15:27:12 | unit: ssh up, UI not answering yet (uptime 25 s) | PC run=running pos=76.96 06=OFF sent=988
+15:27:14 | unit: ssh up, UI not answering yet (uptime 27 s) | PC run=running pos=78.97 06=OFF sent=992
+15:27:16 | unit: ssh up, UI not answering yet (uptime 29 s) | PC run=running pos=80.97 06=OFF sent=996
+15:27:18 | unit: ssh up, UI not answering yet (uptime 31 s) | PC run=running pos=82.98 06=OFF sent=998
+15:27:20 | unit: ssh up, UI not answering yet (uptime 33 s) | PC run=running pos=84.97 06=OFF sent=1002
+15:27:22 | unit running pos=-426.59 synced=True err=None | beacon applied=None/None ignored='clock out of step' drop={'now': 2} | clock-8298.7s up=35s | PC run=running pos=86.98 06=OFF sent=1006
+15:27:24 | unit running pos=89.4    synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 2, 'now': 2} | clock-8298.7s up=37s | PC run=running pos=88.99 06=on sent=1010
+        + 04:09:04 port /dev/ttyACM0
+        + 04:09:04 boards 3 from the show (1-2,4-60 dropped, not probed)
+        + 04:09:04 panels online: 1/1
+        + 04:09:04 beacon run, joined 88s
+        + 04:09:05 cue 1572245670:1:q04 fired slot 5 +8360 ms
+15:27:26 | unit running pos=91.48   synced=True err=None | beacon applied=run/3 ignored='in step' drop={'seq': 2, 'now': 2} | clock-8298.8s up=39s | PC run=running pos=90.97 06=on sent=1014
+15:27:28 | unit running pos=93.46   synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 4, 'now': 2} | clock-8298.7s up=41s | PC run=running pos=92.99 06=on sent=1018
+15:27:30 | unit running pos=95.41   synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 6, 'now': 2} | clock-8298.8s up=43s | PC run=running pos=94.99 06=on sent=1022
+15:27:32 | unit running pos=97.44   synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 8, 'now': 2} | clock-8298.7s up=45s | PC run=running pos=96.98 06=on sent=1026
+15:27:34 | unit running pos=99.37   synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 10, 'now': 2} | clock-8298.8s up=47s | PC run=running pos=98.99 06=on sent=1030
+15:27:36 | unit running pos=101.45  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 12, 'now': 2} | clock-8298.8s up=49s | PC run=running pos=100.99 06=on sent=1032
+        + 04:09:16 cue 1572245670:1:q05 fired slot 6 +1 ms
+15:27:38 | unit running pos=103.45  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 14, 'now': 2} | clock-8298.8s up=51s | PC run=running pos=102.99 06=on sent=1036
+15:27:40 | unit running pos=105.48  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 16, 'now': 2} | clock-8298.7s up=53s | PC run=running pos=104.99 06=on sent=1040
+15:27:42 | unit running pos=107.42  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 18, 'now': 2} | clock-8298.7s up=55s | PC run=running pos=106.97 06=on sent=1044
+15:27:44 | unit running pos=109.43  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 19, 'now': 2} | clock-8298.8s up=57s | PC run=running pos=108.99 06=on sent=1048
+15:27:46 | unit running pos=111.37  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 21, 'now': 2} | clock-8298.7s up=59s | PC run=running pos=110.98 06=on sent=1052
+15:27:48 | unit running pos=113.39  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 23, 'now': 2} | clock-8298.8s up=61s | PC run=running pos=112.98 06=on sent=1056
+15:27:50 | unit running pos=115.48  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 25, 'now': 2} | clock-8298.8s up=63s | PC run=running pos=114.98 06=on sent=1060
+15:27:52 | unit running pos=117.43  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 27, 'now': 2} | clock-8298.8s up=65s | PC run=running pos=116.98 06=on sent=1064
+15:27:54 | unit running pos=119.34  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 29, 'now': 2} | clock-8298.7s up=67s | PC run=running pos=118.98 06=on sent=1066
+15:27:56 | unit running pos=121.42  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 31, 'now': 2} | clock-8298.8s up=69s | PC run=running pos=120.99 06=on sent=1070
+        + 04:09:36 cue 1572245670:1:q06 fired slot 7 +2 ms
+15:27:58 | unit running pos=123.44  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 33, 'now': 2} | clock-8298.8s up=71s | PC run=running pos=123.0 06=on sent=1074
+15:28:00 | unit running pos=125.41  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 35, 'now': 2} | clock-8298.7s up=73s | PC run=running pos=124.99 06=on sent=1078
+15:28:02 | unit running pos=127.4   synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 36, 'now': 2} | clock-8298.7s up=75s | PC run=running pos=127.0 06=on sent=1082
+15:28:04 | unit running pos=129.4   synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 38, 'now': 2} | clock-8298.7s up=77s | PC run=running pos=128.99 06=on sent=1086
+        + 04:09:45 keep-away stop (41 s since the last stop, 11.5 s before 1572245670:1:q07)
+15:28:06 | unit running pos=131.44  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 40, 'now': 2} | clock-8298.7s up=79s | PC run=running pos=131.0 06=on sent=1090
+15:28:08 | unit running pos=133.47  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 42, 'now': 2} | clock-8298.8s up=81s | PC run=running pos=132.98 06=on sent=1094
+15:28:10 | unit running pos=135.47  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 44, 'now': 2} | clock-8298.7s up=83s | PC run=running pos=134.98 06=on sent=1098
+15:28:12 | unit running pos=137.33  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 46, 'now': 2} | clock-8298.7s up=85s | PC run=running pos=137.0 06=on sent=1100
+15:28:14 | unit running pos=139.46  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 48, 'now': 2} | clock-8298.7s up=87s | PC run=running pos=138.98 06=on sent=1104
+15:28:16 | unit running pos=141.45  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 50, 'now': 2} | clock-8298.8s up=89s | PC run=running pos=141.0 06=on sent=1108
+        + 04:09:56 cue 1572245670:1:q07 fired slot 8 +1 ms
+15:28:18 | unit running pos=143.48  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 52, 'now': 2} | clock-8298.8s up=91s | PC run=running pos=142.98 06=on sent=1112
+15:28:20 | unit running pos=145.46  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 53, 'now': 2} | clock-8298.8s up=93s | PC run=running pos=144.99 06=on sent=1116
+15:28:22 | unit running pos=147.51  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 55, 'now': 2} | clock-8298.7s up=95s | PC run=running pos=147.0 06=on sent=1120
+15:28:24 | unit running pos=149.48  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 57, 'now': 2} | clock-8298.8s up=97s | PC run=running pos=149.0 06=on sent=1124
+15:28:26 | unit running pos=151.48  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 59, 'now': 2} | clock-8298.7s up=99s | PC run=running pos=151.0 06=on sent=1128
+15:28:28 | unit running pos=153.45  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 61, 'now': 2} | clock-8298.7s up=101s | PC run=running pos=153.0 06=on sent=1132
+15:28:30 | unit running pos=155.51  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 62, 'now': 2} | clock-8298.8s up=103s | PC run=running pos=154.98 06=on sent=1134
+15:28:32 | unit running pos=157.36  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 64, 'now': 2} | clock-8298.7s up=105s | PC run=running pos=157.0 06=on sent=1138
+15:28:34 | unit running pos=159.41  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 66, 'now': 2} | clock-8298.7s up=107s | PC run=running pos=159.0 06=on sent=1142
+15:28:36 | unit running pos=161.45  synced=True err=None | beacon applied=run/3 ignored='in step' drop={'seq': 67, 'now': 2} | clock-8298.7s up=109s | PC run=running pos=161.0 06=on sent=1146
+        + 04:10:16 cue 1572245670:1:q08 fired slot 9 +2 ms
+15:28:38 | unit running pos=163.49  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 68, 'now': 2} | clock-8298.8s up=111s | PC run=running pos=163.0 06=on sent=1150
+15:28:40 | unit running pos=165.49  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 70, 'now': 2} | clock-8298.8s up=113s | PC run=running pos=164.98 06=on sent=1154
+15:28:42 | unit running pos=167.38  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 72, 'now': 2} | clock-8298.7s up=115s | PC run=running pos=167.0 06=on sent=1158
+15:28:44 | unit running pos=169.44  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 74, 'now': 2} | clock-8298.7s up=117s | PC run=running pos=169.0 06=on sent=1162
+        + 04:10:25 keep-away stop (40 s since the last stop, 11.4 s before 1572245670:1:q09)
+15:28:46 | unit running pos=171.49  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 76, 'now': 2} | clock-8298.8s up=119s | PC run=running pos=171.0 06=on sent=1166
+15:28:48 | unit running pos=173.44  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 78, 'now': 2} | clock-8298.7s up=121s | PC run=running pos=172.99 06=on sent=1168
+15:28:50 | unit running pos=175.49  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 80, 'now': 2} | clock-8298.8s up=123s | PC run=running pos=175.01 06=on sent=1172
+15:28:52 | unit running pos=177.44  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 82, 'now': 2} | clock-8298.8s up=125s | PC run=running pos=177.0 06=on sent=1176
+15:28:54 | unit running pos=179.42  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 83, 'now': 2} | clock-8298.7s up=127s | PC run=running pos=179.01 06=on sent=1180
+15:28:56 | unit running pos=181.47  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 85, 'now': 2} | clock-8298.8s up=129s | PC run=running pos=181.01 06=on sent=1184
+        + 04:10:36 cue 1572245670:1:q09 fired slot 10 +2 ms
+15:28:58 | unit running pos=183.47  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 87, 'now': 2} | clock-8298.8s up=131s | PC run=running pos=183.01 06=on sent=1188
+15:29:00 | unit running pos=185.45  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 89, 'now': 2} | clock-8298.8s up=133s | PC run=running pos=185.0 06=on sent=1192
+15:29:02 | unit running pos=187.47  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 91, 'now': 2} | clock-8298.7s up=135s | PC run=running pos=187.0 06=on sent=1196
+15:29:04 | unit running pos=189.43  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 93, 'now': 2} | clock-8298.7s up=137s | PC run=running pos=189.0 06=on sent=1200
+15:29:06 | unit running pos=191.47  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 95, 'now': 2} | clock-8298.8s up=139s | PC run=running pos=191.0 06=on sent=1202
+15:29:08 | unit running pos=193.39  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 97, 'now': 2} | clock-8298.8s up=141s | PC run=running pos=192.99 06=on sent=1206
+15:29:10 | unit running pos=195.48  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 99, 'now': 2} | clock-8298.7s up=143s | PC run=running pos=195.01 06=on sent=1210
+15:29:12 | unit running pos=197.45  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 101, 'now': 2} | clock-8298.8s up=145s | PC run=running pos=196.99 06=on sent=1214
+15:29:14 | unit running pos=199.46  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 102, 'now': 2} | clock-8298.7s up=147s | PC run=running pos=199.0 06=on sent=1218
+15:29:16 | unit running pos=201.46  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 104, 'now': 2} | clock-8298.8s up=149s | PC run=running pos=200.99 06=on sent=1222
+        + 04:10:56 cue 1572245670:1:q10 fired slot 11 +2 ms
+15:29:18 | unit running pos=203.5   synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 106, 'now': 2} | clock-8298.7s up=151s | PC run=running pos=203.01 06=on sent=1226
+15:29:20 | unit running pos=205.48  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 108, 'now': 2} | clock-8298.7s up=153s | PC run=running pos=205.01 06=on sent=1230
+15:29:22 | unit running pos=207.48  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 110, 'now': 2} | clock-8298.7s up=155s | PC run=running pos=207.01 06=on sent=1234
+15:29:24 | unit running pos=209.47  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 112, 'now': 2} | clock-8298.8s up=157s | PC run=running pos=209.0 06=on sent=1236
+        + 04:11:05 keep-away stop (40 s since the last stop, 11.4 s before 1572245670:1:q11)
+15:29:26 | unit running pos=211.46  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 114, 'now': 2} | clock-8298.7s up=159s | PC run=running pos=211.02 06=on sent=1240
+15:29:28 | unit running pos=213.42  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 116, 'now': 2} | clock-8298.7s up=161s | PC run=running pos=212.99 06=on sent=1244
+15:29:30 | unit running pos=215.39  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 117, 'now': 2} | clock-8298.8s up=163s | PC run=running pos=214.99 06=on sent=1248
+15:29:32 | unit running pos=217.48  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 119, 'now': 2} | clock-8298.8s up=165s | PC run=running pos=217.01 06=on sent=1252
+15:29:34 | unit running pos=219.52  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 121, 'now': 2} | clock-8298.8s up=167s | PC run=running pos=218.99 06=on sent=1256
+15:29:36 | unit running pos=221.44  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 123, 'now': 2} | clock-8298.7s up=169s | PC run=running pos=221.0 06=on sent=1260
+        + 04:11:16 cue 1572245670:1:q11 fired slot 12 +2 ms
+15:29:38 | unit running pos=223.38  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 124, 'now': 2} | clock-8298.8s up=171s | PC run=running pos=223.02 06=on sent=1264
+15:29:40 | unit running pos=225.5   synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 126, 'now': 2} | clock-8298.8s up=173s | PC run=running pos=225.01 06=on sent=1268
+15:29:42 | unit running pos=227.49  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 128, 'now': 2} | clock-8298.7s up=175s | PC run=running pos=227.0 06=on sent=1270
+15:29:44 | unit running pos=229.48  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 130, 'now': 2} | clock-8298.8s up=177s | PC run=running pos=229.02 06=on sent=1274
+15:29:46 | unit running pos=231.46  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 132, 'now': 2} | clock-8298.8s up=179s | PC run=running pos=231.01 06=on sent=1278
+15:29:48 | unit running pos=233.5   synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 134, 'now': 2} | clock-8298.7s up=181s | PC run=running pos=233.02 06=on sent=1282
+15:29:50 | unit running pos=235.46  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 135, 'now': 2} | clock-8298.8s up=183s | PC run=running pos=235.01 06=on sent=1286
+15:29:52 | unit running pos=237.51  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 137, 'now': 2} | clock-8298.8s up=185s | PC run=running pos=237.01 06=on sent=1290
+15:29:54 | unit running pos=239.49  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 139, 'now': 2} | clock-8298.8s up=187s | PC run=running pos=239.02 06=on sent=1294
+15:29:56 | unit running pos=241.49  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 141, 'now': 2} | clock-8298.7s up=189s | PC run=running pos=241.01 06=on sent=1298
+        + 04:11:36 cue 1572245670:1:q12 fired slot 13 +1 ms
+15:29:58 | unit running pos=243.51  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 143, 'now': 2} | clock-8298.8s up=191s | PC run=running pos=243.01 06=on sent=1302
+15:30:00 | unit running pos=245.54  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 145, 'now': 2} | clock-8298.7s up=193s | PC run=running pos=245.0 06=on sent=1304
+15:30:02 | unit running pos=247.42  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 147, 'now': 2} | clock-8298.8s up=195s | PC run=running pos=247.0 06=on sent=1308
+15:30:04 | unit running pos=249.42  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 149, 'now': 2} | clock-8298.8s up=197s | PC run=running pos=249.02 06=on sent=1312
+        + 04:11:45 keep-away stop (40 s since the last stop, 11.4 s before 1572245670:1:q13)
+15:30:06 | unit running pos=251.4   synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 150, 'now': 2} | clock-8298.7s up=199s | PC run=running pos=251.02 06=on sent=1316
+15:30:08 | unit running pos=253.47  synced=True err=None | beacon applied=run/3 ignored='in step' drop={'seq': 151, 'now': 2} | clock-8298.7s up=201s | PC run=running pos=253.01 06=on sent=1320
+15:30:10 | unit running pos=255.39  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 153, 'now': 2} | clock-8298.8s up=203s | PC run=running pos=255.0 06=on sent=1324
+15:30:12 | unit running pos=257.43  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 155, 'now': 2} | clock-8298.8s up=205s | PC run=running pos=257.0 06=on sent=1328
+15:30:14 | unit running pos=259.45  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 157, 'now': 2} | clock-8298.7s up=207s | PC run=running pos=259.02 06=on sent=1332
+15:30:16 | unit running pos=261.49  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 159, 'now': 2} | clock-8298.8s up=209s | PC run=running pos=261.02 06=on sent=1336
+        + 04:11:56 cue 1572245670:1:q13 fired slot 14 +3 ms
+15:30:18 | unit running pos=263.45  synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 161, 'now': 2} | clock-8298.8s up=211s | PC run=running pos=263.02 06=on sent=1338
+15:30:20 | unit stopped pos=None    synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 164, 'now': 2} | clock-8298.7s up=213s | PC run=running pos=265.01 06=on sent=1342
+15:30:22 | unit stopped pos=None    synced=True err=None | beacon applied=run/3 ignored='seen already' drop={'seq': 173, 'now': 2} | clock-8298.7s up=215s | PC run=None pos=None 06=on sent=1360
