@@ -811,7 +811,8 @@ WIFI_ROWS = 5                # profile rows that fit between now and status
 
 def wifi_screen(ssid: str, info: str, rows: "list[tuple[str, str, bool]]",
                 choice: int, phase: str, status: str = "",
-                locked: bool = False, host: str | None = None) -> Image.Image:
+                locked: bool = False, host: str | None = None,
+                hint: str | None = None) -> Image.Image:
     """WIFI: the network now, the unit's wireless profiles (ui/wifi.py).
 
     `ssid`/`info` are Wifi.current() - what the unit is on and 'IP ...
@@ -819,6 +820,8 @@ def wifi_screen(ssid: str, info: str, rows: "list[tuple[str, str, bool]]",
     one marked and `choice` highlighted like a menu row; `phase` is one of
     ui.wifi's IDLE/CONNECTING/DONE/FAILED/LOCKED and `status` the line
     under the list (Wifi.status_text()), red when it starts with ERROR.
+    `hint` (Wifi.hint()) replaces the keys' hint while the reconnect
+    watchdog's `con up` runs - "reconnecting R2.net - KEY2 back".
     """
     image, draw = _blank()
     word, color = _WIFI_STATUS.get(phase, (phase.upper(), DIM))
@@ -871,7 +874,7 @@ def wifi_screen(ssid: str, info: str, rows: "list[tuple[str, str, bool]]",
         hint = "buttons locked"
     elif phase == "connecting":
         hint = "connecting - KEY2 menu"
-    else:
+    elif not hint:
         hint = "hold KEY1 = switch  KEY2 back"
     _hint(draw, hint)
     return image

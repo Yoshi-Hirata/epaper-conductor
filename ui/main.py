@@ -578,6 +578,11 @@ def main() -> int:
     ap.add_argument("--no-beacon", action="store_true",
                     help="do not listen for the Conductor's UDP beacon")
     ap.add_argument("--beacon-port", type=int, default=BEACON_PORT)
+    # The Wi-Fi reconnect watchdog (ui/wifi.py, 2026-11-20): on by
+    # default; this turns it off on a unit where it misbehaves.
+    ap.add_argument("--no-wifi-watchdog", action="store_true",
+                    help="do not `nmcli con up` the last network again "
+                         "after 30 s with no Wi-Fi connection at all")
     ap.add_argument("--max-ticks", type=int,
                     help="exit after N UI ticks (testing)")
     args = ap.parse_args()
@@ -622,8 +627,9 @@ def main() -> int:
     boardinfo = BoardInfo(versions, port=args.port, cache=runner)
     updater.usb_board_sink = runner.note_usb_board
     # WIFI's cache (ui/wifi.py): its reader thread asks nmcli every ~10 s;
-    # the screen and /status only ever read the cache.
-    wifi = Wifi()
+    # the screen and /status only ever read the cache. Its watchdog's
+    # lines go to the runner's log, the one the REMOTE screen shows.
+    wifi = Wifi(watchdog=not args.no_wifi_watchdog, notify=runner.emit)
     wifi.start_reader()
     # EXHIBITION's cache (ui/exhibition.py): its reader asks the Conductor
     # on 127.0.0.1:8765 every ~30 s (~5 s while the screen is open); the

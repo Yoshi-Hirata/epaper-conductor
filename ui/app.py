@@ -743,9 +743,14 @@ class App:
         wifi = self.wifi
         if wifi.busy:
             # The switch keeps running on its thread; only KEY2 (back to
-            # the menu) is heard while it does.
+            # the menu) is heard while it does. While it is the reconnect
+            # watchdog's try a held KEY1 is refused out loud, not ignored
+            # (review of 9858e7a).
             if event == "key2":
                 self.screen = Screen.MENU
+                self._dirty = True
+            elif event == "key1_hold" and wifi.hint() is not None:
+                wifi.refuse_reconnecting()
                 self._dirty = True
             return
         if wifi.pending is not None:
@@ -772,8 +777,8 @@ class App:
             note = self._wifi_locked()
             if note is not None:
                 wifi.refuse(note)
-            else:
-                wifi.switch()
+            elif not wifi.switch():
+                wifi.refuse_unstarted()     # said, not dropped
         elif event == "key2":
             wifi.reset()
             self.screen = Screen.MENU
@@ -1593,7 +1598,8 @@ class App:
             ssid, info = wifi.current()
             return render.wifi_screen(
                 ssid, info, wifi.rows(), wifi.choice, wifi.phase,
-                status=wifi.status_text(), locked=self.locked, host=self.host)
+                status=wifi.status_text(), locked=self.locked, host=self.host,
+                hint=wifi.hint())
         if self.screen is Screen.EXHIBITION:
             ex = self.exhibition
             if ex.page == EX_BACKUPS and ex.available:

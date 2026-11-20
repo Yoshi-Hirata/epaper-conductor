@@ -102,7 +102,9 @@ a show.
     nulls when unknown. It is a cache the unit's own reader thread
     fills every ~10 s; nothing is asked of nmcli on this thread.
     "pending" is {"profile", "in_s"} while a deferred switch (below)
-    counts down, else null
+    counts down, else null; "reconnect" is the reconnect watchdog's
+    {"attempts", "last", "last_ago_s", "last_error"} this boot (ui/wifi.py,
+    2026-11-20), null with --no-wifi-watchdog or without a wifi worker
 
     /status also carries "beacon": the one-way UDP listener's counters
     (ui/beacon.py, docs/BEACON.md section 3), null with --no-beacon. A
@@ -351,21 +353,38 @@ class _Handler(BaseHTTPRequestHandler):
         if note is not None:
             return self._answer(409, {"error": note})
         if wifi.busy:
-            return self._answer(409, {"error": "a switch is in flight"})
+            # A switch, or the reconnect watchdog's try ("reconnecting
+            # R2.net - try again in a moment").
+            return self._answer(409, {"error": wifi.busy_note()
+                                      or "a switch is in flight"})
         if profile not in wifi.names():
             if wifi.read_state == "none":
                 return self._answer(409, {"error": "the wifi profiles have "
                                                    "not been read yet"})
             return self._answer(404, {"error": f"unknown profile: {profile}"})
         if after > 0:
-            wifi.schedule(profile, after, allowed=self.agent.wifi_refusal)
+            # schedule() checks busy and reserves in one step: the
+            # watchdog claiming the radio since the check above is a 409
+            # here, not a 200 the timer later skips (review of 3f43a10).
+            # Its own answer, this call's - never a field another request
+            # may have rewritten meanwhile (review of 8c01839).
+            scheduled = wifi.schedule(profile, after,
+                                      allowed=self.agent.wifi_refusal)
+            if not scheduled:
+                if scheduled.busy:
+                    return self._answer(409, {"error": scheduled.reason})
+                return self._answer(500, {"error": "the switch could not be "
+                                                   "scheduled on this unit"})
             return self._answer(200, {"scheduled": True, "after_s": after,
                                       "profile": profile})
         wifi.cancel_pending()
         if not wifi.switch_to(profile):
-            # The name is known (checked above), so False is a switch
-            # that started between the busy check and this claim.
-            return self._answer(409, {"error": "a switch is in flight"})
+            # Nothing started: a switch or the watchdog's try claimed
+            # the radio between the busy check and this claim (or the
+            # thread would not start) - never a 200 for that (review of
+            # 9858e7a).
+            return self._answer(409, {"error": wifi.busy_note()
+                                      or "the switch did not start"})
         return self._answer(200, {"scheduled": False, "profile": profile,
                                   "phase": wifi.phase,
                                   "wifi": self.agent._wifi()})
@@ -626,11 +645,12 @@ class Agent:
         # The reader's cache, copied - never a question to nmcli here,
         # and never an exception out of /status.
         if self.wifi is None:
-            return dict.fromkeys(WIFI_FIELDS + ("pending",))
+            return dict.fromkeys(WIFI_FIELDS + ("pending", "reconnect"))
         try:
-            return dict(self.wifi.snapshot(), pending=self.wifi.pending_info())
+            return dict(self.wifi.snapshot(), pending=self.wifi.pending_info(),
+                        reconnect=self.wifi.reconnect_info())
         except Exception:               # noqa: BLE001 - nulls are an answer
-            return dict.fromkeys(WIFI_FIELDS + ("pending",))
+            return dict.fromkeys(WIFI_FIELDS + ("pending", "reconnect"))
 
     def wifi_refusal(self) -> "str | None":
         """Why a Wi-Fi switch must not happen right now - the WIFI row's

@@ -45,7 +45,10 @@ class FakeNmcli:
     NetworkManager does, leaves the device disconnected unless
     `keep_on_fail`; `hang` names profiles whose `con up` raises the
     subprocess timeout. `release` holds every `con up` so a test can
-    look at the screen while a switch is in flight.
+    look at the screen while a switch is in flight. The device's
+    GENERAL.STATE follows `active` (100 activated / 30 disconnected)
+    unless `nm_state` pins it; a profile's "autoconnect" (default yes)
+    and "priority" (default 0) are the watchdog's.
     """
 
     def __init__(self, active=ROUTER, fail=(), hang=(), keep_on_fail=False,
@@ -59,6 +62,7 @@ class FakeNmcli:
         self.hang = set(hang)
         self.keep_on_fail = keep_on_fail
         self.signal = signal
+        self.nm_state = None        # e.g. "60 (need-auth)"; None: follows active
         self.broken = None          # a message: every read fails with it
         self.break_reads_after_up = 0   # ...or this many reads after a con up
         self._broken_left = 0
@@ -84,8 +88,9 @@ class FakeNmcli:
             self._broken_left -= 1
             return 8, "Error: NetworkManager is not running."
         if args[-2:] == ["con", "show"]:
-            rows = [f"{name}:802-11-wireless:{'yes' if name == self.active else 'no'}:yes"
-                    for name in self.profiles]
+            rows = [f"{name}:802-11-wireless:{'yes' if name == self.active else 'no'}:"
+                    f"{p.get('autoconnect', 'yes')}"
+                    for name, p in self.profiles.items()]
             rows.insert(1, "Wired connection 1:802-3-ethernet:no:yes")
             return 0, "\n".join(rows)
         if args[-3:-1] == ["con", "show"]:
@@ -93,13 +98,23 @@ class FakeNmcli:
             if name not in self.profiles:
                 return 10, f"Error: {name} - no such connection profile."
             return 0, (f"802-11-wireless.mode:{self.profiles[name]['mode']}\n"
-                       f"802-11-wireless.ssid:{name}")
+                       f"802-11-wireless.ssid:{name}\n"
+                       "connection.autoconnect-priority:"
+                       f"{self.profiles[name].get('priority', 0)}")
+        state = self.nm_state or ("100 (connected)" if self.active
+                                  else "30 (disconnected)")
+        if args[-3:] == ["dev", "show", "wlan0"]:
+            # The watchdog's last look before `con up`: the state only.
+            assert args[3] == "GENERAL.STATE"
+            return 0, f"GENERAL.STATE:{state}"
         if args[-2:] == ["dev", "show"]:
             wifi = self.profiles.get(self.active) if self.active else None
             return 0, "\n".join([
                 "GENERAL.DEVICE:lo", "GENERAL.TYPE:loopback",
+                "GENERAL.STATE:100 (connected (externally))",
                 "GENERAL.CONNECTION:--", "IP4.ADDRESS[1]:127.0.0.1/8", "",
                 "GENERAL.DEVICE:wlan0", "GENERAL.TYPE:wifi",
+                f"GENERAL.STATE:{state}",
                 f"GENERAL.CONNECTION:{self.active or '--'}",
                 f"IP4.ADDRESS[1]:{wifi['ip']}/24" if wifi else ""])
         if "wifi" in args:
@@ -701,15 +716,19 @@ def test_status_serves_the_wifi_cache_and_never_asks_nmcli():
     try:
         code, status = call(agent, "/status")
         assert code == 200
-        # nothing read yet: nulls (and no deferred switch pending)
-        assert status["wifi"] == dict(WIFI_BLANK, pending=None)
+        # nothing read yet: nulls (and no deferred switch pending, and
+        # no reconnect tried by the watchdog)
+        idle = {"attempts": 0, "last": None, "last_ago_s": None,
+                "last_error": None}
+        assert status["wifi"] == dict(WIFI_BLANK, pending=None, reconnect=idle)
         assert fake.calls == []                 # /status asked nothing
         wifi.poll()
         before = len(fake.calls)
         code, status = call(agent, "/status")
         assert status["wifi"] == {"ssid": ROUTER, "ip": "192.168.51.103",
                                   "signal": 72, "mode": "client",
-                                  "profile": ROUTER, "pending": None}
+                                  "profile": ROUTER, "pending": None,
+                                  "reconnect": idle}
         assert len(fake.calls) == before
     finally:
         agent.stop()
@@ -727,7 +746,7 @@ def test_status_without_a_wifi_worker_still_has_the_field():
         assert code == 200
         assert status["wifi"] == {"ssid": None, "ip": None, "signal": None,
                                   "mode": None, "profile": None,
-                                  "pending": None}
+                                  "pending": None, "reconnect": None}
     finally:
         agent.stop()
         runner.stop()
