@@ -151,7 +151,14 @@
   // panelFw: the panel firmware profile's id (sim/panelfw.js, 2026-11-19) -
   // a view setting of this browser like the others here, not part of the
   // project: "" = panelfw.js's default.
-  const ui = { tab: "designs", item: null, design: null, view: "outside", cue: null, simView: false, panelFw: "" };
+  //
+  // tlView: the Timeline's zoom window {v0, v1} in seconds (2026-11-20, the
+  // 36:34 Kunitachi show), null = the whole show. Same footing as panelFw:
+  // this browser's view of the show, kept in UI_KEY and never in the
+  // project, so a saved project and its export to the Conductor are byte-
+  // for-byte what they were. Read through tlView(), which clamps it against
+  // the show as it is now (a window kept from a longer show still opens).
+  const ui = { tab: "designs", item: null, design: null, view: "outside", cue: null, simView: false, panelFw: "", tlView: null };
 
   function loadUiPrefs() {
     try {
@@ -162,7 +169,14 @@
     } catch {}
   }
   function saveUiPrefs() {
-    try { localStorage.setItem(UI_KEY, JSON.stringify({ tab: ui.tab, item: ui.item, design: ui.design, view: ui.view, simView: ui.simView, panelFw: ui.panelFw })); } catch {}
+    try { localStorage.setItem(UI_KEY, JSON.stringify({ tab: ui.tab, item: ui.item, design: ui.design, view: ui.view, simView: ui.simView, panelFw: ui.panelFw, tlView: ui.tlView })); } catch {}
+  }
+  // A wheel zoom or an overview drag moves the window dozens of times a
+  // second; the window is written once it has settled, not on every step.
+  let uiSaveTimer = 0;
+  function saveUiPrefsSoon() {
+    clearTimeout(uiSaveTimer);
+    uiSaveTimer = setTimeout(saveUiPrefs, 400);
   }
 
   // The autosave wins over the shipped starter data, which is right - it is
@@ -936,6 +950,7 @@
     const hurtBefore = new Map(mine().map(c => [String(c.id), (c.problems || []).length]));
     const id = globalThis.SIM.app.addCue({ item: item.item, at, design: design.name, partial: false });
     ui.cue = id; render();
+    revealTime(at);          // zoomed in, the new cue can land off screen (2026-11-20)
     const hurt = mine().filter(c => !sameId(c.id, id)
                               && (c.problems || []).length > (hurtBefore.get(String(c.id)) || 0))
                        .sort((a, b) => a.at - b.at)[0];
@@ -1020,15 +1035,33 @@
     });
   }
 
+  // ---- the Timeline's view window (2026-11-20) ----
+  // Every time<->x conversion on the Timeline goes through these two (and
+  // SIM.transport.view underneath them, which the ruler scrub in
+  // transport.js uses too): tlPct() for time -> CSS left, tlTimeAt() for a
+  // pointer's clientX over a track/ruler -> time. For the whole show both
+  // are exactly the old 100 * t / D and (x / width) * D.
+  function tlMath() { return globalThis.SIM.transport.view; }
+  function tlView() {
+    const D = state.show.duration;
+    return tlMath().clamp(ui.tlView || { v0: 0, v1: D }, D);
+  }
+  function tlPct(t, v = tlView()) { return tlMath().pct(v, t).toFixed(3) + "%"; }
+  function tlTimeAt(el, clientX, v = tlView()) {
+    const box = el.getBoundingClientRect();
+    if (!box.width) return v.v0;
+    return tlMath().timeAt(v, state.show.duration, (clientX - box.left) / box.width);
+  }
   function renderTracks() {
     const D = state.show.duration;
     const items = trackItems();
-    const pct = t => (100 * Math.max(0, Math.min(D, t)) / D).toFixed(3) + "%";
+    const v = tlView();
+    const pct = t => tlPct(Math.max(0, Math.min(D, t)), v);
     // A width is clamped against what is LEFT of the track, not against the
     // whole of it (review F4): a cue whose complete or end passes the end of
     // the show clamped left and width independently, so left + width came to
     // more than 100% and the band ran out under the "+" column.
-    const pctW = (t, from) => (100 * Math.max(0, Math.min(D - Math.max(0, Math.min(D, from)), t)) / D).toFixed(3) + "%";
+    const pctW = (t, from) => tlMath().pctW(v, Math.max(0, Math.min(D - Math.max(0, Math.min(D, from)), t))).toFixed(3) + "%";
     const rows = items.map(item => {
       const cues = cuesOf(item);
       const bands = cues.map(cue => {
@@ -1038,7 +1071,9 @@
         // rather than placed at left:100% (review F4's other half): it still
         // takes up its own 2 px border plus 5 px of padding whatever its
         // width, so a zero-width one at 100% hangs 7 px out under the "+".
-        const nub = parseFloat(holdW) <= 0;
+        // Only while the window reaches the end of the show: zoomed short of
+        // it, the end is off to the right and the nub with it (clipped).
+        const nub = parseFloat(holdW) <= 0 && v.v1 >= D;
         const bad = (cue.problems || []).length > 0;
         return `<div class="cue-band ${sameId(cue.id, ui.cue) ? "sel" : ""}" data-cue="${esc(cue.id)}" style="left:${pct(cue.at)};width:${bandW}"></div>
           <div class="cue-hold ${bad ? "bad" : ""} ${sameId(cue.id, ui.cue) ? "sel" : ""}" data-cue="${esc(cue.id)}" data-drag="${cue.at <= 0 ? "0" : "1"}"
@@ -1067,11 +1102,11 @@
     // ruler row carries a matching empty cell and the playhead wrapper stops
     // short of it by the same amount, or both would run 32 px past the tracks.
     return `<div class="tl-wrap">
-      <div class="tl-row" style="border:0;min-height:22px"><div></div><div class="tl-ruler" id="ruler">${rulerTicks(D)}</div><div></div></div>
+      <div class="tl-row" style="border:0;min-height:22px"><div></div><div class="tl-ruler" id="ruler">${rulerTicks(D, v)}</div><div></div></div>
       ${rows || `<div class="empty">No items yet.</div>`}
       <div style="position:absolute;left:150px;right:var(--tl-add-w);top:0;bottom:0;pointer-events:none"><div id="music-silence" hidden><span>silence</span></div><div id="music-end" hidden><span id="music-end-label"></span></div><div id="playhead"><div id="ph-head" title="Drag to seek, or press and drag anywhere on the ruler"><svg width="14" height="10"><polygon points="0,0 14,0 7,10" fill="var(--err)"/></svg><span id="ph-time"></span></div></div></div></div>`;
   }
-  function rulerTicks(D) {
+  function rulerTicks(D, v) {
     // The existing tiers, but never finer than D/200 (adversarial review
     // round 2 - F2): duration is kept to 40:00 everywhere this page
     // writes it now, but state.show.duration ultimately comes straight from
@@ -1079,9 +1114,11 @@
     // here means a pathological D (reached some other way) draws at most
     // ~200 ticks instead of, at the review's own example, ~83,000.
     // 2:00 marks past 30:00 (2026-11-19, a 35:28 show), as index.html.
-    const step = Math.max(D > 1800 ? 120 : D > 900 ? 60 : D > 300 ? 30 : 10, D / 200);
+    // Zoomed in (2026-11-20), finer steps by the window's width - 5 s at
+    // 1 min, 10 s at 2 min, 30 s at 5 min, 1 min up to 30 min - and only the
+    // ticks inside the window: SIM.transport.view.tickStep/ticks.
     let html = "";
-    for (let t = 0; t <= D; t += step) html += `<i style="left:${(100 * t / D).toFixed(3)}%"></i><span style="left:${(100 * t / D).toFixed(3)}%">${clockShort(t)}</span>`;
+    for (const t of tlMath().ticks(v, D)) html += `<i style="left:${tlPct(t, v)}"></i><span style="left:${tlPct(t, v)}">${clockShort(t)}</span>`;
     return html;
   }
   // index.html:1051's reference: the show's own warnings (overlap/sweep/
@@ -1171,7 +1208,7 @@
       </div>
       ${items.length ? `<div id="tl-editing">
         <div class="tl-left">
-          <div class="card"><div class="tl-hint">Click anywhere on a track to place a design at that moment, or press <b>+</b> at the end of a row to add that item's next design straight after its last one.</div>${renderTracks()}</div>
+          <div class="card"><div class="tl-hint">Click anywhere on a track to place a design at that moment, or press <b>+</b> at the end of a row to add that item's next design straight after its last one.</div>${renderViewBar()}${renderTracks()}</div>
           ${warningsBlock()}
           <div class="card"><h2>CUES</h2>${cueTable()}</div>
           ${minIntervalTable()}
@@ -1204,6 +1241,8 @@
       $("#show-refresh").onchange = e => { const v = Number(e.target.value); if (v >= 1 && v <= 60) globalThis.SIM.app.setShow({ refresh_s: v }); else e.target.value = state.show.refresh_s.toFixed(1); };
       renderCueEditor(state.show.cues.find(c => sameId(c.id, ui.cue)) || null);
       wireTrackEvents();
+      wireViewBar();
+      paintViewBar();
     }
     $("#save-project").onclick = saveProjectFile;
     $("#tl-fit").onclick = fitToMusic;
@@ -1226,22 +1265,25 @@
   }
   function paintMusicEnd() {
     if (!state || ui.tab !== "timeline") return;
-    const D = state.show.duration, info = musicEnd();
+    const info = musicEnd();
     const marker = $("#music-end"), silence = $("#music-silence"), note = $("#music-note"), fit = $("#tl-fit");
     const drawn = !!(info && info.marker);
+    // Through the view window: the line only while its moment is on screen,
+    // the hatched silence from wherever it starts on screen (the left edge,
+    // if the music ended before the window) to the right edge.
+    const pct = drawn ? tlMath().pct(tlView(), info.at) : 0;
     if (marker) {
-      marker.hidden = !drawn;
-      if (drawn) {
-        const pct = 100 * info.at / D;
+      marker.hidden = !drawn || pct < 0 || pct > 100;
+      if (!marker.hidden) {
         marker.style.left = pct.toFixed(3) + "%";
         marker.classList.toggle("flip", pct > 75);
         $("#music-end-label").textContent = info.label;
       }
     }
     if (silence) {
-      const on = drawn && info.silence >= 0.5;
+      const on = drawn && info.silence >= 0.5 && pct < 100;
       silence.hidden = !on;
-      if (on) silence.style.left = (100 * info.at / D).toFixed(3) + "%";
+      if (on) silence.style.left = Math.max(0, pct).toFixed(3) + "%";
     }
     if (note) note.textContent = info ? info.note : "";
     if (fit) {
@@ -1268,18 +1310,25 @@
   // otherwise pile up forever and both slow the page down and eventually
   // move several cues at once per drag.
   let cueDrag = null;
+  // The pixels moved are seconds of the WINDOW the drag started in (2026-11-
+  // 20), and the cue stays on screen: kept inside that window (whole
+  // seconds), except that a hold whose start was already off the left edge
+  // may stay there. The whole show is the old [0, D] exactly.
   function cueDragAt(e) {
-    const D = state.show.duration;
-    const dt = (e.clientX - cueDrag.startX) / cueDrag.boxWidth * D;
+    const D = state.show.duration, v = cueDrag.view;
+    const dt = (e.clientX - cueDrag.startX) / cueDrag.boxWidth * (v.v1 - v.v0);
     const snap = e.shiftKey ? 5 : 1;
-    return Math.max(0, Math.min(D, Math.round((cueDrag.startAt + dt) / snap) * snap));
+    const all = tlMath().isAll(v, D);
+    const lo = all ? 0 : Math.max(0, Math.min(Math.ceil(v.v0), cueDrag.startAt));
+    const hi = all ? D : Math.min(D, Math.max(Math.floor(v.v1), cueDrag.startAt));
+    return Math.max(lo, Math.min(hi, Math.round((cueDrag.startAt + dt) / snap) * snap));
   }
   function wireGlobalDragHandlers() {
     document.addEventListener("pointermove", e => {
       if (cueDrag) {
         const at = cueDragAt(e);
         const marker = document.querySelector(`.cue-hold[data-cue="${CSS.escape(cueDrag.id)}"]`);
-        if (marker) marker.style.left = (100 * at / state.show.duration).toFixed(3) + "%";
+        if (marker) marker.style.left = tlPct(at, cueDrag.view);
       }
       if (transport) transport.dragMove(e.clientX);
     });
@@ -1325,7 +1374,7 @@
     const box = track.getBoundingClientRect();
     const D = state.show.duration;
     if (!box.width || !D) return 0;
-    return Math.round(Math.max(0, Math.min(D, (clientX - box.left) / box.width * D)));
+    return Math.round(tlTimeAt(track, clientX));
   }
   function moveGhost(track, e) {
     // Never while a cue is being dragged or the playhead is being scrubbed
@@ -1348,8 +1397,9 @@
       track.appendChild(ghost);
       track.classList.add("has-ghost");
     }
-    ghost.style.left = (100 * t / D).toFixed(3) + "%";
-    ghost.style.width = (100 * Math.min(Math.max(0, D - t), state.show.refresh_s) / D).toFixed(3) + "%";
+    const v = tlView();
+    ghost.style.left = tlPct(t, v);
+    ghost.style.width = tlMath().pctW(v, Math.min(Math.max(0, D - t), state.show.refresh_s)).toFixed(3) + "%";
     ghost.dataset.at = String(t);
     const label = ghost.firstChild;
     label.textContent = `+ ${designLabel(design)} at ${clockShort(t)}`;
@@ -1362,8 +1412,22 @@
     label.classList.remove("flip");
     if (label.getBoundingClientRect().right > track.getBoundingClientRect().right) label.classList.add("flip");
   }
+  // The cue table's rows live outside .tl-wrap; everything else here is
+  // inside it, and repaintView() (a zoom/pan) replaces .tl-wrap alone and
+  // re-wires just that - a second listener on a table row would select twice.
   function wireTrackEvents() {
-    document.querySelectorAll(".tl-track").forEach(track => {
+    const wrap = document.querySelector(".tl-wrap");
+    if (wrap) wireTrackArea(wrap);
+    // A row picked in the CUES table shows its cue on the Timeline too.
+    document.querySelectorAll("tr[data-cue]").forEach(tr => tr.addEventListener("click", () => {
+      ui.cue = tr.dataset.cue; render();
+      const cue = state.show.cues.find(c => sameId(c.id, ui.cue));
+      if (cue) revealTime(cue.at);
+    }));
+  }
+  function wireTrackArea(scope) {
+    wireViewWheel(scope);
+    scope.querySelectorAll(".tl-track").forEach(track => {
       track.addEventListener("pointermove", e => moveGhost(track, e));
       track.addEventListener("pointerleave", clearGhost);
       track.addEventListener("pointerdown", clearGhost);
@@ -1391,24 +1455,23 @@
     // The per-row "+" - a real <button>, so it is in the tab order and
     // answers Enter and Space without any handler of its own (and the
     // Space-is-play shortcut already steps aside for a focused button).
-    document.querySelectorAll("button.tl-add[data-add]").forEach(btn => btn.addEventListener("click", e => {
+    scope.querySelectorAll("button.tl-add[data-add]").forEach(btn => btn.addEventListener("click", e => {
       e.stopPropagation();
       clearGhost();
       const item = state.items.find(i => i.item === btn.dataset.add);
       appendDesignAfter(btn.dataset.add, item && lastCueOf(item));
     }));
-    document.querySelectorAll(".cue-hold, .cue-band").forEach(el => el.addEventListener("click", e => {
+    scope.querySelectorAll(".cue-hold, .cue-band").forEach(el => el.addEventListener("click", e => {
       e.stopPropagation();
       ui.cue = el.dataset.cue; render();
     }));
-    document.querySelectorAll("tr[data-cue]").forEach(tr => tr.addEventListener("click", () => { ui.cue = tr.dataset.cue; render(); }));
-    document.querySelectorAll('.cue-hold[data-drag="1"]').forEach(el => {
+    scope.querySelectorAll('.cue-hold[data-drag="1"]').forEach(el => {
       el.addEventListener("pointerdown", e => {
         e.preventDefault(); e.stopPropagation();
         const track = el.closest(".tl-track");
         const box = track.getBoundingClientRect();
         const cue = state.show.cues.find(c => sameId(c.id, el.dataset.cue));
-        cueDrag = { id: cue.id, boxWidth: box.width, startAt: cue.at, startX: e.clientX };
+        cueDrag = { id: cue.id, boxWidth: box.width, startAt: cue.at, startX: e.clientX, view: tlView() };
         el.classList.add("dragging");
         try { el.setPointerCapture(e.pointerId); } catch {}
       });
@@ -1421,9 +1484,29 @@
     items: () => trackItems(),
     onPlayhead: t => updatePlayheadDom(t),
   };
+  // Playing on past the right edge of the view pages it once (the playhead
+  // a quarter in) - but only if the playhead was ON screen the frame before:
+  // a designer who has panned away to look at something else while it plays
+  // is not dragged back every frame. Never in the middle of a gesture (a cue
+  // or the overview being dragged): .tl-wrap is replaced on a repaint.
+  let phWasInView = true;
   function updatePlayheadDom(t) {
     const D = state.show.duration;
-    const marker = $("#playhead"); if (marker) marker.style.left = (100 * Math.max(0, Math.min(D, t)) / D).toFixed(3) + "%";
+    const marker = $("#playhead");
+    if (marker) {
+      const v = tlView();
+      const inside = t >= v.v0 && t <= v.v1;
+      if (!inside && phWasInView && t > v.v1 && transport && transport.playing && !transport.seeking
+          && !cueDrag && !ovDrag && ui.tab === "timeline") {
+        phWasInView = true;
+        setTlView(tlMath().follow(v, D, t));     // repaints, and comes back here with t on screen
+        return;
+      }
+      phWasInView = inside;
+      marker.style.left = tlPct(Math.max(0, Math.min(D, t)), v);
+      marker.style.display = inside ? "" : "none";
+    }
+    const ovPh = $("#tl-ovph"); if (ovPh) ovPh.style.left = tlPct(Math.max(0, Math.min(D, t)), { v0: 0, v1: D });
     const phTime = $("#ph-time"); if (phTime) phTime.textContent = clockShort(t);
     const tpTime = $("#tp-time"); if (tpTime) tpTime.textContent = `${clockShort(t)} / ${clockShort(D)}`;
     const goto = $("#goto-input");
@@ -1443,14 +1526,22 @@
     transport = globalThis.SIM.transport.create({
       duration: () => state.show.duration,
       isActive: () => ui.tab === "timeline",
-      onPlayingChange: playing => { const b = $("#tp-play"); if (b) b.textContent = playing ? "⏸ Pause" : "▶ Play"; },
+      onPlayingChange: playing => {
+        const b = $("#tp-play"); if (b) b.textContent = playing ? "⏸ Pause" : "▶ Play";
+        if (playing && transport) revealTime(transport.playhead);   // Play shows where it plays
+      },
       onPlayhead: t => updatePlayheadDom(t),
       onThumbTick: t => redrawThumbs(t),
       toast,
       onMusicLength: () => paintMusicEnd(),
+      view: () => (state ? tlView() : null),
     });
     return transport;
   }
+  // A seek (Go to, Stop, SIM.app.seek) to a moment off screen brings it
+  // into view; the ruler scrub cannot leave the window in the first place.
+  function seekAndShow(sec) { ensureTransport().seek(sec); revealTime(transport.playhead); }
+  function stopAndShow() { ensureTransport().stop(); revealTime(0); }
   // The dock is `position:fixed` at the bottom of the window (designer.css)
   // so it always floats over whatever #content last scrolled to - including
   // the last ~220px of the Timeline tab's own content, which it simply hid
@@ -1479,13 +1570,13 @@
     </div>
     <div class="thumbs" id="tl-thumbs"></div>`;
     $("#tp-play").onclick = () => transport.toggle();
-    $("#tp-stop").onclick = () => transport.stop();
+    $("#tp-stop").onclick = () => stopAndShow();
     // wireMmss (not a bare parse-on-click): a typo in the go-to box gets the
     // same red/echo treatment as every other clock field instead of Go to
     // silently doing nothing (adversarial review, 2026-09-25); Enter/blur
     // (wireMmss's "change") seeks, the button re-triggers the same commit
     // for a value that is already valid.
-    wireMmss("goto-input", sec => transport.seek(sec), () => transport.playhead);
+    wireMmss("goto-input", sec => seekAndShow(sec), () => transport.playhead);
     $("#goto-go").onclick = () => $("#goto-input").dispatchEvent(new Event("change"));
     $("#sim-view").onclick = () => { ui.simView = !ui.simView; persist(); render(); };
     THUMB_VIEW.fill = ui.simView;
@@ -1502,6 +1593,154 @@
     if (head) head.addEventListener("pointerdown", e => { e.preventDefault(); transport.beginDrag(ruler, e.clientX, true); try { head.setPointerCapture(e.pointerId); } catch {} });
     if (ruler) ruler.addEventListener("pointerdown", e => { if (e.target.closest("#ph-head")) return; transport.beginDrag(ruler, e.clientX, false); });
   }
+
+  // ---- zoom / pan of the Timeline (2026-11-20) ----
+  // The window itself is tlView() (above renderTracks()); these are its
+  // controls: the width buttons, ◀ ▶, the overview bar, Ctrl/⌘+wheel (a
+  // trackpad pinch arrives as ctrl+wheel), a sideways or Shift+wheel, and
+  // the +/- keys. A change repaints .tl-wrap alone (repaintView) - the cue
+  // table, EDIT CUE and the dock stay as they are.
+  const TL_WIDTHS = [["All", 0], ["10 min", 600], ["5 min", 300], ["2 min", 120], ["1 min", 60]];
+  let ovDrag = null;                   // the overview's box being dragged
+  function setTlView(v) {
+    const D = state.show.duration;
+    const c = tlMath().clamp(v, D);
+    // The whole show is stored as null, so "All" keeps meaning all of it
+    // when Show length changes afterwards.
+    ui.tlView = tlMath().isAll(c, D) ? null : { v0: +c.v0.toFixed(3), v1: +c.v1.toFixed(3) };
+    saveUiPrefsSoon();
+    repaintView();
+  }
+  function revealTime(t) {
+    if (!state) return;
+    const v = tlView(), f = tlMath().follow(v, state.show.duration, t);
+    if (f.v0 !== v.v0 || f.v1 !== v.v1) setTlView(f);
+  }
+  // The width buttons and +/- keep the playhead where it is on screen when
+  // it is on screen; otherwise they zoom about the middle of what is shown.
+  function zoomTo(width, aroundPlayhead) {
+    const D = state.show.duration, v = tlView(), ph = transport ? transport.playhead : 0;
+    const onScreen = ph >= v.v0 && ph <= v.v1;
+    if (aroundPlayhead && !onScreen) { setTlView(tlMath().zoom(tlMath().centre(v, D, ph), D, width, ph)); return; }
+    setTlView(tlMath().zoom(v, D, width, onScreen ? ph : (v.v0 + v.v1) / 2));
+  }
+  function renderViewBar() {
+    const D = state.show.duration;
+    // Each cue's start as a hairline on the overview, so the designer can
+    // see where the work is before zooming in on it.
+    const marks = D > 0 ? state.show.cues.map(c =>
+      `<i style="left:${tlPct(Math.max(0, Math.min(D, c.at)), { v0: 0, v1: D })}"></i>`).join("") : "";
+    return `<div class="tl-viewbar">
+      <div class="tl-viewctl">
+        <span class="tl-viewlbl">View</span>
+        <span class="group">${TL_WIDTHS.map(([label, w]) =>
+          `<button type="button" data-tlw="${w}" title="${w ? `Show ${label} of the show at a time` : "Show the whole show"}">${label}</button>`).join("")}</span>
+        <span class="group"><button type="button" id="tl-prev" title="Earlier">◀</button><button type="button" id="tl-next" title="Later">▶</button></span>
+        <span class="tl-viewtext" id="tl-viewtext"></span>
+        <span class="tl-viewhelp">Ctrl + wheel (or pinch) zooms at the pointer · Shift + wheel moves · + / − keys zoom at the playhead</span>
+      </div>
+      <div class="tl-row tl-ovrow"><div></div>
+        <div class="tl-overview" id="tl-overview" title="The whole show: drag the box to move the view, click to centre it there">${marks}<div id="tl-ovbox"></div><div id="tl-ovph"></div></div>
+        <div></div></div>
+    </div>`;
+  }
+  function paintViewBar() {
+    const bar = document.querySelector(".tl-viewbar");
+    if (!bar || !state) return;
+    const D = state.show.duration, v = tlView(), w = v.v1 - v.v0, all = tlMath().isAll(v, D);
+    bar.querySelectorAll("button[data-tlw]").forEach(b => {
+      const bw = Number(b.dataset.tlw);
+      b.hidden = bw > 0 && bw >= D;            // a width the whole show already fits in
+      b.classList.toggle("on", bw ? !all && Math.abs(w - bw) < 0.5 : all);
+    });
+    const prev = $("#tl-prev"), next = $("#tl-next");
+    if (prev) prev.disabled = v.v0 <= 0;
+    if (next) next.disabled = v.v1 >= D;
+    const text = $("#tl-viewtext");
+    if (text) text.textContent = all ? `the whole show, ${clockShort(D)}` : `${clockShort(v.v0)} – ${clockShort(v.v1)} of ${clockShort(D)}`;
+    const box = $("#tl-ovbox");
+    if (box && D > 0) { box.style.left = tlPct(v.v0, { v0: 0, v1: D }); box.style.width = tlMath().pctW({ v0: 0, v1: D }, w).toFixed(3) + "%"; }
+  }
+  function repaintView() {
+    paintViewBar();
+    const wrap = document.querySelector(".tl-wrap");
+    if (!wrap || ui.tab !== "timeline" || !state) return;
+    clearGhost();
+    const holder = document.createElement("div");
+    holder.innerHTML = renderTracks();
+    const fresh = holder.firstElementChild;
+    wrap.replaceWith(fresh);
+    wireTrackArea(fresh);
+    wirePlayheadDrag();
+    paintMusicEnd();
+    if (transport) updatePlayheadDom(transport.playhead);
+  }
+  function wireViewBar() {
+    const bar = document.querySelector(".tl-viewbar");
+    if (!bar) return;
+    bar.querySelectorAll("button[data-tlw]").forEach(b => b.addEventListener("click", () => {
+      const bw = Number(b.dataset.tlw);
+      if (!bw) setTlView({ v0: 0, v1: state.show.duration }); else zoomTo(bw, false);
+    }));
+    const step = dir => { const v = tlView(); setTlView(tlMath().pan(v, state.show.duration, dir * 0.8 * (v.v1 - v.v0))); };
+    $("#tl-prev").addEventListener("click", () => step(-1));
+    $("#tl-next").addEventListener("click", () => step(1));
+    const ov = $("#tl-overview");
+    // The overview is the whole show: the same helpers, handed the whole-
+    // show window {0, D} instead of the zoomed one - by design.
+    const ovTime = e => tlTimeAt(ov, e.clientX, { v0: 0, v1: state.show.duration });
+    ov.addEventListener("pointerdown", e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      if (e.target.id !== "tl-ovbox") setTlView(tlMath().centre(tlView(), state.show.duration, ovTime(e)));
+      ovDrag = { t0: ovTime(e), view: tlView() };
+      try { ov.setPointerCapture(e.pointerId); } catch {}
+    });
+    ov.addEventListener("pointermove", e => {
+      if (!ovDrag) return;
+      setTlView(tlMath().pan(ovDrag.view, state.show.duration, ovTime(e) - ovDrag.t0));
+    });
+    const end = () => { if (ovDrag) { ovDrag = null; saveUiPrefsSoon(); } };
+    ov.addEventListener("pointerup", end);
+    ov.addEventListener("pointercancel", end);
+    wireViewWheel(ov, true);
+  }
+  // Wheel: Ctrl/⌘ (and a pinch) zooms about the moment under the pointer;
+  // a sideways wheel or Shift+wheel moves the window; a plain vertical
+  // wheel is left to scroll the page as it always did.
+  function wireViewWheel(el, overview) {
+    el.addEventListener("wheel", e => {
+      if (!state || ui.tab !== "timeline" || cueDrag || ovDrag || (transport && transport.seeking)) return;
+      const D = state.show.duration, v = tlView(), w = v.v1 - v.v0;
+      const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+      const ruler = $("#ruler");
+      const box = (overview ? el : ruler || el).getBoundingClientRect();
+      if (!box.width) return;
+      const frac = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width));
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();                // not the browser's own page zoom
+        const at = tlMath().timeAt(overview ? { v0: 0, v1: D } : v, D, frac);
+        setTlView(tlMath().zoom(v, D, w * Math.exp(e.deltaY * unit * 0.0025), at));
+        return;
+      }
+      const dx = e.shiftKey ? (e.deltaX || e.deltaY) : (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : 0);
+      if (!dx || tlMath().isAll(v, D)) return;
+      e.preventDefault();
+      setTlView(tlMath().pan(v, D, dx * unit / box.width * (overview ? D : w)));
+    }, { passive: false });
+  }
+  // + / - zoom at the playhead, unless the key is being typed into a field.
+  document.addEventListener("keydown", e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;    // Ctrl +/- is the browser's own zoom
+    const zoomIn = e.key === "+" || e.key === "=", zoomOut = e.key === "-" || e.key === "_";
+    if (!zoomIn && !zoomOut) return;
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (["input", "select", "textarea"].includes(tag) || e.target.isContentEditable) return;
+    if (ui.tab !== "timeline" || !state || !document.querySelector(".tl-wrap") || cueDrag || ovDrag) return;
+    e.preventDefault();
+    const v = tlView();
+    zoomTo((v.v1 - v.v0) * (zoomIn ? 1 / 1.5 : 1.5), true);
+  });
   // index.html:1248-1262's own rAF-debounced resize handler, missing here
   // entirely (adversarial review, 2026-09-25): without it the looks row
   // never re-measures after the window (or the dock, once its own height is
@@ -2311,10 +2550,10 @@
       setMusicFile(null);
       rebuild(); persist();
     },
-    seek(sec) { ensureTransport().seek(sec); },
+    seek(sec) { seekAndShow(sec); },
     play() { ensureTransport().play(); },
     pause() { ensureTransport().pause(); },
-    stop() { ensureTransport().stop(); },
+    stop() { stopAndShow(); },
   };
   // A real read-write probe, not just "does localStorage exist" (Safari in
   // private browsing DOES expose window.localStorage - every call on it

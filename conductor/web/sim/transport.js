@@ -32,6 +32,84 @@
   // Kunitachi music is one 68 MB MP3), 64 MB before.
   const MAX_MUSIC = 128 * 1024 * 1024;
 
+  // ---- the Timeline's view window (2026-11-20) ----
+  // The Kunitachi show is 36:34: drawn as a share of the whole show a 7 s
+  // cue was ~5 px and LOOK 23's cues one smudge between 8:00 and 10:00
+  // (designer's screenshot). The Timeline now draws a window {v0, v1} of
+  // the show, in seconds, and EVERY time<->x conversion on it goes through
+  // pct() (time -> % of the track) and timeAt() (fraction of the track ->
+  // time) below - cues, ruler, music end, playhead, click-to-place, drags.
+  // Pure maths, no DOM, so the node test (tests/test_designer_timeline_view.py)
+  // drives it directly. The window is a view setting of this browser
+  // (designer-app.js keeps it in UI_KEY), never part of the project.
+  const VIEW_MIN_S = 30;
+  const view = {
+    MIN_S: VIEW_MIN_S,
+    // Into [0, D], at least VIEW_MIN_S wide (or the whole show, if shorter).
+    // Anything unreadable (a stored window from an older, shorter show, a
+    // NaN) comes back as the whole show rather than throwing.
+    clamp(v, D) {
+      if (!(D > 0)) return { v0: 0, v1: 0 };
+      let v0 = Number(v && v.v0), v1 = Number(v && v.v1);
+      if (!Number.isFinite(v0) || !Number.isFinite(v1) || v1 <= v0) return { v0: 0, v1: D };
+      const w = Math.min(D, Math.max(Math.min(VIEW_MIN_S, D), v1 - v0));
+      v0 = Math.max(0, Math.min(D - w, v0));
+      return { v0, v1: v0 + w };
+    },
+    isAll(v, D) { return !(D > 0) || (v.v0 <= 0 && v.v1 >= D); },
+    // time -> % of the track's width. Unclamped on purpose: a cue that
+    // starts left of the window gets a negative left and is clipped by the
+    // track (overflow:hidden), never squashed onto its edge. For the whole
+    // show it is exactly the old 100 * t / D.
+    pct(v, t) { const w = v.v1 - v.v0; return w > 0 ? 100 * (t - v.v0) / w : 0; },
+    // A duration -> % of the track's width (cue/ghost widths).
+    pctW(v, dt) { const w = v.v1 - v.v0; return w > 0 ? 100 * dt / w : 0; },
+    // fraction of the track (0 = left edge, 1 = right edge) -> time, kept
+    // inside what is on screen: a click or a scrub can only land on a
+    // moment the designer can see.
+    timeAt(v, D, frac) {
+      const t = v.v0 + frac * (v.v1 - v.v0);
+      return Math.max(Math.max(0, v.v0), Math.min(Math.min(D, v.v1), t));
+    },
+    // A new width, keeping time `at` where it is on screen (Ctrl+wheel at
+    // the pointer, +/- at the playhead, the width buttons).
+    zoom(v, D, width, at) {
+      const w = v.v1 - v.v0;
+      const nw = Math.min(D, Math.max(Math.min(VIEW_MIN_S, D), width));
+      const frac = w > 0 ? Math.max(0, Math.min(1, (at - v.v0) / w)) : 0.5;
+      const v0 = at - frac * nw;
+      return view.clamp({ v0, v1: v0 + nw }, D);
+    },
+    pan(v, D, dt) { return view.clamp({ v0: v.v0 + dt, v1: v.v1 + dt }, D); },
+    centre(v, D, t) { const w = v.v1 - v.v0; return view.clamp({ v0: t - w / 2, v1: t + w / 2 }, D); },
+    // Playing past the right edge (or seeking anywhere off screen) pages
+    // the window once, the playhead a quarter in from its left - not a
+    // scroll every frame. The same window back when `t` is already on it.
+    follow(v, D, t) {
+      if (t >= v.v0 && t <= v.v1) return v;
+      const w = v.v1 - v.v0;
+      return view.clamp({ v0: t - w / 4, v1: t - w / 4 + w }, D);
+    },
+    // Ruler step. The whole show keeps the tiers it always had (2:00 marks
+    // past 30:00, as index.html); zoomed in, finer ones by the window's
+    // width. Never finer than 1/200 of the window (adversarial review
+    // round 2 - F2's floor, now on the window).
+    tickStep(v, D) {
+      const w = v.v1 - v.v0;
+      const tier = view.isAll(v, D)
+        ? (D > 1800 ? 120 : D > 900 ? 60 : D > 300 ? 30 : 10)
+        : (w <= 60 ? 5 : w <= 120 ? 10 : w <= 300 ? 30 : w <= 1800 ? 60 : 120);
+      return Math.max(tier, w / 200);
+    },
+    // The tick times inside the window, on whole multiples of the step.
+    ticks(v, D) {
+      const step = view.tickStep(v, D), out = [];
+      if (!(step > 0)) return out;
+      for (let t = Math.ceil(v.v0 / step - 1e-9) * step; t <= v.v1 + 1e-9; t += step) out.push(t);
+      return out;
+    },
+  };
+
   // cfg: {
   //   duration(): number,                    show.duration right now
   //   isActive(): bool,                       true while the Timeline tab is showing
@@ -40,6 +118,7 @@
   //   onThumbTick(t),                         throttled (~100ms) redraw of the looks row
   //   toast(msg),
   //   onMusicLength(),                        optional: the music's length became known (or went)
+  //   view(),                                 optional: the Timeline's window {v0, v1} (see `view` above)
   // }
   function create(cfg) {
     const player = new Audio();
@@ -179,17 +258,25 @@
     // Ruler-drag scrubbing (index.html:2308-2372), parameterised on the ruler
     // element instead of a hard-coded "#ruler" id so a page can host more than
     // one instance (dev sandbox pages, tests) without them fighting.
-    function rulerSeconds(ruler, clientX) {
+    //
+    // Through the Timeline's view window (2026-11-20, the 36:34 Kunitachi
+    // show): the ruler spans cfg.view() = {v0, v1}, not the whole show, so
+    // its x maps through view.timeAt/view.pct like every other Timeline
+    // position. No cfg.view = the whole show, the old mapping exactly.
+    function viewNow() {
       const D = cfg.duration();
+      return cfg.view ? view.clamp(cfg.view(), D) : { v0: 0, v1: D };
+    }
+    function rulerSeconds(ruler, clientX) {
       if (!ruler) return playhead;
       const box = ruler.getBoundingClientRect();
-      return Math.max(0, Math.min(D, (clientX - box.left) / box.width * D));
+      if (!box.width) return playhead;
+      return view.timeAt(viewNow(), cfg.duration(), (clientX - box.left) / box.width);
     }
     function rulerX(ruler, t) {
-      const D = cfg.duration();
-      if (!ruler || !D) return 0;
+      if (!ruler || !cfg.duration()) return 0;
       const box = ruler.getBoundingClientRect();
-      return box.left + (t / D) * box.width;
+      return box.left + view.pct(viewNow(), t) / 100 * box.width;
     }
     let phDrag = null;
     function beginDrag(ruler, clientX, grabbedHead) {
@@ -256,6 +343,6 @@
   }
 
   globalThis.SIM = Object.assign(globalThis.SIM || {}, {
-    transport: { create, MAX_MUSIC, musicEndInfo },
+    transport: { create, MAX_MUSIC, musicEndInfo, view },
   });
 })();
