@@ -1528,7 +1528,9 @@
       isActive: () => ui.tab === "timeline",
       onPlayingChange: playing => {
         const b = $("#tp-play"); if (b) b.textContent = playing ? "⏸ Pause" : "▶ Play";
-        if (playing && transport) revealTime(transport.playhead);   // Play shows where it plays
+        // Play shows where it plays - but not in the middle of a drag, which
+        // a repaint of .tl-wrap would cut loose from its tracks (F3).
+        if (playing && transport && !cueDrag && !ovDrag) revealTime(transport.playhead);
       },
       onPlayhead: t => updatePlayheadDom(t),
       onThumbTick: t => redrawThumbs(t),
@@ -1608,6 +1610,12 @@
     // The whole show is stored as null, so "All" keeps meaning all of it
     // when Show length changes afterwards.
     ui.tlView = tlMath().isAll(c, D) ? null : { v0: +c.v0.toFixed(3), v1: +c.v1.toFixed(3) };
+    // Whether the playhead is on screen is judged against the NEW window:
+    // a designer who pans or zooms away from the playhead while it plays
+    // (◀, Shift+wheel, the overview, an earlier cue) stays where they went -
+    // the follow only pages for a playhead that was on screen (review of
+    // 00aae64, F1). The follow's own call lands with the playhead inside.
+    if (transport) { const ph = transport.playhead; phWasInView = ph >= c.v0 && ph <= c.v1; }
     saveUiPrefsSoon();
     repaintView();
   }
@@ -1728,6 +1736,30 @@
       e.preventDefault();
       setTlView(tlMath().pan(v, D, dx * unit / box.width * (overview ? D : w)));
     }, { passive: false });
+    // Safari on macOS sends a trackpad pinch as gesture events, not as
+    // Ctrl+wheel (Chrome and Firefox do the latter): zoom the Timeline about
+    // the pinch instead of letting Safari magnify the whole page (F2). The
+    // window and the anchor are taken at gesturestart, so the zoom follows
+    // the fingers' total scale even though each step repaints .tl-wrap.
+    let pinch = null;
+    el.addEventListener("gesturestart", e => {
+      if (!state || ui.tab !== "timeline" || cueDrag || ovDrag || (transport && transport.seeking)) return;
+      e.preventDefault();
+      const D = state.show.duration, v = tlView();
+      const ruler = $("#ruler");
+      const box = (overview ? el : ruler || el).getBoundingClientRect();
+      const x = typeof e.clientX === "number" ? e.clientX : box.left + box.width / 2;
+      const frac = box.width ? Math.max(0, Math.min(1, (x - box.left) / box.width)) : 0.5;
+      pinch = { v, at: tlMath().timeAt(overview ? { v0: 0, v1: D } : v, D, frac) };
+    });
+    el.addEventListener("gesturechange", e => {
+      if (!pinch || !state) return;
+      e.preventDefault();
+      const D = state.show.duration, w = pinch.v.v1 - pinch.v.v0;
+      const scale = Math.max(0.05, Number(e.scale) || 1);
+      setTlView(tlMath().zoom(pinch.v, D, w / scale, pinch.at));
+    });
+    el.addEventListener("gestureend", e => { if (pinch) e.preventDefault(); pinch = null; });
   }
   // + / - zoom at the playhead, unless the key is being typed into a field.
   document.addEventListener("keydown", e => {
