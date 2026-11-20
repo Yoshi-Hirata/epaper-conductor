@@ -4811,3 +4811,24 @@ def test_the_show_pc_names_who_start_goes_without_under_start():
     assert 'id="fleet-start-without-silent"' in PAGE_TEXT
     assert "Not used with 'Preset before START' or by Loop restarts." in PAGE_TEXT
     assert '"/api/fleet/start_without_silent"' in PAGE_TEXT
+
+
+def test_the_weak_wifi_switches_sit_in_the_show_card_above_the_presence_line():
+    # 2026-11-20, the operator could not find "START without units that do
+    # not answer" in the MANUAL CUE card: both switches (and the beacon's
+    # status text) moved into THE SHOW card, after START's buttons and right
+    # above the line that says what they do, in the card's normal text.
+    show = PAGE_TEXT[PAGE_TEXT.index('<div class="card"><h2>THE SHOW ('):]
+    show = show[:show.index('<div class="card"><h2>PLAY WITHOUT THIS PC')]
+    manual = PAGE_TEXT[PAGE_TEXT.index("<h2>MANUAL CUE</h2>"):]
+    manual = manual[:manual.index("<h2>UNITS</h2>")]
+    ids = ('id="fleet-beacon"', 'id="fleet-beacon-counts"',
+           'id="fleet-start-without-silent"')
+    for one in ids:
+        assert PAGE_TEXT.count(one) == 1, one
+        assert one in show and one not in manual, one
+    assert 'id="fleet-release"' in manual and 'id="fleet-release"' not in show
+    row = show[show.index('<div class="startopts"'):show.index('id="show-presence"')]
+    assert show.index('id="show-start"') < show.index('<div class="startopts"')
+    assert row.index("If a unit's Wi-Fi is weak:") < row.index(ids[0])         < row.index(ids[1]) < row.index(ids[2])
+    assert 'class="meta"' not in row

@@ -413,6 +413,15 @@ button.small { font-size: 11px; padding: 1px 6px; vertical-align: baseline; }
 #show-degraded:empty, #write-degraded:empty { display: none; }
 #show-presence { margin-top: 6px; }
 #show-presence:empty { display: none; }
+/* THE SHOW's weak-Wi-Fi switches (beacon, START without units that do not
+   answer), 2026-11-20: their own wrapping row under START, in the card's
+   normal text - not .meta's grey small print, where the operator missed
+   them. A ticked box reads by its tick; the label keeps the ink colour. */
+.startopts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; }
+.startopts label { display: inline-flex; align-items: center; gap: 5px; }
+/* the beacon's status text stays beside its box when the row wraps */
+.startopts .opt { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 5px; }
+.startopts .cap { font-weight: 600; }
 .nn-vit { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nn-vit.amber { color: var(--warn); } .nn-vit.red { color: var(--err); font-weight: 600; }
 .nn-bags { margin-top: 4px; }
@@ -5560,6 +5569,20 @@ function renderFleet() {
            Its margin is in the stylesheet, behind :empty, so the line costs
            nothing on the evenings it has nothing to say. -->
       <div class="warn" id="show-degraded"></div>
+      <!-- The two weak-Wi-Fi switches, moved here from the MANUAL CUE card
+           (2026-11-20): the operator could not find "START without units
+           that do not answer" in that card's grey small print, far from the
+           button it changes. They sit right above the line that says what
+           they do (#show-presence), in the card's own text size; the row
+           wraps on its own, so the beacon's status text never moves START.
+           Same ids, titles and handlers as before - only the place moved. -->
+      <div class="startopts" id="show-start-opts">
+        <span class="cap">If a unit's Wi-Fi is weak:</span>
+        <span class="opt"><label title="Also broadcast START/HOLD/STOP over UDP for units whose Wi-Fi replies do not reach the router. Units cannot answer it: a unit that follows it may still show as unreachable here. Only ONE Conductor may have this on. Saved in fleet.json - stays on after a restart. Switch it on or off only while stopped."><input type="checkbox" id="fleet-beacon" disabled>
+          Backup broadcast (beacon)</label> <span id="fleet-beacon-counts"></span></span>
+        <label title="③ START goes ahead without a garment that is only 'not answering' instead of refusing for everyone. It is named under THE SHOW ('START without ...') and joins as soon as it answers again if it is still ready; it may follow the backup broadcast meanwhile, only if that is on. Any other problem still refuses START, and so does a garment this Conductor has not heard from since it started. Not used with 'Preset before START' or by Loop restarts. Saved in fleet.json. Change only while no show is running."><input type="checkbox" id="fleet-start-without-silent" disabled>
+          START without units that do not answer</label>
+      </div>
       <!-- EXHIBITION only (/api/fleet's presence.exhibition): START goes with
            the garments that are connected; the others are named here, one
            line, and do not block it (2026-10-19). On the show PC, the same
@@ -5614,10 +5637,6 @@ function renderFleet() {
         <span style="flex:1"></span>
         <button id="fleet-standby">All units STANDBY (white)</button>
         <button id="fleet-release">Release units to on-device control</button>
-        <label class="meta" title="Also broadcast START/HOLD/STOP over UDP for units whose Wi-Fi replies do not reach the router. Units cannot answer it: a unit that follows it may still show as unreachable here. Only ONE Conductor may have this on. Saved in fleet.json - stays on after a restart. Switch it on or off only while stopped."><input type="checkbox" id="fleet-beacon" disabled>
-          Backup broadcast (beacon)</label> <span class="meta" id="fleet-beacon-counts"></span>
-        <label class="meta" title="③ START goes ahead without a garment that is only 'not answering' instead of refusing for everyone. It is named under THE SHOW ('START without ...') and joins as soon as it answers again if it is still ready; it may follow the backup broadcast meanwhile, only if that is on. Any other problem still refuses START, and so does a garment this Conductor has not heard from since it started. Not used with 'Preset before START' or by Loop restarts. Saved in fleet.json. Change only while no show is running."><input type="checkbox" id="fleet-start-without-silent" disabled>
-          START without units that do not answer</label>
       </div>
       <div class="meta" id="go-log" style="margin-top:8px;white-space:pre-wrap">${esc(ui.goLog)}</div>
     </div>
