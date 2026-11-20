@@ -2183,6 +2183,20 @@ def test_the_window_is_counted_down_where_the_way_out_is():
     assert "cannot" in body and "uploaded again" in body
 
 
+def test_the_look_row_chip_follows_units_coming_back_with_the_show_stopped():
+    # 2026-11-20: three units rebooted with no show running and their LOOK
+    # cards kept "unit offline" - the row was repainted only when the show
+    # moved or the run state changed. A unit's online/preparing state, what
+    # liveChip() reads, is part of the repaint condition too.
+    body = _function_body("showClockText")
+    assert "chipKey = fleetChipKey()" in body
+    assert "chipKey !== lastFleetChipKey" in body
+    assert "lastFleetChipKey = chipKey" in body
+    key = _function_body("fleetChipKey")
+    assert "u.online" in key and '"preparing"' in key
+    chip = _function_body("liveChip")
+    assert "!u.online" in chip and '"preparing"' in chip
+
 def test_the_checkbox_says_the_units_only_learn_it_at_upload():
     # Ticking it after an Upload never reaches the units (the show keeps its
     # id by design), so the unit-side fallback - the PC vanishing before the

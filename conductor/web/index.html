@@ -5657,19 +5657,28 @@ function renderFleet() {
   if (!demoListTried) refreshDemos();        // first time the Units tab is opened
   if (!backupListTried) refreshBackups();    // ...and the backups, the same way
 }
-let lastFleetThumbPos = null, lastFleetRunState = undefined;
+let lastFleetThumbPos = null, lastFleetRunState = undefined, lastFleetChipKey = null;
+// What liveChip() reads off the fleet (online / preparing per unit): a change
+// here must repaint the LOOK row's chips even with the show standing still -
+// otherwise a unit that was offline when the row was last painted (a reboot,
+// a page opened before it answered) keeps "unit offline" until the show moves.
+function fleetChipKey() {
+  return fleet.units.map(u => u.name + (u.online ? "+" : "-") + (u.phase === "preparing" ? "p" : "")).join(",");
+}
 function showClockText() {
   const box = $("#show-clock");
   if (!box || !fleet) return;
   paintSeek();
   // The live LOOK row repaints only when the position moved at least half a
-  // second or the run state itself changed - never at the 4 Hz of this
+  // second, the run state itself changed, or a unit's online/preparing state
+  // changed (fleetChipKey(), for the "unit offline" chip) - never at the 4 Hz of this
   // interval, and not while the operator is dragging the seek bar (previewSeek()
   // already keeps the thumbnails live then, on every drag event instead).
   if (ui.seekDrag === null) {
-    const pos = fleetShowPos(), runState = fleet.run?.state || null;
-    if (lastFleetThumbPos === null || Math.abs(pos - lastFleetThumbPos) >= 0.5 || runState !== lastFleetRunState) {
-      lastFleetThumbPos = pos; lastFleetRunState = runState;
+    const pos = fleetShowPos(), runState = fleet.run?.state || null, chipKey = fleetChipKey();
+    if (lastFleetThumbPos === null || Math.abs(pos - lastFleetThumbPos) >= 0.5 || runState !== lastFleetRunState
+        || chipKey !== lastFleetChipKey) {
+      lastFleetThumbPos = pos; lastFleetRunState = runState; lastFleetChipKey = chipKey;
       updateThumbColors(pos, THUMBS.fleet);
     }
   }
