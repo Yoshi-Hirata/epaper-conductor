@@ -139,6 +139,17 @@ beacon alone cannot bring it back (by design) - it needs HTTP polls; (c) with HT
 starting, about 40 s after power returns. Not covered: a unit whose saved clock happens to fall inside the show (it
 would need a boot or a clock save during the same show followed by a power cut, and no HTTP).
 
+Morning-Upload operation check, 16:46-16:57 (the Kunitachi plan: Upload in the morning, garments dressed and power-cycled,
+START only at the venue): radxa-06 + board 3 holding the 18-cue test show `cold06` since 15:16 (two cold power cuts in
+between); a NEW test Conductor started with `--adopt` (EXHIBITION's startup offer) on the same workspace - raw log:
+docs/hwcheck-20261120-logs/eye.log:
+
+| # | Step | Evidence | Verdict |
+|---|------|----------|---------|
+| 43 | The restarted Conductor takes over what the unit holds, no Upload | correction "radxa-06: holds this show already (adopted after a restart of the conductor)"; `shows = {radxa-06: 1572245670}` | pass (the show PC's own version of this is being built: fleet.json `keep_uploads_on_restart`) |
+| 44 | Reference pass: START from 0:00, 80 s | slots 1-5 fired at 0/20/40/60/80 s (+1..2 ms); the operator watched the glass: white, A, B, C, A | reference |
+| 45 | Power pulled from radxa-06 and board 3 (shared supply) for ~10 s, back; START again, no Upload | the unit boots holding `cold06`, burn `burned 18/18`, board 3 live after 20 s; same slots fired at the same positions; **the operator saw the same pictures in the same order** | pass: the boards keep their slot pictures through a power cut, and START alone replays them |
+
 Still open after the third round: the PICTURE on the glass and the LCD have not been watched by a person in any of
 these (the LCD was read later, rows 37-40); a COLD power cycle had not been done at that point (done later, rows 41-42);
 rows 28/29 again show two triggers 2-3 s apart (the current picture on joining, then the next cue).

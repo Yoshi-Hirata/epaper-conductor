@@ -559,6 +559,12 @@ column (hardware).
   fall inside the show (a boot or clock save during the same show, then a power
   cut, and no HTTP).
 
+**Restart of the Conductor (show PC with `keep_uploads_on_restart`, fe19d8c).** The
+shows a restarted Conductor adopted from the units (it takes a unit as uploaded
+only on the same show id, pictures written, same clear setting) are announced
+by the beacon as confirmed shows. After a restart in the middle of a show nothing
+is announced until STOP, as before (CONDUCTOR_START.md section 1d).
+
 **Operating rule from the power cut.** A garment that loses power needs about 40 s
 after power returns and a working Wi-Fi link to the PC to rejoin; if its link does
 not reach the PC it stays as it is until it does.

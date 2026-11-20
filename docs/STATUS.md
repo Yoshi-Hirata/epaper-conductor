@@ -1,6 +1,6 @@
 # 現在地と再開手順
 
-最終更新: 2026-11-20(ビーコンの実機確認、START スイッチ、会場ネットワークと国立駅の音源差し替え)
+最終更新: 2026-11-20(夕方: 朝に Upload・会場では START だけ、機体の Wi-Fi 見張り、2.4 GHz の電波実測。昼: ビーコンの実機確認、START スイッチ、会場ネットワーク、国立駅の音源差し替え)
 
 **この文書は「次に何をするか」だけを書く。** 経緯は
 [DEVELOPMENT.md](DEVELOPMENT.md)、20 枚構成の検討は [SCALING.md](SCALING.md)、
@@ -21,6 +21,21 @@
 ## 2. 直近で完成したもの
 
 **国立駅(11-22)に向けた 2026-11-20 の到達点と、次にやること**
+
+- **夕方の追加(main)**:
+  - **7a31749 機体の Wi-Fi 見張り**(`ui/wifi.py`)。国立駅の 9 台に 17:25 ごろから。ネットワークが 30 秒なくなると前のプロファイル
+    (ホットスポット以外)へ `nmcli con up`。radxa-08 を R2.net の端へ持ち出して NetworkManager が `no-secrets` で自動接続を
+    やめた件の対策。LCD に `wifi: reconnect R2.net`。わざとの `nmcli con down` も戻る(外すには無線 OFF か `--no-wifi-watchdog`)。
+    [CONDUCTOR_START.md](CONDUCTOR_START.md) 4b 節、[SPECIFICATION.md](SPECIFICATION.md)「Wi-Fi の切り替え」
+  - **fe19d8c 朝に Upload、会場では START だけ**: fleet.json `"keep_uploads_on_restart"`(既定 OFF)。再起動した PC の Conductor が機体の持つ
+    ショーを引き継ぐ。**`kunitachi-data/fleet.json` は true にしてある。Kunitachi の Conductor を一度起動し直すと効く**
+    (新コードも)。手順 [CONDUCTOR_START.md](CONDUCTOR_START.md) 1d 節。実機: 電源断のあとも機体と基板が絵を保ち、
+    起動し直した Conductor が引き継いで START が通った([BEACON_HWCHECK_20261120.md](BEACON_HWCHECK_20261120.md) 43〜45 行)
+  - **電波**: Wavlink は 2.4 GHz だけ(チャンネル自動 8)。裸の機体で屋外約 150 m、衣装の中は外より約 10 dB 弱い(中央値 -74 / -64 dBm)。
+    会場で Wavlink の置き場所・アンテナ・チャンネル固定(1/6/11)と 20 MHz、Upload はルーターの近く、PC は LAN ケーブル。
+    [CONDUCTOR_START.md](CONDUCTOR_START.md) 4b 節
+  - **次**: ① Kunitachi の Conductor を起動し直す ② 朝の Upload の通しリハーサル(7 着、電源を切って戻して START だけ)
+    ③ 会場の電波チェック(上)。下の「11-22 の前に残る」も有効。国立駅の 9 台は 7a31749(以下の ab674dd の記述より新しい)
 
 - **国立駅の 9 台**(radxa-01〜04、06〜10。05 は使わない)は **ab674dd**(ビーコンの受信側 + UPDATE FW の scan-wait 修正 +
   REMOTE 画面の最新ログ行がヒントの帯に隠れない修正)。origin/main = ab674dd(2026-11-20 15:15 に push 済み)

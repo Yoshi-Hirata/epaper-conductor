@@ -1340,6 +1340,24 @@ SSID がスキャンに見えている間は最長 10 分待ってから ― `nm
     **ランの force は引き継がない**(`flags` の bit0 も立てない。基板の失敗を持って戻れば、force 付きの再 START か救済 Upload まで外れたまま)。
     HTTP の START は送らない
   - 既定 OFF。運用は「START の前に全機 online」が基本で、これは予備(CONDUCTOR_START.md 4d 節)
+- **再起動した PC の Conductor が機体の持つ Upload を引き継ぐ(2026-11-20、fe19d8c、`keep_uploads_on_restart`。PC の Conductor だけ、機体は変更なし)**:
+  - **スイッチ**: fleet.json `"keep_uploads_on_restart": true`(**既定 OFF**、厳密な bool、`--adopt` では無視)。
+    国立駅の `kunitachi-data/fleet.json`(git 管理外)は true。起動時にだけ読むので、起動し直すまで効かない。
+    朝に Upload して会場では START だけ、という運用のため(CONDUCTOR_START.md 1d 節)。展示(EXHIBITION)とこのオプションの無い PC は従来どおり
+  - **規則**: 起動し直した Conductor は現在のワークスペースをコンパイルし、機体が**まったく同じショー ID**(コンパイルした絵の
+    ハッシュ)・**絵が書き込み済み**・**同じ「Clear pictures after the show」の設定**を報告したときだけ、その機体を Upload 済みと
+    みなす。corrections に `radxa-NN: holds this show already (adopted after a restart of the conductor)`
+  - **START**: まだ確認されていない機体があると `Not confirmed since the Conductor restarted: radxa-06 (waiting for its first reply).`
+    のように断る。理由: `waiting for its first reply` / `not answering` / `holds no show - Upload` /
+    `holds another show - Upload` / `'Clear pictures after the show' differs - Upload` / `still writing its pictures - wait` /
+    `pictures cleared - Upload` / `pictures not written - Upload` / `confirmed after STOP` / `being confirmed - wait`。
+    起動し直したあとに編集すると `changed since` で START を断る(Upload が要る)
+  - **適用しない場合**: 起動し直した時点でユニットに生きたランが見つかった(ショーの途中の再起動。**STOP のあとに引き継ぐ**)、
+    プリセットの段階の間、START を判断している間。**Upload / 取り込み / 復元は申し出を取り下げる** ―
+    申し出の間の 1 LOOK だけの Upload は、まだ確認されていない機体を落とす(その機体はその LOOK の Upload が要る)
+  - 実機: 電源を落としても機体はショーと焼き込みの記録を保ち、基板もスロットの絵を保つ(radxa-06 + 基板 3 で、電源を入れ直して
+    同じ絵が同じ順、START だけで Upload なし)。起動し直した Conductor が保持中のショーを引き継いで START が通った
+    (BEACON_HWCHECK_20261120.md 43〜45 行)
 - **Preset before START**(2026-10-01、展示の実機テスト: カウントダウン 3 秒では 0:00 の絵が曲の
   前に描き終わらなかった): `show.json` の `preset_before_start`(**既定 off = キーなし**、on は
   `true` だけを保存 ― `set_preset_before_start` も `import_show` も同じ規則で、`false` の
@@ -1870,6 +1888,15 @@ radxa-05(Debian 11、SD/eMMC 上の ext4 `rw,relatime`)は 2026-10-01 に 2 回�
   機体が電源を入れ直すたびに WIFI を永久に失う。レビュー第 2 回、2026-09-30)。
   切り替えはランナー・シリアルポート・基板に一切触れない(ランナーは止めない。
   実行中のデモはそのまま続く)
+- **Wi-Fi 見張り(2026-11-20、7a31749、`ui/wifi.py`、全 9 台に 17:25 ごろから)**: 機体が 30 秒ネットワークを失ったままなら、
+  もう一度状態を読み、それでも無ければ直前に乗っていたプロファイル(**ホットスポットは対象外**)に `nmcli con up` を打つ。
+  試行は 30 秒おき。理由: 圏の端で WPA の 4-way handshake が時間切れになると NetworkManager 1.42 が
+  パスワード違いと見なして `no-secrets` で失敗し、自動接続をやめた(radxa-08 を R2.net の端へ持ち出して発生)。
+  - LCD のログ: `wifi: reconnect R2.net` → `wifi: on R2.net`。長い断では最初の失敗と 5 回おきだけ。WIFI 画面は試行中
+    `reconnecting R2.net - KEY2 back`。`/status` の `wifi` に `reconnect`。**無線が OFF のときは何もしない**
+  - `--no-wifi-watchdog`(`/etc/default/epaper-ui` の `UI_ARGS`)で無効。実機(radxa-08): `nmcli con down R2.net` は 33〜47 秒で戻る
+  - **結果**: わざとの `nmcli con down` も戻る。機体をネットワークから外すには無線を OFF にするかこのフラグ。
+    LCD の WIFI メニューや再起動による手動の回復は変わらない
 - **`radxa/firstboot.sh`**(毎起動)はルータ用プロファイルにだけ機体番号の IPv4 を
   入れる。`AZ-Epaper`(mode ap / ipv4.method shared、または名前・SSID が
   `EXPO_SSID`)は対象外で、`connection up` は選んだプロファイルがいま有効なときだけ

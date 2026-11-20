@@ -87,6 +87,48 @@ JR 国立駅の 2026-11-22 のショー用に、もう 1 つ別のアプリが�
 - **11-22 の前に**: 音源つきで 36:34 を最初から最後まで 1 回通して流す(長時間のずれの再シーク)。
   機体のスピーカー(radxa-05 の mpg123)で音源の遠い位置へシークするのは**未試験**
 
+### 1d. 国立: 朝に Upload、会場では START だけ(2026-11-20、fe19d8c)
+
+会場の電波は衣装の中で弱い(4b 節「電波」)。Upload は絵を何枚も送るので、**ルーターの近くで朝のうちに済ませ、
+会場では START だけ**にする。機体と基板は電源が落ちてもショーと絵を保つ(2026-11-20 に実機で確認。記録
+[BEACON_HWCHECK_20261120.md](BEACON_HWCHECK_20261120.md) 43〜45 行)。国立駅の `kunitachi-data/fleet.json` には
+`"keep_uploads_on_restart": true` が入れてある(仕様は SPECIFICATION.md 4.7)。**Kunitachi の Conductor を一度起動し直すまで
+効かない**(新しいコードも同じ。起動し直したら黒いウィンドウを開いたままにする)。
+
+**朝(ルーターの近くで)**
+
+1. `Start Kunitachi Conductor.bat` で起動。Units タブで **7 着が online**
+2. タイムラインを**確定する(以降は編集しない)**。**「Clear pictures after the show」もこの時点で決める**
+   (あとで変えると、Conductor を起動し直したあとに Upload が要る)
+3. **① Upload** → 7 着が「書き込み済み」になるまで待つ
+4. (任意)START → STOP で確認する
+
+**移動・着替え・バッテリー交換**
+
+- 機体と基板の電源は自由に切ってよい。起動した機体は白(スタンバイ)。**電源が戻ってから約 40 秒で PC とつながる**
+
+**会場**
+
+1. PC を `R2.net` に入れる。**Wavlink は朝の場所にも持っていく**(朝の Upload にも `R2.net` が要る)
+2. Conductor を起動し直していた(またはこれから起動する)場合は、corrections に **`radxa-NN: holds this show already (adopted
+   after a restart of the conductor)` が 7 着ぶん**出るのを待つ。START が
+   `Not confirmed since the Conductor restarted: radxa-06 (waiting for its first reply).` で断られたら、**その機体の最初の返事を待つ**。
+   理由の終わりが `- Upload` の行(`holds no show` / `holds another show` / `'Clear pictures after the show' differs` /
+   `pictures cleared` / `pictures not written`)は、その機体に Upload が要る。`- wait`(`still writing its pictures` /
+   `being confirmed`)は待つだけ
+3. START の下の 2 つのスイッチ(`Backup broadcast (beacon)` と `START without units that do not answer`)は**オフで始める**。
+   リハーサルで応答が途切れる機体が出たら ON を検討(4c・4d 節)
+4. **③ START**。**Upload はしない**
+
+**注意**
+
+- **ショーの途中で Conductor を起動し直した**ときは、そのショーが終わったら **STOP** する。引き継ぎは STOP のあとに行われる
+- 朝のあとにタイムラインや「Clear pictures after the show」を変えると、`changed since` で START が断られる(Upload が要る)
+- **1 LOOK だけの Upload は、まだ確認されていない衣装の引き継ぎを取り消す**(その衣装はその LOOK の Upload が要る)。**会場ではしない**
+- `--adopt` の Conductor(展示)と、このオプションの無い PC は従来どおり
+- Wi-Fi が切れた機体は 30 秒後に自分でつなぎ直す(LCD に `wifi: reconnect R2.net`)。戻らない機体は LCD の WIFI メニューで
+  `R2.net` を選ぶか、再起動(4b 節)
+
 ## 2. 停止する
 
 黒いウィンドウを閉じる(または そのウィンドウで Ctrl+C)。
@@ -132,7 +174,7 @@ python -m conductor serve --open
 
 **会場(国立駅)のネットワーク(2026-11-20)**
 
-- 会場のルーターは **Wavlink、SSID `R2.net`**(管理画面 192.168.30.1、LAN 192.168.30.x は DHCP、5 GHz チャンネル 40)。
+- 会場のルーターは **Wavlink、SSID `R2.net`**(管理画面 192.168.30.1、LAN 192.168.30.x は DHCP、**2.4 GHz だけ**。下の「電波」)。
   **ルーターモード(「メッシュルータモード」、WAN = DHCP)** に切り替えてある。以前の Repeater / WISP では、上流の
   スマホのホットスポットが切れると `R2.net` そのものが消え、PC は 35〜50 秒で落ち、機体は ssid-not-found になった。
   ルーターモードでは WAN のケーブルを抜いて 130 秒、9 台すべてが 3 秒ごとに答え続けた。**ショーに WAN の接続は要らない**
@@ -146,7 +188,30 @@ python -m conductor serve --open
   プロファイル `yoshihirock.net_5G` は一致しなくなったので、**機体は会場で別のネットワークへ飛ばない**(ショーには好都合)。
   代わりに予備のネットワークも無い(足すなら `tools/add_unit_wifi.sh`、または SSID を元の名前に戻す)
 - 国立駅で使う 9 台(radxa-01〜04、06〜10。radxa-05 は使わない)は 2026-11-20 から 1aa943d
-  (ビーコンの受信側と UPDATE FW の scan-wait 修正)
+  (ビーコンの受信側と UPDATE FW の scan-wait 修正)。同じ日の夕方(約 17:25)から **7a31749**(下の Wi-Fi 見張り)も入っている
+
+**電波(2026-11-20、屋外で広い範囲を歩く国立向け)**
+
+- **Wavlink は 2.4 GHz だけにした**(屋外・遠くまで届かせるため。チャンネルは自動 = 8、帯域 20/40 MHz 自動、
+  送信出力 = 詳細設定 → 信号調整 = 「高い」で、すでに最大)。機体のアンテナは変えられない
+- 実測(radxa-08): 裸の機体を屋外で歩いて通信は約 150 m まで(運用者)。機体のログでは 1 分で約 -70 dBm、リンク速度は
+  1 Mb/s まで下がり、約 -80 dBm で切れた。ルーターから 5 m: 衣装の外 -61〜-69 dBm(中央値 -64、25 Mb/s)、
+  衣装の中 -73〜-77 dBm(中央値 -74、8〜17 Mb/s、ping は 30 回に 1 回落ちた)、ノイズ -89 dBm
+- 読み方: **衣装の中は外より約 10 dB 弱い**(自由空間の届く距離で約 1/3)。機体そのものも携帯・PC より 15〜20 dB 弱い。
+  Upload は**ルーターの近くだけ**でやる
+- 残る手: ① Wavlink を衣装の通り道が見通せる高い所に置き、アンテナを立てる ② 会場で空いているチャンネルを 1 / 6 / 11 から選んで固定し、
+  帯域を 20 MHz にする ③ 機体を衣装の外側・高い所に付ける
+- PC は、**Wavlink の LAN ポートに LAN ケーブルでつなぐのが最も確か**。USB の Wi-Fi アダプターは PC と Wavlink の間しか
+  良くならず、衣装の届く範囲は変わらない(候補に TP-Link Archer TBE400UH などを見たが、購入の決定はしていない。
+  WAVLINK AX5400 は販売ページに技適の表示が見つからなかった)
+- **機体の Wi-Fi 見張り(7a31749、全 9 台)**: ネットワークが 30 秒なくなると、機体が自分で最後に乗っていたプロファイル
+  (ホットスポットには戻らない)へ `nmcli con up` でつなぎ直す(失敗しても 30 秒おき)。LCD のログに
+  `wifi: reconnect R2.net` → `wifi: on R2.net`(長く切れたときは最初の失敗と 5 回おき)。WIFI 画面は試行中
+  `reconnecting R2.net - KEY2 back`。radxa-08 で `nmcli con down R2.net` が 33〜47 秒で戻ることを確かめた。
+  理由: 圏の端で WPA のハンドシェイクが時間切れになると NetworkManager 1.42 が「パスワード違い」(`no-secrets`)と
+  見なして自動接続をやめ、圏内に戻っても機体が離れたままになった。**わざと `nmcli con down` した機体も戻る** ―
+  ネットワークから外したいときは無線を切る(radio off は何もしない)か、`/etc/default/epaper-ui` の `UI_ARGS` に
+  `--no-wifi-watchdog`。LCD の WIFI メニューで R2.net を選ぶか、再起動、という手動の回復はそのまま使える
 
 ## 4c. ビーコン(予備の一方向ブロードキャスト、2026-11-20)
 
