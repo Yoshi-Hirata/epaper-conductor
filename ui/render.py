@@ -77,6 +77,15 @@ def _header(draw: ImageDraw.ImageDraw, text: str, color=ACCENT,
               fill=color)
 
 
+# The REMOTE screen's log: LOG_LINES rows that must END above the hint strip
+# (HEIGHT - 20). At 134 + 15 px a row the sixth - the NEWEST line, the one the
+# operator is waiting for ("beacon stop") - ended about 3 px inside the strip
+# and stayed clipped until the next line pushed it up (seen on radxa-06's LCD
+# in the operator's video, 2026-11-20). 14 px a row from 133 ends at 217.
+REMOTE_LOG_TOP = 133
+REMOTE_LOG_PITCH = 14
+
+
 def _hint(draw: ImageDraw.ImageDraw, text: str) -> None:
     """Bottom strip. Hints are written to fit the Radxa's DejaVu 12px
     (wider than the Windows preview font); one that still does not fit
@@ -509,12 +518,12 @@ def remote_screen(status: dict, log_lines: list[str], now: float = 0.0,
                                        WIDTH - 16), font=FONT_S, fill=ERR)
 
     draw.line((8, 130, WIDTH - 8, 130), fill=BAR, width=1)
-    y = 134
+    y = REMOTE_LOG_TOP
     for line in log_lines[-LOG_LINES:]:
         tint = ERR if "ERROR" in line else DIM
         draw.text((8, y), _ellipsize(line, FONT_S, WIDTH - 16),
                   font=FONT_S, fill=tint)
-        y += 15
+        y += REMOTE_LOG_PITCH
 
     _hint(draw, hint if hint is not None else
           ("buttons locked" if locked else "KEY2 local menu  KEY3 off"))

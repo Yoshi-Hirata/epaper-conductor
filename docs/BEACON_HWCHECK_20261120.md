@@ -2,7 +2,7 @@
 
 Status: DONE except the open items below (2026-11-20). Raw record of the check; the summary is in `docs/BEACON.md`
 section 10, the START switch (rows 30-36, F1) in section 9.
-Open: LCD - filmed by the operator at 14:29, reading pending; a COLD power cycle (battery pulled); more than one deaf
+Open: a COLD power cycle (battery pulled); more than one deaf
 unit, a weak link and a full-length run with the beacon on. Observations O1 and O2 are at the end of the third round.
 Decision (Codex as overseer): the beacon stays OFF on 2026-11-22 unless these are closed and a rehearsal shows a real need.
 (The setup below is as it was in round 1; the Wavlink went from WISP to router mode before round 3.)
@@ -106,7 +106,23 @@ the revision retry, the left-out unit observed once more before the commit, no H
 
 LCD, 14:24-14:31: the operator watched radxa-06 (and filmed the second pass) while START, HOLD, RESUME and STOP were
 sent with HTTP cut; the unit's log shows `beacon run, starts in ...`, `beacon hold`, `beacon run, joined 22s` / `23s`,
-`beacon stop` and the cues at +1..2 ms. LCD: filmed, reading pending (the video had not arrived when this was written).
+`beacon stop` and the cues at +1..2 ms.
+
+LCD read from the operator's video (PXL_20261120_052806101.mp4, 98 s, the second pass; frames taken every few seconds):
+
+| # | On the LCD (REMOTE screen of radxa-06) | Verdict |
+|---|---|---|
+| 37 | START: header `ARMED`, `fires in 14 s`, `SHOW -00:03  next in 14 s`; log line `05:29:03 beacon run, starts in 5s` in full, then `05:29:03 cue 5b56260216:6:q00 fi...` | pass: the line is complete and readable |
+| 38 | HOLD: header `READY`, `no fire time yet`, `SHOW HOLDING  9 cues`; log line `05:29:31 beacon hold` | pass |
+| 39 | RESUME: header `ARMED`, `fires in 4 s`, `SHOW 00:26  next in 4 s`; log line `05:29:54 beacon run, joined 23s` in full | pass |
+| 40 | STOP: header `READY`, `SHOW STOPPED  9 cues`; log line `05:30:16 beacon stop` | pass |
+
+LCD observations: (L1) the NEWEST log line is clipped at its bottom by the footer bar (`KEY2 local menu  KEY3 off`)
+until the next line pushes it up - ui/render.py `remote_screen` draws 6 lines of 15 px from y=134 (the sixth ends at
+about y=223) and the footer starts at y=220; not beacon-specific, but the line that has just arrived is the one the
+operator wants. (L2) the log's clock is the unit's UTC (05:29 for 14:29 JST). (L3) in every frame a thin dark vertical
+line runs through the second character column of this unit's LCD (`f|res`, `S|HOW`, `0|5:29`) - the panel or its
+cover on radxa-06, not the software. The cue lines are ellipsized (`...q00 fi...`) as designed.
 
 Still open after the third round: the PICTURE on the glass and the LCD have not been watched by a person in any of
 these; a COLD power cycle (battery pulled - the RTC may not keep time, and then the restore position is not known) has
@@ -123,7 +139,7 @@ Observations (not beacon defects as far as the PM can tell; for the overseer):
   Every boot that morning came up at the same stale time; after the unit reached NTP once, about 12:34 JST, a warm reboot
   restored the right position - rows 28/29. Rule: battery swaps between shows; a garment that lost power goes back on
   stage only after its picture is confirmed.)
-- The unit's LCD: filmed on 2026-11-20 14:29, reading pending; the lines quoted are from the unit's log (the LCD shows the same
+- The unit's LCD: read from the operator's video of 2026-11-20 14:29 (rows 37-40). The lines quoted elsewhere are from the unit's log (the LCD shows the same
   lines). `--frames` writes PNGs only with the png display, so they cannot be fetched from a unit with the real LCD.
 
 Still not tested after the third round (Loop with a unit that is not heard was done in row 27): crafted
@@ -144,4 +160,4 @@ the START (HOLD/RESUME/SEEK/NEXT/STOP and rejoin), not the START itself.
 - Not exercised on hardware: the skip lines `no show` and `own demo`; `beacon NG: ...`; `beacon: STOP wins`.
 - More than one deaf unit; a weak-signal link rather than a clean cut; a full-length (36:34) run with the beacon ON; a
   COLD power cycle (battery pulled).
-- The LCD itself: filmed, reading pending. The THE SHOW / START-switch texts are recorded in rows 34/35; whether a person read them on screen is not recorded.
+- The LCD itself: done for START / HOLD / RESUME / STOP (rows 37-40); the skip and refusal lines (`beacon skip: ...`, `beacon NG: ...`) have not been filmed. The THE SHOW / START-switch texts are recorded in rows 34/35 and were read on the PC's page by the PM.
