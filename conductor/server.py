@@ -39,6 +39,11 @@ client's, not the repo's):
                     go without the units that are only "not answering"
                     and were last seen ready (Fleet.start_without_silent).
                     Default false. The Units tab checkbox writes it.
+                    "keep_uploads_on_restart": true has the show PC's
+                    Conductor, when it starts, take a unit that still
+                    holds exactly this workspace's show (pictures burned)
+                    as uploaded - no Upload after a PC restart
+                    (offer_startup_shows). Default false; no checkbox.
 
 Undo covers show.json - the timeline, the show's length and the unit
 assignments - and is kept on disk, so it survives a reload of the page
@@ -290,6 +295,24 @@ def _staging(fleet) -> bool:
 
 # What those gates answer during the stage.
 STAGING_REFUSAL = "the show is starting (preset first) - STOP it first"
+
+# START on the show PC with fleet.json "keep_uploads_on_restart" while
+# garments of its startup offer are not confirmed yet (offer_startup_shows):
+# each named with why, from its state now (Fleet.offer_waiting) - never the
+# plain "Nothing uploaded yet" or "Upload for All LOOKs", which read as
+# "Upload at the venue" for a unit that has only not answered yet since the
+# restart, or is still writing (review of keep_uploads_on_restart,
+# 2026-11-20). Only the reasons that end in "- Upload" ask for one.
+KEPT_UPLOADS_WAITING = "Not confirmed since the Conductor restarted: "
+
+
+def kept_uploads_waiting(waiting: "dict[str, str]") -> str:
+    """The sentence for {unit: why}: units grouped by why, in order."""
+    groups: "dict[str, list[str]]" = {}
+    for name, why in sorted(waiting.items()):
+        groups.setdefault(why, []).append(name)
+    return KEPT_UPLOADS_WAITING + "; ".join(
+        f"{', '.join(names)} ({why})" for why, names in groups.items()) + "."
 
 
 def loop_wait_of(show: dict) -> "float | None":
@@ -2413,6 +2436,13 @@ class Workspace:
         else:
             self.marks.pop(what, None)
 
+    def unmark_written(self, what: str, unit: str) -> None:
+        """Take back one unit's mark under `what` - a startup adoption a
+        run recovered from the units set aside (Fleet._adopt) - and with
+        it the fleet-wide one, which can no longer be true of every unit."""
+        self.unit_marks.get(what, {}).pop(unit, None)
+        self.marks.pop(what, None)
+
     def timeline_units(self) -> "set[str]":
         """The units this timeline needs - every unit an item with a cue
         is assigned to. What compile_show() would target, read straight
@@ -4059,7 +4089,18 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, b"not found", "text/plain")
 
 
-    def _one_timeline(self, fleet) -> None:
+    def _kept_snapshot(self, fleet) -> "dict | None":
+        """The show PC with "keep_uploads_on_restart": ONE reading of the
+        marks, the held units and the offer's pending ones for this START /
+        PRESET (Fleet.start_snapshot) - the gate and its advice decide on
+        the same state (Codex, round 2). None without the option: main's
+        reads, exactly."""
+        if not getattr(fleet, "keep_uploads", False):
+            return None
+        return fleet.start_snapshot(
+            lambda: dict(self.workspace.unit_marks.get("upload", {})))
+
+    def _one_timeline(self, fleet, snap: "dict | None" = None) -> None:
         """Refuse a START / PRESET that would run the fleet on two
         different timelines, on one it has moved past, or on one that does
         not build at all.
@@ -4083,8 +4124,17 @@ class Handler(BaseHTTPRequestHandler):
         asking about THAT (N1). Two gates, two questions, two answers.
 
         It lives here rather than in Fleet because only the workspace
-        knows what revision the timeline on screen is."""
-        marks = self.workspace.unit_marks.get("upload", {})
+        knows what revision the timeline on screen is.
+
+        `snap` (the show PC with "keep_uploads_on_restart", _kept_snapshot):
+        the marks, held units and pending offer read together under the
+        lock adoptions mark under - never the live dict a poll may be
+        adding to (N4) - and a unit still pending is named with its advice
+        rather than "Upload for All LOOKs"."""
+        if snap is None:
+            marks = self.workspace.unit_marks.get("upload", {})
+        else:
+            marks = snap["marks"]
         if not marks:
             return
         rev = self.workspace.revision()
@@ -4122,8 +4172,11 @@ class Handler(BaseHTTPRequestHandler):
             wanted = {unit for unit in wanted if unit in present}
             marks = {unit: mark for unit, mark in marks.items() if unit in present}
         missing = sorted(unit for unit in wanted if unit not in marks)
+        # Without a snapshot, `fleet.shows` read HERE, after EXHIBITION's
+        # adopt_offered() above has rebound it - main's order exactly.
+        held = fleet.shows if snap is None else snap["held"]
         known = {unit: mark for unit, mark in marks.items()
-                 if unit in fleet.shows or unit in wanted}
+                 if unit in held or unit in wanted}
         behind = sorted(unit for unit, mark in known.items() if mark != rev)
         if not missing and not behind:
             return
@@ -4135,6 +4188,20 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError(
                 "every unit holds an older upload than the timeline on "
                 "screen - Upload again before the show")
+        # The show PC with "keep_uploads_on_restart": a garment of the
+        # startup offer that is not confirmed yet is named with why
+        # (waiting for its first reply, still writing, ...), never told to
+        # "Upload for All LOOKs" - unless the timeline was edited since,
+        # when an Upload is what every unit needs (2026-11-20).
+        waiting = (fleet.offer_waiting(snap["pending"])
+                   if snap is not None and not behind else {})
+        unconfirmed = {unit: waiting[unit] for unit in missing if unit in waiting}
+        if unconfirmed:
+            rest = [unit for unit in missing if unit not in unconfirmed]
+            raise ValueError(" ".join(filter(None, [
+                kept_uploads_waiting(unconfirmed),
+                (f"{', '.join(rest)} {'is' if len(rest) == 1 else 'are'} not on "
+                 "this upload - Upload for All LOOKs before the show") if rest else ""])))
         named = ", ".join(missing + behind)
         raise ValueError(
             f"{named} {'is' if len(missing) + len(behind) == 1 else 'are'} "
@@ -4355,7 +4422,7 @@ class Handler(BaseHTTPRequestHandler):
             # two different 0:00 looks side by side - is a gate of its
             # own, with its own answer (`split_ok`).
             if not body.get("split_ok"):
-                self._one_timeline(fleet)
+                self._one_timeline(fleet, self._kept_snapshot(fleet))
             return self._json({"units": fleet.preset(
                 force=bool(body.get("force")))})
         if command == "seek":
@@ -4407,9 +4474,18 @@ class Handler(BaseHTTPRequestHandler):
                 # nothing adopted yet goes on to start_show(), which adopts a
                 # garment that holds the show now or answers why not ("no
                 # garment is connected").
-                if not fleet.shows and not (self.adopt and fleet.timeline_units()):
-                    return self._json({"units": {}, "note":
-                                       "Nothing uploaded yet - Upload first."})
+                # The show PC with "keep_uploads_on_restart": one snapshot
+                # for this whole decision and its advice (_kept_snapshot).
+                snap = self._kept_snapshot(fleet)
+                held = fleet.shows if snap is None else snap["held"]
+                if not held and not (self.adopt and fleet.timeline_units()):
+                    # ...with its startup offer still open: no unit confirmed
+                    # since the restart - each named with why (2026-11-20).
+                    waiting = ({} if snap is None
+                               else fleet.offer_waiting(snap["pending"]))
+                    return self._json({"units": {}, "note": (
+                        kept_uploads_waiting(waiting) if waiting else
+                        "Nothing uploaded yet - Upload first.")})
                 # A second click on START must not move a running show's
                 # clock; starting over is said out loud (the page asks).
                 # A run that has reached its end (ENDED, a Loop wait) is
@@ -4427,7 +4503,7 @@ class Handler(BaseHTTPRequestHandler):
                 # because after it the fleet is already running - and on
                 # its own answer, never on the burn gate's `force`.
                 if not body.get("split_ok"):
-                    self._one_timeline(fleet)
+                    self._one_timeline(fleet, snap)
                 from_s = body.get("from_s")
                 if from_s is None:
                     # No range check skipped here: fleet.start_show()
@@ -4742,7 +4818,8 @@ def reachable_urls(host: str, port: int) -> "list[str]":
 
 def offer_startup_shows(fleet: "Fleet", ws: Workspace
                         ) -> "tuple[dict[str, dict], list[str]]":
-    """EXHIBITION mode's startup adoption (`serve --adopt`): compile the
+    """The startup adoption of EXHIBITION mode (`serve --adopt`) and of the
+    show PC with fleet.json "keep_uploads_on_restart": true: compile the
     workspace and offer the per-unit shows to the fleet. A unit adopted
     (it reports that id, pictures burned) is marked as holding the
     compile's REVISION, exactly as an Upload would mark it - so the page's
@@ -4750,17 +4827,29 @@ def offer_startup_shows(fleet: "Fleet", ws: Workspace
     show, and an edit made after the restart is refused with "Upload
     again" instead of running the old pictures under the new timeline.
     A timeline with problems compiles to nothing and offers nothing."""
-    rev = ws.revision()
     try:
+        rev = ws.revision()                 # in here: a bad show.json still serves
         compiled, problems = ws.compile_show()
     except Exception as exc:                # noqa: BLE001 - a bad workspace still serves
         compiled, problems = {}, [f"{exc.__class__.__name__}: {exc}"]
     if compiled and not problems:
-        def mark(unit: str) -> None:
-            ws.mark_written("upload", rev, units=[unit],
-                            all_units=sorted(set(compiled) | ws.timeline_units()))
-        fleet.offer_shows(compiled, on_adopt=mark)
+        _offer_with_marks(fleet, ws, compiled, rev)
     return compiled, problems
+
+
+def _offer_with_marks(fleet: "Fleet", ws: Workspace, shows: "dict[str, dict]",
+                      rev: str) -> None:
+    """fleet.offer_shows() with the workspace's three hooks: mark a unit
+    adopted as holding `rev` (the revision `shows` were compiled from), say
+    whether the workspace still is that revision (Fleet._offer_stale: a Loop
+    restart, the end of a staged START), and take a mark back when a run
+    recovered from the units sets the adoption aside."""
+    def mark(unit: str) -> None:
+        ws.mark_written("upload", rev, units=[unit],
+                        all_units=sorted(set(shows) | ws.timeline_units()))
+    fleet.offer_shows(shows, on_adopt=mark,
+                      current=lambda: ws.revision() == rev,
+                      on_drop=lambda unit: ws.unmark_written("upload", unit))
 
 
 def passcode_problem(host: str, passcode) -> "str | None":
@@ -4891,21 +4980,38 @@ def serve(workspace, port: int = 8765, open_browser: bool = False,
         print(f"cannot listen on {host}:{port}: {exc}", flush=True)
         return 1
     ws = server.RequestHandlerClass.workspace
+    # EXHIBITION mode (`--adopt`, or fleet.json "adopt": true): what this
+    # workspace compiles to is offered to the units, so a restart of the
+    # headless conductor does not cost an Upload of every picture before
+    # the Loop or START work again. The show PC offers only when its
+    # fleet.json says "keep_uploads_on_restart": true (2026-11-20, for
+    # Kunitachi: Upload in the morning near the router, battery swaps,
+    # START only at the venue - a PC restart must not mean an Upload over
+    # the venue's weak radio). Off, a restart there costs an Upload exactly
+    # as it always has. Either way the adopted units are MARKED as holding
+    # the startup compile's revision (offer_startup_shows) - the review of
+    # d79681a found an adopted show with no marks let an edit + START run
+    # the old pictures. The show PC keeps start_present off: its START
+    # still wants every garment of the timeline ready - and its offer
+    # follows the stricter rules of Fleet._adopt_show (`keep_uploads`, PM
+    # rulings of review rounds 1-2); EXHIBITION's is exactly as before.
+    beacon_options = config._fleet_json()
+    keep = beacon_options.get("keep_uploads_on_restart", False)
+    if not isinstance(keep, bool):
+        print(f'Warning: fleet.json: "keep_uploads_on_restart" must be true or false '
+              f'(got {keep!r}) - it stays off; a restart of this Conductor then needs an Upload',
+              flush=True)
     # The Loop's settings come from THIS workspace's show.json, read when a
     # run reaches its end - never cached on the fleet.
     fleet = Fleet(units, token, loop_settings=ws.loop_settings,
-                  start_present=adopt)
-    # EXHIBITION mode only (`--adopt`, or fleet.json "adopt": true): what
-    # this workspace compiles to is offered to the units, so a restart of
-    # the headless conductor does not cost an Upload of every picture
-    # before the Loop or START work again. The show PC never offers - a
-    # restart there costs an Upload exactly as it always has (review of
-    # d79681a: an adopted show with no marks let an edit + START run the
-    # old pictures).
+                  start_present=adopt, keep_uploads=keep is True and not adopt)
     compiled, problems = {}, []
-    if adopt:
+    if adopt or keep is True:
+        # Measured 2026-11-20: 0.3-0.6 s for 7 units x 18 cues of the
+        # starter garments, so it stays here, before the fleet polls and
+        # before a request is served: no Upload can land ahead of the
+        # offer and be undone by it.
         compiled, problems = offer_startup_shows(fleet, ws)
-    beacon_options = config._fleet_json()
     # The show PC's "START without units that do not answer" (2026-11-20):
     # strictly true or false, like "beacon" - anything else is off. Set
     # through the one publish path, BEFORE the fleet starts polling: a run

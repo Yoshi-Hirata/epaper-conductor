@@ -137,6 +137,10 @@ PRESET_RETRY_FOR_S = 10.0
 # What a second START during the PRESET stage is told (the server's own
 # check, and the check-and-set under the run lock behind it).
 STAGING_BUSY = "The show is starting (preset first) - wait for the countdown, or STOP."
+# A Loop restart / the end of a staged START over shows a startup offer
+# confirmed, after the timeline was edited (Fleet._offer_stale).
+OFFER_STALE = ("the timeline was edited since the Conductor restarted - "
+               "the units hold the old one: STOP and Upload again")
 # EXHIBITION mode's START when not one garment of the timeline answers
 # (Fleet.start_present).
 NO_GARMENT = "no garment is connected"
@@ -507,8 +511,13 @@ class Fleet:
                  clear_after_move_s: float = CLEAR_AFTER_MOVE_S,
                  loop_settings=None, loop_tick_s: float = LOOP_TICK_S,
                  loop_retry_s: float = LOOP_RETRY_S,
-                 start_present: bool = False):
+                 start_present: bool = False, keep_uploads: bool = False):
         self._clock = clock
+        # The show PC with fleet.json "keep_uploads_on_restart" (2026-11-20,
+        # serve() sets it, never with --adopt): its startup offer follows
+        # the stricter rules of _adopt_show. Off - EXHIBITION, and every
+        # Fleet that is not told - offers and adopts exactly as before.
+        self.keep_uploads = bool(keep_uploads) and not start_present
         # EXHIBITION mode (serve --adopt, 2026-10-19): START - and every Loop
         # restart, at once, without the 60 s grace - goes with the garments
         # that are connected and hold the show; the others are left out by
@@ -569,6 +578,21 @@ class Fleet:
         self._offered: "dict[str, dict]" = {}
         self._offer_said: "set[str]" = set()
         self._on_adopt = None
+        # Bumped under _run_lock by every offer_shows() - a withdrawal by an
+        # Upload or an import included - so a poll that read the offer
+        # before it was withdrawn cannot commit an adoption after it
+        # (review of keep_uploads_on_restart, 2026-11-20).
+        self._offer_gen = 0
+        self._offer_current = None          # () -> still the workspace offered?
+        self._on_drop = None                # (unit) -> its mark taken back
+        # {unit: (still_current, on_drop)} - the shows in `shows` that came
+        # from a startup offer and not from an Upload: what a Loop restart
+        # and the end of a staged START check again (_offer_stale), and
+        # what a run recovered from the units sets aside (_adopt).
+        self._from_offer: "dict[str, tuple]" = {}
+        # The show PC's offer: the advice each unit was last given in the
+        # corrections (_tell).
+        self._offer_told: "dict[str, str]" = {}
         # {unit: its burn failure at the operator's forced START} - what the
         # Loop's restarts may wave through again (see _still_waved).
         self._waved: "dict[str, tuple]" = {}
@@ -1021,28 +1045,118 @@ class Fleet:
 
     # ---- what the units already hold, after a restart of this conductor ----
 
-    def offer_shows(self, shows: "dict[str, dict]", on_adopt=None) -> None:
+    def offer_shows(self, shows: "dict[str, dict]", on_adopt=None,
+                    current=None, on_drop=None) -> None:
         """Offer this workspace's compiled shows ({unit: show}) for
         adoption: a unit that reports one of these ids with its pictures
         burned is taken as holding it (_adopt_show, from its next poll).
-        Called once at startup - and ONLY with `serve --adopt` (the
-        exhibition's service): the show PC's Conductor never offers, so a
-        restart there costs an Upload exactly as before. `on_adopt(unit)`
+        Called once at startup - with `serve --adopt` (the exhibition's
+        service), or on the show PC when its fleet.json says
+        "keep_uploads_on_restart": true (2026-11-20; start_present stays
+        off there). Without either the Conductor never offers, so a
+        restart costs an Upload exactly as before. `on_adopt(unit)`
         is the server's hook to mark the unit as holding the startup
         compile's revision, so "changed since" and the one-timeline gate
         keep working over an adopted show. Called with {} to withdraw the
         offer (an Upload, an import). A member with no show of its own
-        (radxa-05, control only) is simply not in it."""
-        self._offered = dict(shows)
-        self._on_adopt = on_adopt
-        self._offer_said = set()
+        (radxa-05, control only) is simply not in it.
+
+        `current()` says whether the workspace is still what these shows
+        were compiled from (a Loop restart and the end of a staged START
+        ask it: _offer_stale); `on_drop(unit)` takes a unit's mark back
+        when a run recovered from the units sets its adoption aside
+        (_adopt). The generation is bumped under the run lock, so a poll
+        that read the offer before a withdrawal never commits after it."""
+        with self._run_lock:
+            self._offer_gen += 1
+            self._offered = dict(shows)
+            self._on_adopt = on_adopt
+            self._offer_current = current
+            self._on_drop = on_drop
+            self._offer_said = set()
+            self._offer_told = {}
+
+    @staticmethod
+    def _clear_differs(unit: dict, offered: dict) -> bool:
+        """The unit's own "Clear pictures after the show" (its /status
+        `show.clear_after_show`, ui/showplay.py) is not what this workspace
+        compiles for it. Left out of the show id on purpose, so the id
+        cannot tell; an older agent that does not report it is not held
+        up (review of keep_uploads_on_restart, 2026-11-20)."""
+        return ("clear_after_show" in unit
+                and bool(unit.get("clear_after_show"))
+                != bool(offered.get("clear_after_show")))
 
     def _adopt_show(self, link: UnitLink) -> None:
         """Take the offered show for this unit if the unit says it holds
         exactly that - the same id, pictures burned (or burned with some
         boards failed: the START gate then decides, with the run's force,
         as it would after an Upload) - and say so once; say once, too, when
-        it holds something else (an Upload is needed)."""
+        it holds something else (an Upload is needed).
+
+        EXHIBITION (and any Fleet without `keep_uploads`) does exactly what
+        it did before the show PC could offer (_adopt_show_main). The show
+        PC's rules (fleet.json "keep_uploads_on_restart", reviews of
+        2026-11-20) are stricter, because its START is the show:
+
+        - the same "Clear pictures after the show" too (_clear_differs);
+        - never while a START is being decided (`_starting`, the end of a
+          PRESET stage included) or staged, and never into a run recovered
+          from the units (a restart mid-show): the offer stays open and the
+          first poll after STOP takes it (the recovered run's length is 0,
+          so it never reads as ended - main's behaviour);
+        - committed under the run lock and only while the offer is the one
+          this poll read (`_offer_gen`), so an Upload or an import that
+          withdraws it in between wins; the server's mark (`on_adopt`) is
+          made first, under the same lock, and a failed mark keeps the
+          unit out until its next poll (a unit in `shows` that was never
+          marked would read "not on this upload" for good);
+        - each unit not taken is named with the advice _offer_reason gives,
+          again whenever that advice changes."""
+        if not self.keep_uploads:
+            self._adopt_show_main(link)
+            return
+        with self._run_lock:
+            gen = self._offer_gen
+            offered = self._offered.get(link.name)
+            if offered is None or link.name in self.shows:
+                return
+        unit = (link.status or {}).get("show")
+        unit = unit if isinstance(unit, dict) else {}
+        burn = unit.get("burn")
+        burned = isinstance(burn, dict) and burn.get("state") in ("burned", "failed")
+        if (unit.get("id") is not None and unit.get("id") == offered["id"] and burned
+                and not self._clear_differs(unit, offered)):
+            error, blocked = None, False
+            with self._run_lock:
+                if self._offer_gen != gen or link.name in self.shows:
+                    return                  # withdrawn meanwhile, or uploaded
+                blocked = self._adoption_blocked()
+                if not blocked:
+                    if self._on_adopt is not None:
+                        try:
+                            self._on_adopt(link.name)
+                        except Exception as exc:    # noqa: BLE001 - a mark, not the show
+                            error = exc
+                    if error is None:
+                        # Rebound, never mutated in place: snapshot() and
+                        # the page's requests read `shows` from other threads.
+                        self.shows = dict(self.shows, **{link.name: offered})
+                        self._from_offer = dict(self._from_offer, **{
+                            link.name: (self._offer_current, self._on_drop)})
+            if error is not None:
+                self._tell(link.name, f"could not mark the adoption ({error}) "
+                                      "- tried again on its next reply")
+            elif blocked:
+                self._tell(link.name, self._offer_reason(link.name, offered))
+            else:
+                self._note(f"{link.name}: holds this show already (adopted "
+                           "after a restart of the conductor)")
+            return
+        self._tell(link.name, self._offer_reason(link.name, offered))
+
+    def _adopt_show_main(self, link: UnitLink) -> None:
+        """EXHIBITION's adoption, as it was before the show PC could offer."""
         offered = self._offered.get(link.name)
         if offered is None or link.name in self.shows:
             return
@@ -1070,6 +1184,94 @@ class Fleet:
             why = ("another show" if unit.get("id") != offered["id"]
                    else f"pictures {(burn or {}).get('state') if isinstance(burn, dict) else 'not written'}")
             self._note(f"{link.name}: {why} - Upload before START")
+
+    def _adoption_blocked(self) -> bool:
+        """The show PC: no startup adoption now - a START being decided or
+        staged, or a run recovered from the units (until STOP). Read under
+        the run lock, or (_offer_reason's advice) as a plain read."""
+        run = self.run
+        return (self._starting > 0 or self._staging is not None
+                or bool(run and run.get("adopted")))
+
+    def _tell(self, name: str, advice: str) -> None:
+        """One correction per unit of the show PC's offer whenever its
+        advice changes (not on every poll)."""
+        if self._offer_told.get(name) != advice:
+            self._offer_told[name] = advice
+            self._note(f"{name}: {advice}")
+
+    def start_snapshot(self, read_marks) -> dict:
+        """The show PC's START: the server's marks (`read_marks()`), the
+        units this Conductor holds a show for and the offer's pending ones,
+        read together under the run lock that every adoption commits under
+        - so a poll adopting a unit between two reads can never have START
+        call a unit just confirmed "not on this upload" (Codex, round 2)."""
+        with self._run_lock:
+            return {"marks": read_marks(),
+                    "held": set(self.shows),
+                    "pending": {name: show for name, show in self._offered.items()
+                                if name not in self.shows}}
+
+    def offer_waiting(self, pending: "dict[str, dict] | None" = None) -> "dict[str, str]":
+        """{unit: advice} for every unit of the show PC's open startup offer
+        not taken yet (`pending`, from start_snapshot; else read now), from
+        its state now (_offer_reason) - what START answers, so a garment
+        only waiting or still writing is never told to Upload. Empty
+        without an offer."""
+        if pending is None:
+            with self._run_lock:
+                pending = {name: show for name, show in self._offered.items()
+                           if name not in self.shows}
+        return {name: self._offer_reason(name, show)
+                for name, show in sorted(pending.items())}
+
+    def _offer_reason(self, name: str, offered: dict) -> str:
+        """The ONE advice for an offered unit not taken yet - START's answer,
+        the poll's correction and the beacon's skip all say this (PM,
+        keep_uploads_on_restart round 2). Only the ones ending "- Upload"
+        ask for an Upload."""
+        link = self.links.get(name)
+        status = getattr(link, "status", None) if link is not None else None
+        if status is None:
+            return "waiting for its first reply"
+        if not link.online:
+            return "not answering"
+        unit = status.get("show")
+        if not isinstance(unit, dict) or unit.get("id") is None:
+            return "holds no show - Upload"
+        if unit.get("id") != offered["id"]:
+            return "holds another show - Upload"
+        if self._clear_differs(unit, offered):
+            return "'Clear pictures after the show' differs - Upload"
+        burn = unit.get("burn")
+        state = burn.get("state") if isinstance(burn, dict) else None
+        if state == "burning":
+            return "still writing its pictures - wait"
+        if state == "cleared":
+            return "pictures cleared - Upload"
+        if state in ("burned", "failed"):
+            run = self.run
+            if run is not None and run.get("adopted"):
+                return "confirmed after STOP"
+            return "being confirmed - wait"   # a START deciding, a mark retrying
+        return "pictures not written - Upload"
+
+    def _offer_stale(self) -> bool:
+        """Whether a show taken from a startup offer is no longer what the
+        workspace compiles to (its `current()` says no): a Loop restart or
+        the end of a staged START must not replay those pictures under an
+        edited timeline - the operator's START meets the server's own
+        one-timeline gate instead."""
+        with self._run_lock:
+            checks = [check for name, (check, _drop) in self._from_offer.items()
+                      if name in self.shows and check is not None]
+        for check in checks:
+            try:
+                if not check():
+                    return True
+            except Exception:               # noqa: BLE001 - cannot tell: stale
+                return True
+        return False
 
     def run_snapshot(self) -> "tuple[dict | None, float]":
         """(a copy of the run, the show's length) under the run lock - what
@@ -1181,6 +1383,7 @@ class Fleet:
             gen, stopped, staging = self._run_gen, self._stopped, self._staging
             shows = dict(self.shows)
             adopted = bool(run and run.get("adopted"))
+            offered = dict(self._offered) if self.keep_uploads else {}
         if staging is not None:
             state = None
         elif run is not None:
@@ -1217,7 +1420,13 @@ class Fleet:
                 view["offsets"][name] = offset
             show = shows.get(name)
             if show is None:
-                if adopted:
+                if adopted and name in offered:
+                    # The show PC's startup offer: the same advice START
+                    # and the corrections give ("confirmed after STOP", ...).
+                    view["skipped"][name] = (
+                        "its show is not confirmed by this Conductor since it restarted - "
+                        + self._offer_reason(name, offered[name]))
+                elif adopted:
                     view["skipped"][name] = (
                         "its show is not confirmed by this Conductor since it restarted - "
                         "the beacon skips it until then (Upload after STOP)")
@@ -1705,6 +1914,11 @@ class Fleet:
         # the old one may no longer even be inside it (found in review).
         with self._run_lock:
             self.start_at = 0.0
+            # What this Upload wrote is the Upload's, not a startup
+            # offer's: no _offer_stale check for those units any more.
+            written = set(shows) if only is None else set(targets)
+            self._from_offer = {n: v for n, v in self._from_offer.items()
+                                if n not in written}
             # The pictures are back in the slots, so the clear that
             # emptied them is history: a unit written here may be asked to
             # clear again when this show ends.
@@ -1927,11 +2141,20 @@ class Fleet:
         silence (a command to one of those is refused by name: _send_run).
         With nothing known at all, whoever reports a show (a run adopted
         from the units)."""
-        known = list(self.shows) + [name for name in self._offered
-                                    if name not in self.shows]
+        # One reading of the run, `shows` and the offer, taken together
+        # (PM, keep_uploads_on_restart round 2).
         with self._run_lock:
             adopted = bool(self.run and self.run.get("adopted"))
-        if adopted and (not self.shows or self._offered):
+            held = list(self.shows)
+            offer_open = bool(self._offered)
+            waiting = [name for name in self._offered if name not in self.shows]
+        if adopted and self.keep_uploads:
+            # The show PC while a run recovered from the units exists: HOLD /
+            # STOP / RESUME / NEXT reach exactly what they reach with no
+            # offer (Codex review of keep_uploads_on_restart, 2026-11-20).
+            waiting = []
+        known = held + waiting
+        if adopted and (not held or offer_open):
             # A run adopted from the units by a conductor that knows
             # nothing (or was only offered a compile): whoever reports a
             # show is in it. NOT once this conductor has uploaded (a
@@ -2055,6 +2278,13 @@ class Fleet:
         # the show again (the director's mid-show abort, taken back).
         if expect_gen is None:
             self._cancel_armed_clear()
+        elif self.keep_uploads and self._offer_stale():
+            # The show PC, a Loop restart or the end of a staged START (the
+            # operator's press met the server's one-timeline gate already):
+            # shows taken from a startup offer whose workspace has been
+            # edited since are not replayed - the Loop says so and tries
+            # again until an Upload (Codex review of keep_uploads_on_restart).
+            raise ValueError(OFFER_STALE)
         if self.start_present:
             self.adopt_offered()
         duration = self.show_duration()
@@ -2875,9 +3105,27 @@ class Fleet:
             staging["painted"].update(painted)
             if waiting and now < staging["deadline"]:
                 return
-            self._staging = None            # the start takes it from here
             skip_why = dict(staging["skip_why"])
             left_why = dict(staging.get("left_why") or {})
+            self._staging = None            # the start takes it from here
+            # The show PC with keep_uploads: a START is being decided from
+            # here on, so no startup adoption slips in between the end of
+            # the stage and the final START's targets (_adopt_show; review
+            # of keep_uploads_on_restart, round 2). Without it: as before.
+            held = self.keep_uploads
+            if held:
+                self._starting += 1
+        try:
+            self._stage_handoff(staging, waiting, refused, skip_why, left_why, now)
+        finally:
+            if held:
+                with self._run_lock:
+                    self._starting -= 1
+
+    def _stage_handoff(self, staging: dict, waiting: list, refused: dict,
+                       skip_why: dict, left_why: dict, now: float) -> None:
+        """The end of a PRESET stage: who is left out, then the START
+        itself (_staging_tick, with `_starting` held)."""
         if waiting:
             self._note(f"START: {', '.join(waiting)} had not painted the 0:00 look "
                        f"after {PRESET_WAIT_MAX_S:.0f} s - starting anyway")
@@ -3455,7 +3703,27 @@ class Fleet:
                 and offset is not None)
 
     def _adopt(self) -> None:
-        """A conductor restarted mid-show finds the run on the units."""
+        """A conductor restarted mid-show finds the run on the units.
+
+        The show PC's startup offer may have been taken by a unit a poll
+        before the run was found (the page asks for snapshot() on its own
+        time): such a unit is set aside again - its show and mark taken
+        back, the offer left open for it - so the recovered run is exactly
+        what it would be with no offer, and the unit is confirmed after
+        STOP (Codex review of keep_uploads_on_restart, 2026-11-20).
+        EXHIBITION keeps whatever it adopted, as before."""
+        dropped: "list[tuple[str, object]]" = []
+        try:
+            self._adopt_run(dropped)
+        finally:
+            for name, error in dropped:
+                if error is not None:
+                    self._note(f"{name}: could not take the mark back: {error}")
+                self._note(f"{name}: set aside - a show was found running on the "
+                           "units; confirmed after STOP")
+                self._offer_told[name] = "confirmed after STOP"   # said: not again
+
+    def _adopt_run(self, dropped: "list") -> None:
         with self._run_lock:
             if self.run is not None or not self._may_adopt:
                 return
@@ -3468,6 +3736,22 @@ class Fleet:
             if found:
                 found.sort()
                 self._may_adopt = False
+                aside = ([n for n in self._from_offer if n in self.shows]
+                         if self.keep_uploads else [])
+                for name in aside:
+                    self.shows = {n: s for n, s in self.shows.items() if n != name}
+                    _check, on_drop = self._from_offer[name]
+                    self._from_offer = {n: v for n, v in self._from_offer.items()
+                                        if n != name}
+                    # Under the run lock, like the mark it takes back
+                    # (_adopt_show): never two mark writes at once.
+                    error = None
+                    if on_drop is not None:
+                        try:
+                            on_drop(name)
+                        except Exception as exc:    # noqa: BLE001 - a mark, not the show
+                            error = exc
+                    dropped.append((name, error))
                 # "force": the show on the units is ALREADY running, so
                 # it passed the burn gate when it was started - by this
                 # conductor before it restarted, or by another PC. A
@@ -3576,6 +3860,7 @@ class Fleet:
         self.offer_shows({})            # first, so no poll adopts one back
         with self._run_lock:
             self.shows = {}
+            self._from_offer = {}
             self.start_at = 0.0
             self._preset_at = {}
 
