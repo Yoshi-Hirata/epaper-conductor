@@ -1,0 +1,512 @@
+##### T2a 12:05:50: STOP tail in full (HTTP cut), set-up B
+12:05:57 | unit stopped  now=None    gen=2 applied=stop/2(378.6s) ignored='stop: not running or holding' heard=318.6s drop={'seq': 491} | PC run=None 06=on sent=191(+None) ann=False skip=0
+12:05:59 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 5.0, "from_s": 0.0}
+tunnel killed 55824
+12:06:17 | unit running  now=12.93   gen=3 applied=stop/2(398.4s) ignored='in step' heard=0.2s drop={'seq': 491} | PC run=running 06=OFF sent=276(+None) ann=True skip=0
+12:06:19 | unit running  now=14.96   gen=3 applied=stop/2(400.4s) ignored='in step' heard=0.1s drop={'seq': 491} | PC run=running 06=OFF sent=285(+9) ann=True skip=0
+12:06:20 stop {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] ëŒè€ÇÃÉRÉìÉs
+12:06:23 | unit stopped  now=None    gen=4 applied=stop/4(2.6s) ignored='stop: not running or holding' heard=0.1s drop={'seq': 491} | PC run=None 06=OFF sent=301(+None) ann=True skip=0
+12:06:27 | unit stopped  now=None    gen=4 applied=stop/4(6.6s) ignored='stop: not running or holding' heard=0.5s drop={'seq': 491} | PC run=None 06=OFF sent=314(+13) ann=True skip=0
+12:06:31 | unit stopped  now=None    gen=4 applied=stop/4(10.7s) ignored='stop: not running or holding' heard=0.3s drop={'seq': 491} | PC run=None 06=OFF sent=318(+4) ann=True skip=0
+      + 09:58:09 keep-away stop (40 s since the last stop)
+12:06:35 | unit stopped  now=None    gen=4 applied=stop/4(14.7s) ignored='stop: not running or holding' heard=0.1s drop={'seq': 491} | PC run=None 06=OFF sent=322(+4) ann=True skip=0
+12:06:39 | unit stopped  now=None    gen=4 applied=stop/4(18.7s) ignored='stop: not running or holding' heard=0.9s drop={'seq': 491} | PC run=None 06=OFF sent=325(+3) ann=True skip=0
+12:06:43 | unit stopped  now=None    gen=4 applied=stop/4(22.7s) ignored='stop: not running or holding' heard=0.7s drop={'seq': 491} | PC run=None 06=OFF sent=329(+4) ann=True skip=0
+12:06:47 | unit stopped  now=None    gen=4 applied=stop/4(26.7s) ignored='stop: not running or holding' heard=0.4s drop={'seq': 491} | PC run=None 06=OFF sent=333(+4) ann=True skip=0
+12:06:51 | unit stopped  now=None    gen=4 applied=stop/4(30.7s) ignored='stop: not running or holding' heard=0.2s drop={'seq': 491} | PC run=None 06=OFF sent=337(+4) ann=True skip=0
+12:06:55 | unit stopped  now=None    gen=4 applied=stop/4(34.7s) ignored='stop: not running or holding' heard=1.0s drop={'seq': 491} | PC run=None 06=OFF sent=340(+3) ann=True skip=0
+12:06:59 | unit stopped  now=None    gen=4 applied=stop/4(38.7s) ignored='stop: not running or holding' heard=0.8s drop={'seq': 491} | PC run=None 06=OFF sent=344(+4) ann=True skip=0
+12:07:03 | unit stopped  now=None    gen=4 applied=stop/4(42.7s) ignored='stop: not running or holding' heard=0.6s drop={'seq': 491} | PC run=None 06=OFF sent=348(+4) ann=True skip=0
+12:07:07 | unit stopped  now=None    gen=4 applied=stop/4(46.6s) ignored='stop: not running or holding' heard=0.2s drop={'seq': 491} | PC run=None 06=OFF sent=352(+4) ann=True skip=0
+12:07:11 | unit stopped  now=None    gen=4 applied=stop/4(50.7s) ignored='stop: not running or holding' heard=0.1s drop={'seq': 491} | PC run=None 06=OFF sent=356(+4) ann=True skip=0
+12:07:16 | unit stopped  now=None    gen=4 applied=stop/4(54.8s) ignored='stop: not running or holding' heard=1.0s drop={'seq': 491} | PC run=None 06=OFF sent=360(+4) ann=True skip=0
+12:07:19 | unit stopped  now=None    gen=4 applied=stop/4(58.7s) ignored='stop: not running or holding' heard=0.6s drop={'seq': 491} | PC run=None 06=OFF sent=363(+3) ann=True skip=0
+12:07:23 | unit stopped  now=None    gen=4 applied=stop/4(62.7s) ignored='stop: not running or holding' heard=3.6s drop={'seq': 491} | PC run=None 06=OFF sent=364(+1) ann=False skip=0
+12:07:27 | unit stopped  now=None    gen=4 applied=stop/4(66.7s) ignored='stop: not running or holding' heard=7.6s drop={'seq': 491} | PC run=None 06=OFF sent=364(+0) ann=False skip=0
+12:07:31 | unit stopped  now=None    gen=4 applied=stop/4(70.7s) ignored='stop: not running or holding' heard=11.6s drop={'seq': 491} | PC run=None 06=OFF sent=364(+0) ann=False skip=0
+12:07:35 | unit stopped  now=None    gen=4 applied=stop/4(74.6s) ignored='stop: not running or holding' heard=15.5s drop={'seq': 491} | PC run=None 06=OFF sent=364(+0) ann=False skip=0
+##### T2b 12:07:53: START, STOP, START in quick succession, HTTP cut just before (inside the 6 s online window)
+12:08:03 | unit stopped  now=None    gen=4 applied=stop/4(102.5s) ignored='stop: not running or holding' heard=43.4s drop={'seq': 491} | PC run=None 06=on sent=364(+None) ann=False skip=0
+tunnel killed 45184
+12:08:08 start {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] \u5bfe\u8c61\u306e\u30b3\u30f3\u30d4\u30e5\u30
+12:08:12 stop {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] \u5bfe\u8c61\u306e\u30b3\u30f3\u30d4\u30e5\u30
+12:08:12 start {"HTTP": 400, "body": "{\"error\": \"radxa-06: not answering\"}"}
+12:08:13 | unit stopped  now=None    gen=6 applied=stop/6(3.2s) ignored='stop: not running or holding' heard=0.2s drop={'seq': 491} | PC run=None 06=OFF sent=396(+None) ann=True skip=0
+12:08:15 | unit stopped  now=None    gen=6 applied=stop/6(5.2s) ignored='stop: not running or holding' heard=0.1s drop={'seq': 491} | PC run=None 06=OFF sent=405(+9) ann=True skip=0
+12:08:17 | unit stopped  now=None    gen=6 applied=stop/6(7.2s) ignored='stop: not running or holding' heard=1.0s drop={'seq': 491} | PC run=None 06=OFF sent=407(+2) ann=True skip=0
+12:08:19 | unit stopped  now=None    gen=6 applied=stop/6(9.3s) ignored='stop: not running or holding' heard=1.0s drop={'seq': 491} | PC run=None 06=OFF sent=408(+1) ann=True skip=0
+12:08:21 | unit stopped  now=None    gen=6 applied=stop/6(11.3s) ignored='stop: not running or holding' heard=0.9s drop={'seq': 491} | PC run=None 06=OFF sent=410(+2) ann=True skip=0
+12:08:23 | unit stopped  now=None    gen=6 applied=stop/6(13.2s) ignored='stop: not running or holding' heard=0.7s drop={'seq': 491} | PC run=None 06=OFF sent=412(+2) ann=True skip=0
+12:08:25 | unit stopped  now=None    gen=6 applied=stop/6(15.3s) ignored='stop: not running or holding' heard=0.6s drop={'seq': 491} | PC run=None 06=OFF sent=414(+2) ann=True skip=0
+12:08:27 | unit stopped  now=None    gen=6 applied=stop/6(17.2s) ignored='stop: not running or holding' heard=0.5s drop={'seq': 491} | PC run=None 06=OFF sent=416(+2) ann=True skip=0
+12:08:29 | unit stopped  now=None    gen=6 applied=stop/6(19.3s) ignored='stop: not running or holding' heard=0.4s drop={'seq': 491} | PC run=None 06=OFF sent=418(+2) ann=True skip=0
+12:08:31 | unit stopped  now=None    gen=6 applied=stop/6(21.3s) ignored='stop: not running or holding' heard=0.3s drop={'seq': 491} | PC run=None 06=OFF sent=420(+2) ann=True skip=0
+12:08:33 | unit stopped  now=None    gen=6 applied=stop/6(23.2s) ignored='stop: not running or holding' heard=0.1s drop={'seq': 491} | PC run=None 06=OFF sent=422(+2) ann=True skip=0
+##### T7 12:08:35: HOLD, SEEK to 62 s while holding, wait, RESUME (HTTP still cut)
+12:08:35 hold {"units": {}, "note": "The show is not running."}
+12:08:36 | unit stopped  now=None    gen=6 applied=stop/6(26.0s) ignored='stop: not running or holding' heard=0.8s drop={'seq': 491} | PC run=None 06=OFF sent=424(+None) ann=True skip=0
+12:08:38 | unit stopped  now=None    gen=6 applied=stop/6(28.0s) ignored='stop: not running or holding' heard=0.6s drop={'seq': 491} | PC run=None 06=OFF sent=426(+2) ann=True skip=0
+12:08:40 | unit stopped  now=None    gen=6 applied=stop/6(29.9s) ignored='stop: not running or holding' heard=0.4s drop={'seq': 491} | PC run=None 06=OFF sent=428(+2) ann=True skip=0
+12:08:42 seek {"units": {}, "run": null, "mode": "start_at", "to_s": 62.0, "start_at": 62.0, "note": "START will begin at 1:02."}
+12:08:43 | unit stopped  now=None    gen=7 applied=stop/6(32.7s) ignored='stop: not running or holding' heard=0.0s drop={'seq': 491} | PC run=None 06=OFF sent=431(+None) ann=True skip=0
+12:08:44 | unit stopped  now=None    gen=7 applied=stop/6(34.6s) ignored='stop: not running or holding' heard=0.9s drop={'seq': 491} | PC run=None 06=OFF sent=432(+1) ann=True skip=0
+12:08:46 | unit stopped  now=None    gen=7 applied=stop/6(36.7s) ignored='stop: not running or holding' heard=0.9s drop={'seq': 491} | PC run=None 06=OFF sent=434(+2) ann=True skip=0
+12:08:48 | unit stopped  now=None    gen=7 applied=stop/6(38.6s) ignored='stop: not running or holding' heard=0.6s drop={'seq': 491} | PC run=None 06=OFF sent=436(+2) ann=True skip=0
+12:08:50 | unit stopped  now=None    gen=7 applied=stop/6(40.7s) ignored='stop: not running or holding' heard=0.6s drop={'seq': 491} | PC run=None 06=OFF sent=438(+2) ann=True skip=0
+12:08:52 resume {"units": {}, "note": "The show is not on hold."}
+12:08:53 | unit stopped  now=None    gen=7 applied=stop/6(43.4s) ignored='stop: not running or holding' heard=0.1s drop={'seq': 491} | PC run=None 06=OFF sent=441(+None) ann=True skip=0
+12:08:55 | unit stopped  now=None    gen=7 applied=stop/6(45.4s) ignored='stop: not running or holding' heard=0.0s drop={'seq': 491} | PC run=None 06=OFF sent=443(+2) ann=True skip=0
+12:08:57 | unit stopped  now=None    gen=7 applied=stop/6(47.4s) ignored='stop: not running or holding' heard=1.1s drop={'seq': 491} | PC run=None 06=OFF sent=445(+2) ann=True skip=0
+12:08:59 | unit stopped  now=None    gen=7 applied=stop/6(49.4s) ignored='stop: not running or holding' heard=0.9s drop={'seq': 491} | PC run=None 06=OFF sent=446(+1) ann=True skip=0
+12:09:01 | unit stopped  now=None    gen=7 applied=stop/6(51.4s) ignored='stop: not running or holding' heard=0.7s drop={'seq': 491} | PC run=None 06=OFF sent=448(+2) ann=True skip=0
+12:09:03 | unit stopped  now=None    gen=7 applied=stop/6(53.4s) ignored='stop: not running or holding' heard=0.7s drop={'seq': 491} | PC run=None 06=OFF sent=450(+2) ann=True skip=0
+12:09:05 | unit stopped  now=None    gen=7 applied=stop/6(55.3s) ignored='stop: not running or holding' heard=0.5s drop={'seq': 491} | PC run=None 06=OFF sent=452(+2) ann=True skip=0
+12:09:07 | unit stopped  now=None    gen=7 applied=stop/6(57.3s) ignored='stop: not running or holding' heard=0.4s drop={'seq': 491} | PC run=None 06=OFF sent=454(+2) ann=True skip=0
+##### T2b' 12:09:26: (the T2b above is void: its 2nd START was refused by F1.) HTTP working + beacon on: START, 6 s, STOP, START at once
+12:09:36 | unit stopped  now=None    gen=7 applied=stop/6(85.7s) ignored='stop: not running or holding' heard=26.6s drop={'seq': 491} | PC run=None 06=on sent=456(+None) ann=False skip=0
+12:09:38 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 3.0, "from_s": 62.0, "note": "Started from 1:02."}
+12:09:44 stop {"units": {"radxa-06": {"ok": true, "phase": "ready"}}}
+12:09:44 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 5.0, "from_s": 0.0}
+12:09:45 | unit running  now=-4.17   gen=10 applied=stop/6(94.7s) ignored='in step' heard=0.2s drop={'seq': 491} | PC run=running 06=on sent=489(+None) ann=True skip=0
+12:09:46 | unit running  now=-2.2    gen=10 applied=stop/6(96.6s) ignored='in step' heard=0.0s drop={'seq': 491} | PC run=running 06=on sent=498(+9) ann=True skip=0
+12:09:49 | unit running  now=-0.12   gen=10 applied=stop/6(98.7s) ignored='in step' heard=0.2s drop={'seq': 491} | PC run=running 06=on sent=508(+10) ann=True skip=0
+12:09:51 | unit running  now=1.85    gen=10 applied=stop/6(100.7s) ignored='in step' heard=0.1s drop={'seq': 491} | PC run=running 06=on sent=517(+9) ann=True skip=0
+12:09:52 | unit running  now=3.8     gen=10 applied=stop/6(102.6s) ignored='in step' heard=0.1s drop={'seq': 491} | PC run=running 06=on sent=526(+9) ann=True skip=0
+12:09:55 | unit running  now=5.92    gen=10 applied=stop/6(104.8s) ignored='in step' heard=0.1s drop={'seq': 491} | PC run=running 06=on sent=536(+10) ann=True skip=0
+12:09:57 | unit running  now=7.87    gen=10 applied=stop/6(106.7s) ignored='in step' heard=0.1s drop={'seq': 491} | PC run=running 06=on sent=545(+9) ann=True skip=0
+12:09:59 | unit running  now=9.87    gen=10 applied=stop/6(108.7s) ignored='in step' heard=0.1s drop={'seq': 491} | PC run=running 06=on sent=555(+10) ann=True skip=0
+##### T7 12:10:00: cut HTTP, HOLD, SEEK to 62 s while holding, wait, RESUME
+tunnel killed 62492
+12:10:09 hold {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] ëŒ
+12:10:12 | unit holding  now=None    gen=11 applied=hold/11(3.0s) ignored='hold: not running' heard=0.0s drop={'seq': 491} | PC run=holding 06=OFF sent=598(+None) ann=True skip=0
+12:10:13 | unit holding  now=None    gen=11 applied=hold/11(4.8s) ignored='hold: not running' heard=0.1s drop={'seq': 491} | PC run=holding 06=OFF sent=606(+8) ann=True skip=0
+12:10:15 | unit holding  now=None    gen=11 applied=hold/11(6.8s) ignored='hold: not running' heard=0.0s drop={'seq': 491} | PC run=holding 06=OFF sent=616(+10) ann=True skip=0
+12:10:17 seek {"units": {}, "run": {"t0": 134902.5288344, "state": "holding", "held_at": 134964.5288344, "force": false, "clear_after_show": false, "loops": 0, "forced": [], "left_out": {}, "t0_set_at": 134973.3099799, "landed_at_s": 62.0, "now": 62.0, "end_clear_off": false}, "mode": "holding", "to_s": 62.0, "start_at": 0.0, "n
+12:10:18 | unit holding  now=None    gen=12 applied=hold/11(9.7s) ignored='hold: not running' heard=0.1s drop={'seq': 491} | PC run=holding 06=OFF sent=629(+None) ann=True skip=0
+12:10:20 | unit holding  now=None    gen=12 applied=hold/11(11.5s) ignored='hold: not running' heard=0.1s drop={'seq': 491} | PC run=holding 06=OFF sent=638(+9) ann=True skip=0
+12:10:22 | unit holding  now=None    gen=12 applied=hold/11(13.6s) ignored='hold: not running' heard=0.0s drop={'seq': 491} | PC run=holding 06=OFF sent=648(+10) ann=True skip=0
+12:10:24 | unit holding  now=None    gen=12 applied=hold/11(15.6s) ignored='hold: not running' heard=0.1s drop={'seq': 491} | PC run=holding 06=OFF sent=657(+9) ann=True skip=0
+12:10:26 | unit holding  now=None    gen=12 applied=hold/11(17.6s) ignored='hold: not running' heard=0.2s drop={'seq': 491} | PC run=holding 06=OFF sent=667(+10) ann=True skip=0
+12:10:28 resume {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] 
+12:10:31 | unit running  now=64.73   gen=13 applied=run/13(2.7s) ignored='in step' heard=0.2s drop={'seq': 491} | PC run=running 06=OFF sent=689(+None) ann=True skip=0
+12:10:33 | unit running  now=66.79   gen=13 applied=run/13(4.8s) ignored='in step' heard=0.1s drop={'seq': 491} | PC run=running 06=OFF sent=698(+9) ann=True skip=0
+12:10:35 | unit running  now=68.77   gen=13 applied=run/13(6.8s) ignored='in step' heard=0.2s drop={'seq': 491} | PC run=running 06=OFF sent=707(+9) ann=True skip=0
+12:10:37 | unit running  now=70.78   gen=13 applied=run/13(8.8s) ignored='in step' heard=0.1s drop={'seq': 491} | PC run=running 06=OFF sent=717(+10) ann=True skip=0
+      + 10:02:15 cue 5b56260216:8:q07 fired slot 8 +1 ms
+12:10:39 | unit running  now=72.75   gen=13 applied=run/13(10.7s) ignored='in step' heard=0.1s drop={'seq': 491} | PC run=running 06=OFF sent=726(+9) ann=True skip=0
+12:10:41 | unit running  now=74.79   gen=13 applied=run/13(12.8s) ignored='in step' heard=0.1s drop={'seq': 491} | PC run=running 06=OFF sent=736(+10) ann=True skip=0
+12:10:43 | unit running  now=76.82   gen=13 applied=run/13(14.8s) ignored='in step' heard=0.2s drop={'seq': 491} | PC run=running 06=OFF sent=745(+9) ann=True skip=0
+12:10:45 | unit running  now=78.8    gen=13 applied=run/13(16.8s) ignored='in step' heard=0.0s drop={'seq': 491} | PC run=running 06=OFF sent=755(+10) ann=True skip=0
+12:10:47 | unit running  now=80.87   gen=13 applied=run/13(18.9s) ignored='in step' heard=0.2s drop={'seq': 491} | PC run=running 06=OFF sent=765(+10) ann=True skip=0
+      + 10:02:25 cue 5b56260216:8:q08 fired slot 9 +2 ms
+12:11:06 stop {"units": {"radxa-06": {"ok": false, "error": "[WinError
+12:11:09 | unit stopped  now=None    gen=14 applied=stop/14(2.9s) ignored='stop: not running or holding' heard=0.2s drop={'seq': 491} | PC run=None 06=OFF sent=802(+None) ann=True skip=0
+12:11:11 | unit stopped  now=None    gen=14 applied=stop/14(4.7s) ignored='stop: not running or holding' heard=0.1s drop={'seq': 491} | PC run=None 06=OFF sent=810(+8) ann=True skip=0
+12:11:13 | unit stopped  now=None    gen=14 applied=stop/14(6.7s) ignored='stop: not running or holding' heard=0.6s drop={'seq': 491} | PC run=None 06=OFF sent=813(+3) ann=True skip=0
+##### T3 12:11:33: real reboot of radxa-06 mid-run, HTTP cut on the PC side throughout
+12:11:44 | unit stopped  now=None    gen=14 applied=stop/14(37.7s) ignored='stop: not running or holding' heard=0.8s drop={'seq': 491} | PC run=None 06=on sent=842(+None) ann=True skip=0
+boot id before: 055ec5dd-6d30-424d-9c82-cd23ae609d6f
+12:11:46 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 5.0, "from_s": 0.0}
+tunnel killed 11160
+12:11:58 | unit running  now=7.03    gen=15 applied=stop/14(52.1s) ignored='in step' heard=0.0s drop={'seq': 491} | PC run=running 06=on sent=902(+None) ann=True skip=0
+12:12:00 sudo reboot
+12:12:35 ssh is back
+boot id after: be76b4ae-b7cc-4eac-ba7e-2b71fb31d5ab 13 inactive 
+12:12:36 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=969(+None) ann=True skip=0
+12:12:39 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=972(+3) ann=True skip=0
+12:12:42 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=975(+3) ann=True skip=0
+12:12:45 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=977(+2) ann=True skip=0
+12:12:48 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=980(+3) ann=True skip=0
+12:12:51 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=983(+3) ann=True skip=0
+12:12:54 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=986(+3) ann=True skip=0
+12:12:57 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=989(+3) ann=True skip=0
+12:13:00 | unit loaded   now=None    gen=None applied=None/None(Nones) ignored='clock out of step' heard=0.0s drop={'now': 3} | PC run=running 06=OFF sent=992(+3) ann=True skip=0
+12:13:03 | unit loaded   now=None    gen=None applied=None/None(Nones) ignored='clock out of step' heard=1.0s drop={'now': 5} | PC run=running 06=OFF sent=994(+2) ann=True skip=0
+12:13:15 state=loaded now=None synced=False cue=None err=None beacon={"on": true, "port": 8788, "heard_s": 0.9, "cid": null, "gen": null, "applied": null, "ignored": "clock out of step", "dropped": {"bad": 0, "cid": 0, "seq": 0, "now": 16, "gen": 0, "http": 0, "demo": 0, "show": 0, "host": 0}}
+    09:08:03 beacon skip: clock off
+--- HOLD while the rebooted unit is still cut off
+12:13:15 hold {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] ëŒ
+12:13:18 | unit loaded   now=None    gen=None applied=None/None(Nones) ignored='clock out of step' heard=0.1s drop={'now': 31} | PC run=holding 06=OFF sent=1020(+None) ann=True skip=0
+12:13:21 | unit loaded   now=None    gen=None applied=None/None(Nones) ignored='clock out of step' heard=0.2s drop={'now': 42} | PC run=holding 06=OFF sent=1032(+12) ann=True skip=0
+12:13:23 | unit loaded   now=None    gen=None applied=None/None(Nones) ignored='clock out of step' heard=0.1s drop={'now': 54} | PC run=holding 06=OFF sent=1043(+11) ann=True skip=0
+12:13:26 | unit loaded   now=None    gen=None applied=None/None(Nones) ignored='clock out of step' heard=0.2s drop={'now': 66} | PC run=holding 06=OFF sent=1056(+13) ann=True skip=0
+--- 12:13:39 tunnel re-opened: the Conductor can poll again (run is HOLDING on the PC)
+12:13:40 | unit loaded   now=None    gen=None applied=None/None(Nones) ignored='clock out of step' heard=0.5s drop={'now': 117} | PC run=holding 06=on sent=1106(+None) ann=True skip=0
+12:13:42 | unit loaded   now=None    gen=16 applied=None/None(Nones) ignored='hold: not running' heard=0.5s drop={'now': 118} | PC run=holding 06=on sent=1108(+2) ann=True skip=0
+12:13:44 | unit loaded   now=None    gen=16 applied=None/None(Nones) ignored='hold: not running' heard=0.2s drop={'now': 118} | PC run=holding 06=on sent=1110(+2) ann=True skip=0
+12:13:46 | unit loaded   now=None    gen=16 applied=None/None(Nones) ignored='hold: not running' heard=0.2s drop={'now': 118} | PC run=holding 06=on sent=1112(+2) ann=True skip=0
+12:13:48 | unit loaded   now=None    gen=16 applied=None/None(Nones) ignored='hold: not running' heard=0.1s drop={'now': 118} | PC run=holding 06=on sent=1114(+2) ann=True skip=0
+12:13:50 | unit loaded   now=None    gen=16 applied=None/None(Nones) ignored='hold: not running' heard=1.0s drop={'now': 118} | PC run=holding 06=on sent=1115(+1) ann=True skip=0
+12:13:52 | unit loaded   now=None    gen=16 applied=None/None(Nones) ignored='hold: not running' heard=1.0s drop={'now': 118} | PC run=holding 06=on sent=1117(+2) ann=True skip=0
+12:13:54 | unit loaded   now=None    gen=16 applied=None/None(Nones) ignored='hold: not running' heard=0.7s drop={'now': 118} | PC run=holding 06=on sent=1119(+2) ann=True skip=0
+--- cut again, RESUME by beacon
+tunnel killed 63592
+12:13:58 resume {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] 
+12:14:01 | unit running  now=87.22   gen=17 applied=run/17(2.8s) ignored='in step' heard=0.1s drop={'now': 118} | PC run=running 06=on sent=1137(+None) ann=True skip=0
+12:14:03 | unit running  now=89.17   gen=17 applied=run/17(4.8s) ignored='in step' heard=0.1s drop={'now': 118} | PC run=running 06=OFF sent=1146(+9) ann=True skip=0
+12:14:05 | unit running  now=91.32   gen=17 applied=run/17(6.9s) ignored='in step' heard=0.2s drop={'now': 118} | PC run=running 06=OFF sent=1156(+10) ann=True skip=0
+12:14:07 | unit running  now=93.29   gen=17 applied=run/17(8.9s) ignored='in step' heard=0.0s drop={'now': 118} | PC run=running 06=OFF sent=1166(+10) ann=True skip=0
+12:14:09 | unit running  now=95.21   gen=17 applied=run/17(10.8s) ignored='in step' heard=0.0s drop={'now': 118} | PC run=running 06=OFF sent=1175(+9) ann=True skip=0
+12:14:12 | unit running  now=97.45   gen=17 applied=run/17(13.1s) ignored='in step' heard=0.2s drop={'now': 118} | PC run=running 06=OFF sent=1185(+10) ann=True skip=0
+12:14:13 | unit running  now=99.29   gen=17 applied=run/17(14.9s) ignored='in step' heard=0.1s drop={'now': 118} | PC run=running 06=OFF sent=1194(+9) ann=True skip=0
+12:14:15 | unit running  now=101.23  gen=17 applied=run/17(16.9s) ignored='in step' heard=0.1s drop={'now': 118} | PC run=running 06=OFF sent=1203(+9) ann=True skip=0
+12:14:17 stop {"units": {"radxa-06": {"ok": false, "error": "[WinError
+12:14:23 state=stopped now=None synced=True cue=5b56260216:0:q08 err=None beacon={"on": true, "port": 8788, "heard_s": 0.8, "cid": 2084284396, "gen": 18, "applied": {"what": "stop", "gen": 18, "ago_s": 5.9}, "ignored": "stop: not running or holding", "dropped": {"bad": 0, "cid": 0, "seq": 0, "now": 118, "gen": 0, "http": 0, "demo": 0, "show": 0, "host": 0}}
+    09:09:04 port /dev/ttyACM0
+    09:09:04 boards 3 from the show (1-2,4-60 dropped, not probed)
+    09:09:04 cue 5b56260216:0:q08 fired slot 9 +4756 ms
+    09:09:04 panels online: 1/1
+    09:09:04 cue 5b56260216:0:q08 fired slot 9 +5184 ms
+    09:09:22 beacon stop
+##### T6 12:14:45: the switch toggled mid-run (HTTP cut)
+12:14:54 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 5.0, "from_s": 0.0}
+tunnel killed 31504
+--- beacon OFF mid-run
+12:15:06 beacon {"beacon": {"enabled": false, "sent": 1322, "errors": 0, "announcing": false, "last_error": null, "last_error_at": null, "routes": 0, "destinations": [], "skipped": {}}}
+12:15:07 | unit running  now=7.83    gen=19 applied=stop/18(50.0s) ignored='in step' heard=1.1s drop={'now': 118} | PC run=running 06=on sent=1322(+None) ann=False skip=0
+12:15:09 | unit running  now=9.74    gen=19 applied=stop/18(51.9s) ignored='in step' heard=3.0s drop={'now': 118} | PC run=running 06=on sent=1322(+0) ann=False skip=0
+12:15:11 hold {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] ëŒ
+12:15:14 | unit running  now=14.62   gen=19 applied=stop/18(56.8s) ignored='in step' heard=7.8s drop={'now': 118} | PC run=holding 06=OFF sent=1322(+None) ann=False skip=0
+12:15:16 | unit running  now=16.62   gen=19 applied=stop/18(58.8s) ignored='in step' heard=9.8s drop={'now': 118} | PC run=holding 06=OFF sent=1322(+0) ann=False skip=0
+12:15:18 | unit running  now=18.68   gen=19 applied=stop/18(60.9s) ignored='in step' heard=11.9s drop={'now': 118} | PC run=holding 06=OFF sent=1322(+0) ann=False skip=0
+12:15:20 | unit running  now=20.68   gen=19 applied=stop/18(62.9s) ignored='in step' heard=13.9s drop={'now': 118} | PC run=holding 06=OFF sent=1322(+0) ann=False skip=0
+      + 09:10:24 cue 5b56260216:1:q02 fired slot 3 +1 ms
+--- beacon ON again while the PC holds
+12:15:22 beacon {"beacon": {"enabled": true, "sent": 0, "errors": 0, "announcing": false, "last_error": null, "last_error_at": null, "routes": 0, "destinations": [], "skipped": {}}}
+12:15:23 | unit holding  now=None    gen=20 applied=hold/20(0.5s) ignored='hold: not running' heard=0.0s drop={'now': 118} | PC run=holding 06=OFF sent=3(+None) ann=True skip=0
+12:15:25 | unit holding  now=None    gen=20 applied=hold/20(2.4s) ignored='hold: not running' heard=0.1s drop={'now': 118} | PC run=holding 06=OFF sent=12(+9) ann=True skip=0
+12:15:27 | unit holding  now=None    gen=20 applied=hold/20(4.4s) ignored='hold: not running' heard=0.0s drop={'now': 118} | PC run=holding 06=OFF sent=22(+10) ann=True skip=0
+12:15:29 | unit holding  now=None    gen=20 applied=hold/20(6.5s) ignored='hold: not running' heard=0.2s drop={'now': 118} | PC run=holding 06=OFF sent=31(+9) ann=True skip=0
+      + 09:10:33 keep-away stop (43 s since the last stop)
+12:15:31 stop {"units": {"radxa-06": {"ok": false, "error": "[WinError
+12:15:34 | unit stopped  now=None    gen=21 applied=stop/21(2.6s) ignored='stop: not running or holding' heard=0.1s drop={'now': 118} | PC run=None 06=OFF sent=54(+None) ann=True skip=0
+12:15:36 | unit stopped  now=None    gen=21 applied=stop/21(4.6s) ignored='stop: not running or holding' heard=0.2s drop={'now': 118} | PC run=None 06=OFF sent=63(+9) ann=True skip=0
+12:15:38 | unit stopped  now=None    gen=21 applied=stop/21(6.6s) ignored='stop: not running or holding' heard=0.5s drop={'now': 118} | PC run=None 06=OFF sent=67(+4) ann=True skip=0
+##### T4 12:16:20: two Conductors, A (8770, beacon on) and B (8771), same show id; HTTP cut for both
+12:16:29 upload {"units": {"radxa-06": {"ok": true, "show": "b8489a6430"}}, "problems": [], "warnings": [], "shows": {"r
+12:16:34 | unit loaded   now=None    gen=21 applied=stop/21(62.9s) ignored='not the loaded show' heard=3.8s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=on sent=117(+None) ann=False skip=0
+tunnel killed 55156
+A: 12:16:37 start {"HTTP": 400, "body": "{\"error\": \"radxa-06
+B: 12:16:38 start {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] ëŒè€ÇÃÉRÉìÉ
+12:16:41 | unit loaded   now=None    gen=21 applied=stop/21(69.9s) ignored='not the loaded show' heard=10.8s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=on sent=117(+None) ann=False skip=0
+12:16:43 | unit loaded   now=None    gen=21 applied=stop/21(71.9s) ignored='not the loaded show' heard=12.8s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=OFF sent=117(+0) ann=False skip=0
+12:16:45 | unit loaded   now=None    gen=21 applied=stop/21(73.7s) ignored='not the loaded show' heard=14.7s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=OFF sent=117(+0) ann=False skip=0
+--- B beacon ON (A still on)
+B: 12:16:47 beacon {"beacon": {"enabled": true, "sent": 0, "errors": 0, "announcing": false, "last_error": null, "last_erro
+12:16:48 | unit running  now=4.86    gen=1 applied=run/1(0.5s) ignored='in step' heard=0.0s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=OFF sent=117(+None) ann=False skip=0
+12:16:50 | unit running  now=6.86    gen=1 applied=run/1(2.5s) ignored='in step' heard=0.1s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=OFF sent=117(+0) ann=False skip=0
+12:16:52 | unit running  now=8.88    gen=1 applied=run/1(4.5s) ignored='in step' heard=0.0s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=OFF sent=117(+0) ann=False skip=0
+12:16:54 | unit running  now=10.81   gen=1 applied=run/1(6.4s) ignored='in step' heard=0.1s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=OFF sent=117(+0) ann=False skip=0
+      + 09:11:58 cue b8489a6430:2:q01 fired slot 2 +1 ms
+--- A HOLD
+12:16:56 hold {"units": {}, "note": "The show is not running
+12:16:57 | unit running  now=13.67   gen=1 applied=run/1(9.3s) ignored='in step' heard=0.2s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=OFF sent=117(+None) ann=False skip=0
+12:16:59 | unit running  now=15.67   gen=1 applied=run/1(11.3s) ignored='in step' heard=0.0s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=OFF sent=117(+0) ann=False skip=0
+12:17:01 | unit running  now=17.68   gen=1 applied=run/1(13.3s) ignored='in step' heard=0.1s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=OFF sent=117(+0) ann=False skip=0
+12:17:03 | unit running  now=19.67   gen=1 applied=run/1(15.3s) ignored='in step' heard=0.2s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=OFF sent=117(+0) ann=False skip=0
+12:17:05 state=running now=22.03 synced=True cue=b8489a6430:2:q03 err=None beacon={"on": true, "port": 8788, "heard_s": 0.0, "cid": 2903643150, "gen": 1, "applied": {"what": "run", "gen": 1, "ago_s": 17.6}, "ignored": "in step", "dropped": {"bad": 0, "cid": 0, "seq": 0, "now": 118, "gen": 0, "http": 1, "demo": 0, "show": 1, "host": 0}}
+    09:11:35 board 3: sweep cleared
+    09:11:35 burn done: 9/9 in 1.4 s (probe 0.0 s, 1 live boards, 0 absent)
+    09:11:52 beacon run, joined 4s
+    09:11:52 cue b8489a6430:2:q00 fired slot 1 +12394 ms
+    09:11:58 cue b8489a6430:2:q01 fired slot 2 +1 ms
+    09:12:08 cue b8489a6430:2:q02 fired slot 3 +2 ms
+12:18:23 stop {"units": {"radxa-06": {"ok": false, "error": "[WinError
+12:18:30 state=stopped now=None synced=True cue=b8489a6430:2:q08 err=None beacon={"on": true, "port": 8788, "heard_s": 0.1, "cid": 2903643150, "gen": 2, "applied": {"what": "stop", "gen": 2, "ago_s": 6.2}, "ignored": "stop: not running or holding", "dropped": {"bad": 0, "cid": 0, "seq": 0, "now": 118, "gen": 0, "http": 1, "demo": 0, "show": 1, "host": 0}}
+    09:13:08 cue b8489a6430:2:q08 fired slot 9 +1 ms
+    09:13:17 keep-away stop (40 s since the last stop)
+    09:13:28 beacon stop
+##### T4' 12:19:07: two Conductors again (B is an exact copy of A's workspace)
+B: 12:19:07 upload {"units": {"radxa-06": {"ok": true, "show": "b8489a6430"}}, "problems": [], "warnings": [], "s
+A: 12:19:08 upload {"units": {"radxa-06": {"ok": true, "show": "5b56260216"}}, "problems": [], "warnings": [], "s
+12:19:13 | unit loaded   now=None    gen=2 applied=stop/2(49.4s) ignored='stop: not running or holding' heard=24.2s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=on sent=117(+None) ann=False skip=0
+##### T4'' 12:20:02: two Conductors, same show id; A beacon on, B beacon off at first
+B: 12:20:02 upload {"units": {"radxa-06": {"ok": true, "show": "5b56260216"}}, "problems": [], "warnings": [], "s
+12:20:08 | unit loaded   now=None    gen=2 applied=stop/2(104.5s) ignored='stop: not running or holding' heard=79.2s drop={'now': 118, 'http': 1, 'show': 1} | PC run=None 06=on sent=117(+None) ann=False skip=0
+tunnel killed 15492
+A: 12:20:11 start {"units": {"radxa-06": {"ok": false, "error":
+B: 12:20:12 start {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] ëŒè€ÇÃÉRÉìÉ
+12:20:15 | unit running  now=-0.91   gen=22 applied=run/22(4.0s) ignored='in step' heard=0.2s drop={'now': 118, 'http': 1, 'show': 1} | PC run=running 06=on sent=137(+None) ann=True skip=0
+12:20:17 | unit running  now=1.11    gen=22 applied=run/22(6.0s) ignored='in step' heard=0.1s drop={'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=146(+9) ann=True skip=0
+12:20:19 | unit running  now=3.04    gen=22 applied=run/22(8.0s) ignored='in step' heard=0.1s drop={'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=155(+9) ann=True skip=0
+--- B HOLD (HTTP fails), then B beacon ON while A is still announcing its running show
+B: 12:20:21 hold {"units": {"radxa-06": {"ok": false, "error": "[WinError
+B: 12:20:24 beacon {"beacon": {"enabled": true, "sent": 0, "err
+12:20:25 | unit running  now=8.7     gen=22 applied=run/22(13.6s) ignored='another Conductor' heard=0.0s drop={'cid': 3, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=182(+None) ann=True skip=0
+12:20:27 | unit running  now=10.67   gen=22 applied=run/22(15.6s) ignored='another Conductor' heard=0.1s drop={'cid': 12, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=191(+9) ann=True skip=0
+      + 09:15:31 cue 5b56260216:6:q01 fired slot 2 +2 ms
+12:20:29 | unit running  now=12.62   gen=22 applied=run/22(17.5s) ignored='another Conductor' heard=0.1s drop={'cid': 21, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=200(+9) ann=True skip=0
+12:20:31 | unit running  now=14.62   gen=22 applied=run/22(19.5s) ignored='another Conductor' heard=0.0s drop={'cid': 31, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=210(+10) ann=True skip=0
+12:20:33 | unit running  now=16.61   gen=22 applied=run/22(21.5s) ignored='another Conductor' heard=0.1s drop={'cid': 40, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=214(+4) ann=True skip=0
+12:20:35 | unit running  now=18.57   gen=22 applied=run/22(23.5s) ignored='another Conductor' heard=0.1s drop={'cid': 49, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=216(+2) ann=True skip=0
+12:20:37 state=running now=20.97 synced=True cue=5b56260216:6:q03 err=None beacon={"on": true, "port": 8788, "heard_s": 0.2, "cid": 2084284396, "gen": 22, "applied": {"what": "run", "gen": 22, "ago_s": 25.9}, "ignored": "another Conductor", "dropped": {"bad": 0, "cid": 60, "seq": 0, "now": 118, "gen": 0, "http": 1, "demo": 0, "show": 1, "host": 0}}
+    09:15:16 cue 5b56260216:6:q00 fired slot 1 +3078 ms
+    09:15:29 beacon skip: other PC
+    09:15:31 cue 5b56260216:6:q01 fired slot 2 +2 ms
+    09:15:41 cue 5b56260216:6:q02 fired slot 3 +1 ms
+--- A beacon OFF at 12:20:37: B should take over 5 s after A's last datagram
+A: 12:20:38 beacon {"beacon": {"enabled": false, "sent": 218, "
+12:20:38 | unit running  now=22.22   gen=22 applied=run/22(27.1s) ignored='another Conductor' heard=0.2s drop={'cid': 66, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+None) ann=False skip=0
+12:20:40 | unit running  now=23.35   gen=22 applied=run/22(28.3s) ignored='another Conductor' heard=0.0s drop={'cid': 72, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:20:40 | unit running  now=24.28   gen=22 applied=run/22(29.2s) ignored='another Conductor' heard=0.1s drop={'cid': 76, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:20:42 | unit running  now=25.32   gen=22 applied=run/22(30.2s) ignored='another Conductor' heard=0.1s drop={'cid': 81, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:20:43 | unit holding  now=None    gen=2 applied=hold/2(0.7s) ignored='hold: not running' heard=0.0s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+      + 09:15:47 beacon hold
+12:20:44 | unit holding  now=None    gen=2 applied=hold/2(1.7s) ignored='hold: not running' heard=0.2s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:20:45 | unit holding  now=None    gen=2 applied=hold/2(2.7s) ignored='hold: not running' heard=0.2s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:20:46 | unit holding  now=None    gen=2 applied=hold/2(3.7s) ignored='hold: not running' heard=0.1s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+      + 09:15:49 keep-away stop (41 s since the last stop)
+12:20:47 | unit holding  now=None    gen=2 applied=hold/2(4.7s) ignored='hold: not running' heard=0.0s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:20:48 | unit holding  now=None    gen=2 applied=hold/2(5.7s) ignored='hold: not running' heard=1.0s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:20:48 | unit holding  now=None    gen=2 applied=hold/2(6.6s) ignored='hold: not running' heard=0.9s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:20:50 | unit holding  now=None    gen=2 applied=hold/2(7.7s) ignored='hold: not running' heard=0.9s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:20:51 | unit holding  now=None    gen=2 applied=hold/2(8.7s) ignored='hold: not running' heard=0.8s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:20:52 | unit holding  now=None    gen=2 applied=hold/2(9.6s) ignored='hold: not running' heard=0.7s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+--- B STOP
+B: 12:20:52 stop {"units": {"radxa-06": {"ok": false, "error": 
+12:20:55 | unit stopped  now=None    gen=3 applied=stop/3(2.7s) ignored='stop: not running or holding' heard=0.2s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+None) ann=False skip=0
+12:20:57 | unit stopped  now=None    gen=3 applied=stop/3(4.8s) ignored='stop: not running or holding' heard=0.1s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:20:59 | unit stopped  now=None    gen=3 applied=stop/3(6.7s) ignored='stop: not running or holding' heard=0.5s drop={'cid': 82, 'now': 118, 'http': 1, 'show': 1} | PC run=running 06=OFF sent=218(+0) ann=False skip=0
+12:21:02 state=stopped now=None synced=True cue=5b56260216:6:q03 err=None beacon={"on": true, "port": 8788, "heard_s": 0.7, "cid": 579005459, "gen": 3, "applied": {"what": "stop", "gen": 3, "ago_s": 9.0}, "ignored": "stop: not running or holding", "dropped": {"bad": 0, "cid": 82, "seq": 0, "now": 118, "gen": 0, "http": 1, "demo": 0, "show": 1, "host": 0}}
+    09:15:29 beacon skip: other PC
+    09:15:31 cue 5b56260216:6:q01 fired slot 2 +2 ms
+    09:15:41 cue 5b56260216:6:q02 fired slot 3 +1 ms
+    09:15:47 beacon hold
+    09:15:49 keep-away stop (41 s since the last stop)
+    09:15:57 beacon stop
+A: 12:21:13 stop {"units": {"radxa-06": {"ok": false, "error": 
+##### T3c 12:21:39: CONTROL for the two 'q08 fired' lines after the reboot: beacon OFF, reboot mid-run, rejoin by HTTP supervision only
+12:21:47 beacon {"beacon": {"enabled": false, "sen
+12:21:48 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 5.0, "from_s": 0.0}
+12:21:57 sudo reboot
+12:22:31 ssh is back
+(tunnel is dead since the reboot; re-open it in the next step)
+--- 12:22:41 tunnel re-opened (beacon OFF): HTTP supervision should start the rebooted unit late
+12:22:42 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=0(+None) ann=False skip=0
+12:22:43 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=0(+0) ann=False skip=0
+12:22:46 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=0(+0) ann=False skip=0
+12:22:48 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=0(+0) ann=False skip=0
+12:22:50 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=0(+0) ann=False skip=0
+12:22:52 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=0(+0) ann=False skip=0
+12:22:54 | unit running  now=-534.63 gen=None applied=None/None(Nones) ignored=None heard=Nones drop={} | PC run=running 06=on sent=0(+0) ann=False skip=0
+12:22:56 | unit running  now=-532.52 gen=None applied=None/None(Nones) ignored=None heard=Nones drop={} | PC run=running 06=on sent=0(+0) ann=False skip=0
+      + 09:08:03 panels online: 1/1
+12:22:58 | unit running  now=65.06   gen=None applied=None/None(Nones) ignored=None heard=Nones drop={} | PC run=running 06=on sent=0(+0) ann=False skip=0
+      + 09:08:07 cue 5b56260216:1:q06 fired slot 7 +4628 ms
+12:23:01 | unit running  now=67.94   gen=None applied=None/None(Nones) ignored=None heard=Nones drop={} | PC run=running 06=on sent=0(+0) ann=False skip=0
+12:23:02 | unit running  now=68.98   gen=None applied=None/None(Nones) ignored=None heard=Nones drop={} | PC run=running 06=on sent=0(+0) ann=False skip=0
+12:23:04 state=running now=71.11 synced=True cue=5b56260216:1:q08 err=None beacon={"on": true, "port": 8788, "heard_s": null, "cid": null, "gen": null, "applied": null, "ignored": null, "dropped": {"bad": 0, "cid": 0, "seq": 0, "now": 0, "gen": 0, "http": 0, "demo": 0, "show": 0, "host": 0}}
+    09:08:02 start REMOTE
+    09:08:03 port /dev/ttyACM0
+    09:08:03 boards 3 from the show (1-2,4-60 dropped, not probed)
+    09:08:03 panels online: 1/1
+    09:08:07 cue 5b56260216:1:q06 fired slot 7 +4628 ms
+    09:08:12 cue 5b56260216:1:q07 fired slot 8 +4 ms
+12:23:04 stop {"units": {"radxa-06": {"ok": true, "phase": "ready"}}}
+##### T5 12:27:04: Loop on; START from 1:30, cut; the run ends at 2:00; watch what the Loop and the unit do
+12:27:04 | unit stopped  now=None    gen=None applied=None/None(Nones) ignored=None heard=Nones drop={} | PC run=None 06=on sent=0(+None) ann=False skip=0
+12:27:06 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 3.0, "from_s": 90.0, "note": "Started from 1:30
+tunnel killed 42520
+12:27:15 | unit running  now=95.81   gen=26 applied=None/None(Nones) ignored='in step' heard=0.1s drop={} | PC run=running 06=on sent=43(+None) ann=True skip=0
+12:27:19 | unit running  now=99.66   gen=26 applied=None/None(Nones) ignored='in step' heard=0.1s drop={} | PC run=running 06=OFF sent=60(+17) ann=True skip=0
+12:27:23 | unit running  now=103.59  gen=26 applied=None/None(Nones) ignored='in step' heard=0.0s drop={} | PC run=running 06=OFF sent=79(+19) ann=True skip=0
+12:27:27 | unit running  now=107.63  gen=26 applied=None/None(Nones) ignored='in step' heard=0.5s drop={} | PC run=running 06=OFF sent=96(+17) ann=True skip=0
+12:27:31 | unit running  now=111.55  gen=26 applied=None/None(Nones) ignored='in step' heard=0.2s drop={} | PC run=running 06=OFF sent=100(+4) ann=True skip=0
+12:27:35 | unit running  now=115.65  gen=26 applied=None/None(Nones) ignored='in step' heard=0.0s drop={} | PC run=running 06=OFF sent=104(+4) ann=True skip=0
+12:27:39 | unit running  now=119.63  gen=26 applied=None/None(Nones) ignored='in step' heard=0.8s drop={} | PC run=running 06=OFF sent=107(+3) ann=True skip=0
+12:27:43 | unit ended    now=123.61  gen=26 applied=None/None(Nones) ignored='in step' heard=0.6s drop={} | PC run=running 06=OFF sent=111(+4) ann=True skip=0
+12:27:47 | unit ended    now=127.54  gen=26 applied=None/None(Nones) ignored='in step' heard=0.2s drop={} | PC run=running 06=OFF sent=115(+4) ann=True skip=0
+12:27:51 | unit ended    now=131.76  gen=26 applied=None/None(Nones) ignored='in step' heard=0.2s drop={} | PC run=running 06=OFF sent=119(+4) ann=True skip=0
+12:27:55 | unit ended    now=135.46  gen=26 applied=None/None(Nones) ignored='in step' heard=0.7s drop={} | PC run=running 06=OFF sent=122(+3) ann=True skip=0
+12:27:59 | unit ended    now=139.58  gen=26 applied=None/None(Nones) ignored='in step' heard=0.6s drop={} | PC run=running 06=OFF sent=126(+4) ann=True skip=0
+12:28:03 | unit ended    now=143.63  gen=26 applied=None/None(Nones) ignored='in step' heard=0.4s drop={} | PC run=running 06=OFF sent=130(+4) ann=True skip=0
+12:28:07 | unit ended    now=147.67  gen=26 applied=None/None(Nones) ignored='in step' heard=0.2s drop={} | PC run=running 06=OFF sent=134(+4) ann=True skip=0
+12:28:11 | unit ended    now=151.61  gen=26 applied=None/None(Nones) ignored='in step' heard=2.0s drop={} | PC run=running 06=OFF sent=136(+2) ann=False skip=1
+12:28:15 | unit ended    now=155.6   gen=26 applied=None/None(Nones) ignored='in step' heard=6.0s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:28:19 | unit ended    now=159.65  gen=26 applied=None/None(Nones) ignored='in step' heard=10.1s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:28:23 | unit ended    now=163.86  gen=26 applied=None/None(Nones) ignored='in step' heard=14.3s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:28:27 | unit ended    now=167.56  gen=26 applied=None/None(Nones) ignored='in step' heard=18.0s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:28:31 | unit ended    now=171.64  gen=26 applied=None/None(Nones) ignored='in step' heard=22.1s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:28:35 | unit ended    now=175.58  gen=26 applied=None/None(Nones) ignored='in step' heard=26.0s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:28:39 | unit ended    now=179.65  gen=26 applied=None/None(Nones) ignored='in step' heard=30.1s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:28:43 | unit ended    now=183.55  gen=26 applied=None/None(Nones) ignored='in step' heard=34.0s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:28:47 | unit ended    now=187.66  gen=26 applied=None/None(Nones) ignored='in step' heard=38.1s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:28:51 | unit ended    now=191.6   gen=26 applied=None/None(Nones) ignored='in step' heard=42.0s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:28:55 | unit ended    now=195.64  gen=26 applied=None/None(Nones) ignored='in step' heard=46.1s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:28:59 | unit ended    now=199.61  gen=26 applied=None/None(Nones) ignored='in step' heard=50.0s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+12:29:03 | unit ended    now=203.65  gen=26 applied=None/None(Nones) ignored='in step' heard=54.1s drop={} | PC run=running 06=OFF sent=136(+0) ann=False skip=1
+loop {'on': True, 'wait_s': 0, 'stored_wait_s': 0, 'next_in_s': None, 'retrying': True, 'waiting': True, 'retry_in_s': 0.34, 'runs': 0, 'problem': 'no unit is ready', 'min_wait_s': 0}
+corrections ['12:22:53 radxa-06: started late', '12:22:57 radxa-06: T0 corrected', '12:27:39 show ended - Loop: next run in 0 s', '12:27:40 Loop: cannot start again yet (radxa-06: not answering) - trying every 5 s', '12:28:42 Loop: cannot start again yet (no unit is ready) - trying every 5 s']
+run {'t0': 135895.2376788, 'state': 'running', 'held_at': None, 'force': False, 'clear_after_show': False, 'loops': 0, 'forced': [], 'left_out': {}, 't0_set_at': 135982.2376862, 'landed_at_s': 87.00000739999814, 'now': 207.51, 'end_clear_off': False}
+12:30:44 stop {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] ëŒè€ÇÃÉRÉìÉs
+12:31:01 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=None 06=OFF sent=171(+None) ann=True skip=0
+##### T3d 12:54:14: (network now in ROUTER mode; unit clock now NTP-set, RTC set) warm reboot mid-run with HTTP cut; then HTTP reopened while the PC run is still RUNNING
+12:54:30 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=None 06=OFF sent=212(+None) ann=False skip=0
+unit date before:  | PC 2026-11-20 03:54:36 UTC
+12:54:37 start {"HTTP": 400, "body": "{\"error\": \"radxa-06: not answering\"}"}
+12:54:47 sudo reboot
+unit date after:  | PC 2026-11-20 03:59:23 UTC
+12:59:32 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=None 06=OFF sent=212(+None) ann=False skip=0
+12:59:40 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=None 06=OFF sent=212(+0) ann=False skip=0
+12:59:48 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=None 06=OFF sent=212(+0) ann=False skip=0
+12:59:56 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=None 06=OFF sent=212(+0) ann=False skip=0
+##### T3d' 13:08:08: (the T3d above is void: the PC was on another Wi-Fi.) ROUTER mode; warm reboot mid-run, HTTP cut; then HTTP reopened while the PC run is still RUNNING
+13:08:18 | unit ended    now=2558.98 gen=26 applied=None/None(Nones) ignored='in step' heard=2409.4s drop={} | PC run=None 06=on sent=212(+None) ann=False skip=0
+unit date before: 2026-11-20 04:08:20 d56a1861-1734-4fd0-8a0c-d1cf1e7fdb54 1  | PC 2026-11-20 04:08:21 UTC
+13:08:21 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 5.0, "from_s": 0.0}
+tunnel killed 61648
+13:08:32 | unit running  now=6.08    gen=28 applied=None/None(Nones) ignored='in step' heard=0.1s drop={} | PC run=running 06=on sent=265(+None) ann=True skip=0
+13:08:34 sudo reboot
+13:09:06 ssh is back
+unit date after: 2026-11-20 04:09:08 3326b309-544f-4c79-ad48-df0e9c9aa179 15  | PC 2026-11-20 04:09:07 UTC
+13:09:08 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=333(+None) ann=True skip=0
+13:09:10 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=334(+1) ann=True skip=0
+13:09:12 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=336(+2) ann=True skip=0
+13:09:14 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=338(+2) ann=True skip=0
+13:09:16 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=340(+2) ann=True skip=0
+13:09:18 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=342(+2) ann=True skip=0
+13:09:20 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=344(+2) ann=True skip=0
+13:09:22 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=346(+2) ann=True skip=0
+13:09:24 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=348(+2) ann=True skip=0
+13:09:26 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=350(+2) ann=True skip=0
+13:09:28 | unit running  now=62.75   gen=None applied=None/None(Nones) ignored=None heard=Nones drop={} | PC run=running 06=OFF sent=351(+1) ann=True skip=0
+13:09:30 | unit running  now=64.8    gen=None applied=None/None(Nones) ignored='clock out of step' heard=0.9s drop={'now': 2} | PC run=running 06=OFF sent=353(+2) ann=True skip=0
+      + 04:09:29 beacon skip: clock off
+13:09:44 | unit running  now=79.48   gen=None applied=None/None(Nones) ignored='clock out of step' heard=0.8s drop={'now': 16} | PC run=running 06=OFF sent=367(+None) ann=True skip=0
+13:09:46 | unit running  now=81.29   gen=None applied=None/None(Nones) ignored='clock out of step' heard=0.5s drop={'now': 18} | PC run=running 06=OFF sent=369(+2) ann=True skip=0
+      + 04:09:46 cue 5b56260216:0:q08 fired slot 9 +1 ms
+13:09:48 | unit running  now=83.27   gen=None applied=None/None(Nones) ignored='clock out of step' heard=0.4s drop={'now': 20} | PC run=running 06=OFF sent=371(+2) ann=True skip=0
+13:09:50 state=running now=85.52 synced=False cue=5b56260216:0:q08 err=None beacon={"on": true, "port": 8788, "heard_s": 0.5, "cid": null, "gen": null, "applied": null, "ignored": "clock out of step", "dropped": {"bad": 0, "cid": 0, "seq": 0, "now": 22, "gen": 0, "http": 0, "demo": 0, "show": 0, "host": 0}}
+    04:09:34 port /dev/ttyACM0
+    04:09:34 boards 3 from the show (1-2,4-60 dropped, not probed)
+    04:09:34 cue 5b56260216:0:q06 fired slot 7 +8304 ms
+    04:09:36 cue 5b56260216:0:q07 fired slot 8 +1 ms
+    04:09:36 panels online: 1/1
+    04:09:46 cue 5b56260216:0:q08 fired slot 9 +1 ms
+##### T3e 13:11:33: warm reboot mid-run (clock set), HTTP path reopened as soon as the unit is back, PC run still RUNNING (no HOLD/RESUME)
+13:11:43 stop {"units": {"radxa-06": {"ok": true, "phase": "ready"}}}
+13:11:46 start {"units": {"radxa-06": {"ok": true}}, "lead_s": 5.0, "from_s": 0.0}
+13:11:51 sudo reboot (the tunnel dies with it)
+13:12:29 ssh is back
+13:12:30 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=590(+None) ann=True skip=0
+13:12:32 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=592(+2) ann=True skip=0
+13:12:34 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=593(+1) ann=True skip=0
+13:12:36 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=595(+2) ann=True skip=0
+13:12:38 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=597(+2) ann=True skip=0
+13:12:40 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=599(+2) ann=True skip=0
+13:12:42 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=601(+2) ann=True skip=0
+13:12:43 tunnel re-opened
+13:12:44 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=604(+None) ann=True skip=0
+13:12:46 | unit poll failed: Expecting value: line 1 column 1 (char 0) | PC run=running 06=OFF sent=605(+1) ann=True skip=0
+13:12:48 | unit running  now=-142.85 gen=None applied=None/None(Nones) ignored='clock out of step' heard=0.8s drop={'now': 1} | PC run=running 06=on sent=607(+2) ann=True skip=0
+13:12:50 | unit running  now=59.28   gen=31 applied=run/31(1.8s) ignored='in step' heard=0.7s drop={'now': 1} | PC run=running 06=on sent=609(+2) ann=True skip=0
+      + 04:12:49 port /dev/ttyACM0
+      + 04:12:49 beacon run, joined 58s
+      + 04:12:49 boards 3 from the show (1-2,4-60 dropped, not probed)
+      + 04:12:49 cue 5b56260216:1:q05 fired slot 6 +7559 ms
+13:12:52 | unit running  now=61.23   gen=31 applied=run/31(3.7s) ignored='in step' heard=0.6s drop={'now': 1} | PC run=running 06=on sent=611(+2) ann=True skip=0
+      + 04:12:52 cue 5b56260216:1:q06 fired slot 7 +1 ms
+      + 04:12:52 panels online: 1/1
+13:12:54 | unit running  now=63.28   gen=31 applied=run/31(5.8s) ignored='in step' heard=0.5s drop={'now': 1} | PC run=running 06=on sent=613(+2) ann=True skip=0
+13:12:56 | unit running  now=65.32   gen=31 applied=run/31(7.8s) ignored='in step' heard=0.5s drop={'now': 1} | PC run=running 06=on sent=615(+2) ann=True skip=0
+13:12:58 | unit running  now=67.34   gen=31 applied=run/31(9.8s) ignored='in step' heard=0.3s drop={'now': 1} | PC run=running 06=on sent=617(+2) ann=True skip=0
+13:13:00 | unit running  now=69.29   gen=31 applied=run/31(11.8s) ignored='in step' heard=0.2s drop={'now': 1} | PC run=running 06=on sent=619(+2) ann=True skip=0
+13:13:02 | unit running  now=71.35   gen=31 applied=run/31(13.8s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=on sent=621(+2) ann=True skip=0
+      + 04:13:02 cue 5b56260216:1:q07 fired slot 8 +1 ms
+13:13:04 | unit running  now=73.27   gen=31 applied=run/31(15.8s) ignored='in step' heard=1.0s drop={'now': 1} | PC run=running 06=on sent=622(+1) ann=True skip=0
+13:13:06 | unit running  now=75.28   gen=31 applied=run/31(17.8s) ignored='in step' heard=0.9s drop={'now': 1} | PC run=running 06=on sent=624(+2) ann=True skip=0
+13:13:08 | unit running  now=77.28   gen=31 applied=run/31(19.8s) ignored='in step' heard=0.7s drop={'now': 1} | PC run=running 06=on sent=626(+2) ann=True skip=0
+13:13:10 | unit running  now=79.29   gen=31 applied=run/31(21.8s) ignored='in step' heard=0.6s drop={'now': 1} | PC run=running 06=on sent=628(+2) ann=True skip=0
+13:13:12 | unit running  now=81.31   gen=31 applied=run/31(23.8s) ignored='in step' heard=0.5s drop={'now': 1} | PC run=running 06=on sent=630(+2) ann=True skip=0
+      + 04:13:12 cue 5b56260216:1:q08 fired slot 9 +1 ms
+13:13:14 | unit running  now=83.31   gen=31 applied=run/31(25.8s) ignored='in step' heard=0.4s drop={'now': 1} | PC run=running 06=on sent=632(+2) ann=True skip=0
+13:13:16 | unit running  now=85.24   gen=31 applied=run/31(27.7s) ignored='in step' heard=0.2s drop={'now': 1} | PC run=running 06=on sent=634(+2) ann=True skip=0
+13:13:19 state=running now=87.62 synced=True cue=5b56260216:1:q08 err=None beacon={"on": true, "port": 8788, "heard_s": 0.5, "cid": 2084284396, "gen": 31, "applied": {"what": "run", "gen": 31, "ago_s": 30.1}, "ignored": "in step", "dropped": {"bad": 0, "cid": 0, "seq": 0, "now": 1, "gen": 0, "http": 0, "demo": 0, "show": 0, "host": 0}}
+    04:12:49 boards 3 from the show (1-2,4-60 dropped, not probed)
+    04:12:49 cue 5b56260216:1:q05 fired slot 6 +7559 ms
+    04:12:52 cue 5b56260216:1:q06 fired slot 7 +1 ms
+    04:12:52 panels online: 1/1
+    04:13:02 cue 5b56260216:1:q07 fired slot 8 +1 ms
+    04:13:12 cue 5b56260216:1:q08 fired slot 9 +1 ms
+corrections ['13:10:26 show ended - Loop: next run in 0 s', '13:10:26 Loop: cannot start again yet (radxa-06: not answering) - trying every 5 s', '13:11:28 Loop: cannot start again yet (no unit is ready) - trying every 5 s', '13:11:38 Loop: run 1 started', '13:12:48 radxa-06: T0 corrected']
+13:13:19 stop {"units": {"radxa-06": {"ok": true, "phase": "fired"}}}
+14:22:50 | unit loaded   now=None    gen=4 applied=run/3(3136.4s) ignored='stop: not running or holding' heard=3091.5s drop={'now': 1} | PC run=None 06=on sent=0(+None) ann=False skip=0
+##### LCD1 14:24:34: LCD check with the operator watching radxa-06 (set-up B, HTTP cut just before START)
+14:24:35 | unit loaded   now=None    gen=4 applied=run/3(3241.5s) ignored='stop: not running or holding' heard=3196.6s drop={'now': 1} | PC run=None 06=on sent=0(+None) ann=False skip=0
+tunnel killed 63620
+14:24:38 start {"units": {"radxa-06": {"ok": false, "error": "[WinError 10061] ëŒè€ÇÃÉRÉìÉsÉÖÅ[É^Å[Ç…ÇÊÇ¡Çƒãëî
+14:24:41 | unit running  now=-2.23   gen=1 applied=run/1(2.6s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=on sent=13(+None) ann=True skip=0
+14:24:45 | unit running  now=1.78    gen=1 applied=run/1(6.6s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=OFF sent=32(+19) ann=True skip=0
+14:24:49 | unit running  now=5.77    gen=1 applied=run/1(10.6s) ignored='in step' heard=0.0s drop={'now': 1} | PC run=running 06=OFF sent=50(+18) ann=True skip=0
+14:24:53 | unit running  now=9.75    gen=1 applied=run/1(14.6s) ignored='in step' heard=0.2s drop={'now': 1} | PC run=running 06=OFF sent=68(+18) ann=True skip=0
+14:24:57 | unit running  now=13.71   gen=1 applied=run/1(18.6s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=OFF sent=87(+19) ann=True skip=0
+      + 05:24:54 cue 5b56260216:5:q01 fired slot 2 +1 ms
+14:25:01 | unit running  now=17.73   gen=1 applied=run/1(22.6s) ignored='in step' heard=0.3s drop={'now': 1} | PC run=running 06=OFF sent=97(+10) ann=True skip=0
+--- HOLD
+14:25:05 hold {"units": {"radxa-06": {"ok": false, "error": 
+14:25:08 | unit holding  now=None    gen=2 applied=hold/2(2.7s) ignored='hold: not running' heard=0.1s drop={'now': 1} | PC run=holding 06=OFF sent=114(+None) ann=True skip=0
+14:25:12 | unit holding  now=None    gen=2 applied=hold/2(6.7s) ignored='hold: not running' heard=0.1s drop={'now': 1} | PC run=holding 06=OFF sent=133(+19) ann=True skip=0
+14:25:16 | unit holding  now=None    gen=2 applied=hold/2(10.7s) ignored='hold: not running' heard=0.1s drop={'now': 1} | PC run=holding 06=OFF sent=152(+19) ann=True skip=0
+14:25:20 | unit holding  now=None    gen=2 applied=hold/2(14.7s) ignored='hold: not running' heard=0.0s drop={'now': 1} | PC run=holding 06=OFF sent=171(+19) ann=True skip=0
+      + 05:25:18 keep-away stop (40 s since the last stop)
+14:25:24 | unit holding  now=None    gen=2 applied=hold/2(18.7s) ignored='hold: not running' heard=0.1s drop={'now': 1} | PC run=holding 06=OFF sent=190(+19) ann=True skip=0
+--- RESUME
+14:25:28 resume {"units": {"radxa-06": {"ok": false, "error"
+14:25:31 | unit running  now=24.7    gen=3 applied=run/3(2.9s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=OFF sent=213(+None) ann=True skip=0
+14:25:35 | unit running  now=28.62   gen=3 applied=run/3(6.8s) ignored='in step' heard=0.0s drop={'now': 1} | PC run=running 06=OFF sent=232(+19) ann=True skip=0
+14:25:39 | unit running  now=32.6    gen=3 applied=run/3(10.8s) ignored='in step' heard=0.2s drop={'now': 1} | PC run=running 06=OFF sent=251(+19) ann=True skip=0
+      + 05:25:37 cue 5b56260216:5:q03 fired slot 4 +1 ms
+14:25:43 | unit running  now=36.71   gen=3 applied=run/3(14.9s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=OFF sent=270(+19) ann=True skip=0
+14:25:47 | unit running  now=40.67   gen=3 applied=run/3(18.9s) ignored='in step' heard=0.0s drop={'now': 1} | PC run=running 06=OFF sent=289(+19) ann=True skip=0
+      + 05:25:47 cue 5b56260216:5:q04 fired slot 5 +1 ms
+--- STOP
+14:25:51 stop {"units": {"radxa-06": {"ok": false, "error": 
+14:25:54 | unit stopped  now=None    gen=4 applied=stop/4(2.7s) ignored='stop: not running or holding' heard=0.1s drop={'now': 1} | PC run=None 06=OFF sent=310(+None) ann=True skip=0
+14:25:56 | unit stopped  now=None    gen=4 applied=stop/4(5.7s) ignored='stop: not running or holding' heard=0.6s drop={'now': 1} | PC run=None 06=OFF sent=322(+12) ann=True skip=0
+14:26:00 state=stopped now=None synced=True cue=5b56260216:5:q05 err=None beacon={"on": true, "port": 8788, "heard_s": 0.7, "cid": 201318943, "gen": 4, "applied": {"what": "stop", "gen": 4, "ago_s": 8.9}, "ignored": "stop: not running or holding", "dropped": {"bad": 0, "cid": 0, "seq": 0, "now": 1, "gen": 0, "http": 0, "demo": 0, "show": 0, "host": 0}}
+    05:25:18 keep-away stop (40 s since the last stop)
+    05:25:29 beacon run, joined 22s
+    05:25:37 cue 5b56260216:5:q03 fired slot 4 +1 ms
+    05:25:47 cue 5b56260216:5:q04 fired slot 5 +1 ms
+    05:25:52 beacon stop
+    05:25:58 keep-away stop (40 s since the last stop)
+14:28:18 | unit stopped  now=None    gen=4 applied=stop/4(147.6s) ignored='stop: not running or holding' heard=88.5s drop={'now': 1} | PC run=None 06=on sent=373(+None) ann=False skip=0
+##### LCD2 14:28:58: LCD check again, the operator is filming radxa-06
+14:28:59 | unit stopped  now=None    gen=4 applied=stop/4(188.4s) ignored='stop: not running or holding' heard=129.2s drop={'now': 1} | PC run=None 06=on sent=373(+None) ann=False skip=0
+tunnel killed 55764
+14:29:02 start {"units": {"radxa-06": {"ok": false, "error":
+14:29:06 | unit running  now=-1.54   gen=5 applied=run/5(3.4s) ignored='in step' heard=0.2s drop={'now': 1} | PC run=running 06=on sent=390(+None) ann=True skip=0
+14:29:10 | unit running  now=2.36    gen=5 applied=run/5(7.3s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=OFF sent=408(+18) ann=True skip=0
+14:29:14 | unit running  now=6.47    gen=5 applied=run/5(11.4s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=OFF sent=427(+19) ann=True skip=0
+14:29:18 | unit running  now=10.53   gen=5 applied=run/5(15.4s) ignored='in step' heard=0.2s drop={'now': 1} | PC run=running 06=OFF sent=446(+19) ann=True skip=0
+      + 05:29:18 cue 5b56260216:6:q01 fired slot 2 +2 ms
+14:29:22 | unit running  now=14.44   gen=5 applied=run/5(19.3s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=OFF sent=465(+19) ann=True skip=0
+14:29:26 | unit running  now=18.47   gen=5 applied=run/5(23.4s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=OFF sent=472(+7) ann=True skip=0
+--- HOLD
+14:29:30 hold {"units": {"radxa-06": {"o
+14:29:33 | unit holding  now=None    gen=6 applied=hold/6(2.7s) ignored='hold: not running' heard=0.1s drop={'now': 1} | PC run=holding 06=OFF sent=488(+None) ann=True skip=0
+14:29:37 | unit holding  now=None    gen=6 applied=hold/6(6.7s) ignored='hold: not running' heard=0.2s drop={'now': 1} | PC run=holding 06=OFF sent=507(+19) ann=True skip=0
+14:29:41 | unit holding  now=None    gen=6 applied=hold/6(11.1s) ignored='hold: not running' heard=0.0s drop={'now': 1} | PC run=holding 06=OFF sent=528(+21) ann=True skip=0
+14:29:45 | unit holding  now=None    gen=6 applied=hold/6(14.6s) ignored='hold: not running' heard=0.1s drop={'now': 1} | PC run=holding 06=OFF sent=545(+17) ann=True skip=0
+      + 05:29:43 keep-away stop (40 s since the last stop)
+14:29:49 | unit holding  now=None    gen=6 applied=hold/6(18.7s) ignored='hold: not running' heard=0.1s drop={'now': 1} | PC run=holding 06=OFF sent=564(+19) ann=True skip=0
+--- RESUME
+14:29:53 resume {"units": {"radxa-06": {
+14:29:55 | unit running  now=25.33   gen=7 applied=run/7(2.6s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=OFF sent=586(+None) ann=True skip=0
+14:29:59 | unit running  now=29.32   gen=7 applied=run/7(6.6s) ignored='in step' heard=0.0s drop={'now': 1} | PC run=running 06=OFF sent=605(+19) ann=True skip=0
+14:30:03 | unit running  now=33.3    gen=7 applied=run/7(10.6s) ignored='in step' heard=0.0s drop={'now': 1} | PC run=running 06=OFF sent=623(+18) ann=True skip=0
+      + 05:30:01 cue 5b56260216:6:q03 fired slot 4 +1 ms
+14:30:07 | unit running  now=37.28   gen=7 applied=run/7(14.6s) ignored='in step' heard=0.1s drop={'now': 1} | PC run=running 06=OFF sent=641(+18) ann=True skip=0
+14:30:11 | unit running  now=41.29   gen=7 applied=run/7(18.6s) ignored='in step' heard=0.0s drop={'now': 1} | PC run=running 06=OFF sent=660(+19) ann=True skip=0
+      + 05:30:11 cue 5b56260216:6:q04 fired slot 5 +2 ms
+--- STOP
+14:30:15 stop {"units": {"radxa-06": {"o
+14:30:18 | unit stopped  now=None    gen=8 applied=stop/8(2.7s) ignored='stop: not running or holding' heard=0.2s drop={'now': 1} | PC run=None 06=OFF sent=683(+None) ann=True skip=0
+14:30:21 | unit stopped  now=None    gen=8 applied=stop/8(5.6s) ignored='stop: not running or holding' heard=0.6s drop={'now': 1} | PC run=None 06=OFF sent=694(+11) ann=True skip=0
+14:30:25 state=stopped now=None synced=True cue=5b56260216:6:q05 err=None beacon={"on": true, "port": 8788, "heard_s": 0.0, "cid": 201318943, "gen": 8, "applied": {"what": "stop", "gen": 8, "ago_s": 9.1}, "ignored": "stop: not running or holding", "dropped": {"bad": 0, "cid": 0, "seq": 0, "now": 1, "gen": 0, "http": 0, "demo": 0, "show": 0, "host": 0}}
+    05:29:43 keep-away stop (40 s since the last stop)
+    05:29:54 beacon run, joined 23s
+    05:30:01 cue 5b56260216:6:q03 fired slot 4 +1 ms
+    05:30:11 cue 5b56260216:6:q04 fired slot 5 +2 ms
+    05:30:16 beacon stop
+    05:30:23 keep-away stop (40 s since the last stop)

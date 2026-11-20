@@ -1,0 +1,13 @@
+﻿**R5-1 is closed for faults visible at the omitted unit’s final observation.** If the unit answers with a blocking fault before that check, START recomputes the targets and the normal burn gate refuses. If a proposed omission changes again on the second pass, START refuses before publishing `_waved` or the run. `conductor/fleet.py:2100–2127`
+
+- **Residual race, low.** A unit can publish a blocking fault just after *its own* final observation, while another omitted unit is being checked or before the run commits. START can still commit without it, even though main’s gate would refuse if it read that report. This is equivalent in kind to main’s per-unit burn-gate-to-commit gap. Another read only narrows the window. If commit-time consistency with locally published reports is required, synchronize final validation and commit with report publication. A report that has yet to arrive remains unknowable. `conductor/fleet.py:2295–2304`, `conductor/fleet.py:2132–2165`
+- **Retry input edge case, low.** A direct caller passing a one-shot `forced_units` iterator can lose its waiver on the retry after the first `_start_targets` consumes it. The operator path uses the empty tuple, and staged and Loop callers use sets and bypass the retry. Smallest fix is to snapshot `skip` and `forced_units` into reusable collections once on entry to the switch-eligible branch. `conductor/fleet.py:2088–2115`, `conductor/fleet.py:2425`
+
+**Path parity holds.** OFF, Loop, both staged paths, and EXHIBITION leave `silent` empty and bypass re-observation and retry. `_start_show` retains main’s executable body with the feature insertions. In PC-show mode the second `_start_targets` call only reads state and builds local results. `_still_silent` takes one link lock at a time outside `_run_lock`, and the `finally` releases the `_starting` guard on exceptions. The original armed-clear cancellation still happens at entry. The wording and `serve()` ordering match the report. This was a static, read-only review.
+
+**(a) Merge with the switch OFF by default: yes.**
+
+**(b) Operator ticks it ON on 2026-11-22: yes, as a fallback.** Use it for an unstaged show-PC START when each missing garment previously reported the current show fully burned to this Conductor, the answering garments pass their checks, and the operator can proceed with a garment missing at the opening. If START reports that a garment came back while it was deciding, recheck the garments and press START again.
+
+Codex session ID: 01a1f777-90f4-7283-a62c-f364992a2e6e
+Resume in Codex: codex resume 01a1f777-90f4-7283-a62c-f364992a2e6e

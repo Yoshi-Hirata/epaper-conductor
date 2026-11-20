@@ -1,0 +1,31 @@
+﻿**Merge with the switch OFF by default: No.** The stale-refusal path still bypasses the revision check, and ordinary OFF START changes when Loop can see `_waved`. Both are fixable without changing the admission policy.
+
+**Tick it ON on 2026-11-22: No.** First fix the START findings and pass the relevant tests. Then rehearse on the actual show PC, router, and garments. Verify that a previously heard, fully burned garment can lose its reply path while the others start on time. With beacon ON, verify that the silent garment follows START, HOLD, and STOP and that only one Conductor transmits. With beacon OFF, verify it waits for replies to recover and rejoins the current run if ready. Restore replies after STOP and confirm it stays stopped. Rehearse the all-silent and cached-fault refusals, and reload the show PC to verify that OFF persists as the fallback.
+
+### Round 3 disposition
+
+| Item | Result |
+|---|---|
+| Delayed HTTP kick, major | **Closed.** Initial START dispatches only to admitted `targets`. The omission path creates no delayed HTTP dispatch. Beacon and polling supervision remain the two recovery paths. `conductor/fleet.py:2077–2085, 2159–2171, 1212–1246, 3281–3289` |
+| Second toggle and premature `_waved`, major | **Closed for commits.** Both successful admission passes check the revision, and the final check shares the lock with run publication and the setter. A late revision refusal leaves `_waved` and `_waved_said` alone. The failed-admission path still has a gap below. `conductor/fleet.py:2074–2123, 2208–2219` |
+| Kick workers, minor | **Closed.** No `_kick_silent` or `_silent_kicks` remains. START ends in the normal `_send_run(targets)` dispatch. `conductor/fleet.py:2165–2171` |
+| Preview overpromises, minor | **Partly closed.** All-silent has the stated refusal. The show-PC copy distinguishes beacon ON and OFF and qualifies rejoin on readiness. The preview still promises an outcome that the documented limits can invalidate. `conductor/fleet.py:2294–2298, 2326–2339`, `conductor/web/index.html:6283–6310` |
+
+Boot uses the setter only on the show PC and only for JSON boolean `true`. The Fleet default is OFF. `conductor/server.py:4895–4917`, `conductor/fleet.py:533`
+
+### Findings
+
+- **Major · A stale refusal escapes the retry.** START reads OFF with one cached-ready silent garment. The operator saves ON while `_burn_problems()` runs. START returns “not answering” before checking the revision, even though the new policy would admit it. On the second attempt the same ordering can return a burn error instead of `SILENT_CHANGED`. **Smallest fix:** check the revision before returning an admission error, including any `ValueError` from `_start_targets()`. Retry once or refuse with `SILENT_CHANGED` according to the attempt. Keep the final commit check. `conductor/fleet.py:2074–2100`
+
+- **Minor · OFF changes `_waved` timing.** Eligibility is independent of the setting, so a direct operator START that reads OFF now publishes `_waved` inside the commit lock. Main publishes it after the burn gate, before taking that lock. A due Loop against the ended run can still read the previous waiver during that interval and evaluate the wrong readiness while the operator START is pending. Loop laps themselves never publish `_waved`. Staged START’s immediate fallback, stage completion, and EXHIBITION retain main’s pre-commit publication, including on a late generation refusal at stage completion. **Smallest fix:** for an unchanged OFF decision, restore the earlier publication before releasing the first lock that confirms its revision, and invalidate or roll it back if the final revision check fails. Cover the OFF/Loop interleaving in a regression test. `conductor/fleet.py:810–826, 2045–2056, 2071–2123, 2856–2859`
+
+- **Minor · Saving holds `_run_lock` across disk I/O.** The commit block itself performs no file or network I/O, and its context manager releases the lock on exceptions. The setter holds that same lock across the workspace lock, `fleet.json` read, fsync, and replace retries. A slow save after END can stall a concurrent STOP, due Loop, or beacon snapshot. A save exception releases the lock and leaves the in-memory value and revision unchanged. **Smallest fix:** prepare and fsync the temporary file outside `_run_lock`. Serialize toggle writers, then recheck eligibility and do the final replace and publication under the run lock, keeping replace retry sleeps outside it. `conductor/fleet.py:1175–1182, 2116–2171, 2208–2219`, `conductor/server.py:2220–2243, 4225–4227`, `conductor/durable.py:102–142`
+
+- **Minor · A late-refused START still cancels an armed clear.** After STOP arms a clear, a START can cancel it and log “taken back,” then lose the revision race and refuse without publishing a run. The early cancellation is inherited from main. The revision refusal adds a new way to reach that outcome. **Smallest fix:** for a switch-eligible START, cancel the clear as part of the accepted commit, using a helper that assumes the run lock is held. `conductor/fleet.py:2029–2034, 2116–2125, 3121–3129`
+
+- **Minor · The preview still says “will” for a partial check.** With a split upload and a cached-ready silent garment, the page can say START will go without it even if nothing changes and the server refuses at the one-timeline gate. An explicit `from_s` can also change whether preset applies. **Smallest fix:** say “Not answering: … Eligible to be left out if START passes its other checks.” Qualify the staged message as applying to a START from 0:00. `conductor/fleet.py:2335–2339`, `conductor/server.py:4189–4198, 4428–4465`, `conductor/web/index.html:6301–6310`
+
+Verified the six modified files against HEAD `1aa943d` and ran `git diff --check`, which passed. Automated tests, browser behavior, and hardware rehearsal were **not verified** under the read-only, no-network constraints.
+
+Codex session ID: 01a1f736-a6e1-7dc2-b7f9-caf80bd27c21
+Resume in Codex: codex resume 01a1f736-a6e1-7dc2-b7f9-caf80bd27c21

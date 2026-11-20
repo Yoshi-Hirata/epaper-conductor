@@ -246,7 +246,8 @@ sleeps 1 s (no busy loop). It calls the player as an HTTP handler thread does.
 
 The code went further than section 7 in the review rounds (a friendly review and
 two adversarial reviewers, several rounds). This is what it does now. Merged to
-main as e330963; not pushed, not on any unit.
+main as e330963 (listener on the nine Kunitachi units since 1aa943d, 2026-11-20; the
+Conductor's START switch of section 9 came later, c2b08f1). Not pushed.
 
 **Wire format: unchanged.** Header, entries, MAC, the key and the three goldens
 in `tests/goldens/beacon_v1.json` are still valid on both sides.
@@ -384,7 +385,7 @@ gen they decided under, not whatever `_run_gen` is when the post goes out.
 - **Switch.** `POST /api/fleet/beacon {"on": bool}` (non-bool -> error; 400 when
   no sender is configured); saved to fleet.json under `workspace.set_fleet_option`
   and applied under one lock; the answer is the sender's snapshot.
-- **Units tab** (`index.html`, the "Backup broadcast (beacon)" checkbox): after it,
+- **Units tab** (`index.html`, the "Backup broadcast (beacon)" checkbox - since 2026-11-20 in THE SHOW card, in the row "If a unit's Wi-Fi is weak:" under the START buttons, no longer in MANUAL CUE): after it,
   "(on, idle)", "(sending)" or "(no route - check the Wi-Fi)"; then
   ", N send errors, last HH:MM:SS" and ", N units left out" (the reasons, and the
   last error, on hover). Nothing is shown while it is off. The checkbox is disabled
@@ -397,17 +398,23 @@ gen they decided under, not whatever `_run_gen` is when the post goes out.
   hold leaves the unit holding; with the switch off nothing is sent and START is
   unchanged; a unit whose clock moved since the last poll ignores the beacon; a
   unit playing its own demo ignores run, hold and stop. Real radios, the access
-  point's behaviour with broadcast and a real unit's LCD are NOT proven - the
-  hardware check is in `docs/ROLLOUT_20261120.md` section 7.
+  point's behaviour with broadcast and a real unit's LCD were NOT proven by those
+  tests; the hardware check of 2026-11-20 (section 10) covers the radio and the
+  broadcast, the LCD reading is still pending.
 
 ### 8.4 Accepted limits
 
 - **One beaconing Conductor per network.** Two with the switch on fight through
   the G2 latch (the unit follows whichever it heard first, and takes the other
   over only after 5 s of silence).
-- **A unit that rebooted cannot be steered** until one `/status` poll succeeds
-  again (its clock changed; G4 drops the datagrams, and the Conductor's offset is
-  discarded after two agreeing samples). v1.1: PC-clock fields in the datagram and
+- **A unit that rebooted cannot be steered by the beacon** until HTTP polls have
+  relearned its clock: its monotonic clock restarted, G4 drops the datagrams
+  (`beacon skip: clock off`), and the Conductor replaces its stored offset only
+  after TWO agreeing `/status` samples (not one poll; measured 2026-11-20, section
+  10). On its own the unit restores its run from disk using its wall clock and, if
+  that clock is right, lands on the right position (row 28); it is back in step
+  about 7 s after HTTP returns (row 29). With a wrong wall clock the restored
+  position is wrong (O2, section 10). v1.1: PC-clock fields in the datagram and
   a one-way offset estimate on the unit.
 - **First datagram after boot vs an HTTP command already in flight.** HTTP
   commands that passed the agent's `beacon_seen_cid is None` check before the
@@ -429,8 +436,113 @@ gen they decided under, not whatever `_run_gen` is when the post goes out.
 - **In step.** A new-gen move of T0 under 0.10 s (`T0_TOLERANCE_S`) is "in step"
   for the beacon: the unit is not re-timed. HTTP still applies it.
 - **PRESET, load and clear are never beaconed**; Upload stays HTTP.
-- **Outside EXHIBITION mode START still refuses units that do not answer** unless
-  the operator leaves them out; the beacon then starts them as supervision's
-  "started late" would.
+- **Outside EXHIBITION mode START refuses units that do not answer** (hardware
+  finding F1) unless the operator has ticked "START without units that do not
+  answer" (section 9, default off); the left-out unit then follows the beacon, or
+  is started late by supervision when the beacon is off.
 - **After a Conductor restart mid-show** (adopted run) nothing is beaconed to a
   unit until STOP and a new Upload (8.3).
+
+## 9. START without units that do not answer (2026-11-20, c2b08f1) - Conductor side only
+
+**Why (finding F1).** In PC-show mode START was refused for EVERY garment when
+one unit was "not answering", forced or not (`Fleet._burn_problems`;
+`start_present` is only set by `--adopt`). A unit whose replies do not reach the
+router at START time therefore blocked the run, and the beacon never announced
+it: it covered a unit that goes quiet AFTER START, not the START itself. Units
+need nothing new for this.
+
+**The switch.** Units tab, THE SHOW card, the row "If a unit's Wi-Fi is weak:" under the START buttons (next to the beacon checkbox): "START without units that do not answer",
+default OFF. Saved in the workspace's fleet.json as `"start_without_silent":
+true|false` (strict bool; anything else prints a warning and stays off). API
+`POST /api/fleet/start_without_silent {"on": bool}`. `/api/fleet` carries
+`start_without_silent`, `start_without` (the units START would leave out now)
+and `start_without_why` (the reason line when it cannot help). It can be changed
+only with no live run (an ENDED show is fine), not during HOLD or the preset
+countdown, and not while a START is being decided ("START is being decided - try
+again in a moment."). Refused on an EXHIBITION Conductor, which already starts
+with the units that answer (`start_present`).
+
+**The rule (ON).** The operator's plain START leaves out a unit whose ONLY
+problem is "not answering" AND whose last known status was fully ready (same show
+id, pictures burned, no force waiver). At least one garment must answer. START
+still refuses exactly as before for any other fault (needs Upload, another show,
+still writing, cleared, failed boards), for a unit not heard from since this
+Conductor started, and when nobody answers. Not used with "Preset before START"
+(a START from 0:00), not by Loop restarts (the Loop keeps its own 60 s grace).
+If a left-out garment comes back twice while START is deciding, the press is
+refused with "A garment came back while START was deciding - press START again."
+(the `_starting` guard; the left-out unit is observed once more before the commit).
+
+**Interaction with the beacon.**
+- A left-out unit STAYS in `shows` (the run's show map), so `beacon_view()` still
+  makes an entry for it and it is announced like any other unit. The run records
+  it as `run.left_out` / `run.silent`; the corrections line and START note name
+  it.
+- With the beacon ON the unit starts by the broadcast alone (hardware: in step
+  within 0.08 s). With it OFF the unit stays as it is and supervision starts it
+  "late" about 1 s after its HTTP answers again.
+- `flags` bit0 (the run-wide force, `_beacon_force`) is NEVER carried for a
+  left-out unit: it never inherits the run-wide "start anyway". If it comes back
+  with failed boards it stays out until a forced restart or a rescue Upload.
+- **No HTTP "kick".** The left-out unit gets no HTTP START of its own (a build
+  under review had a best-effort one; review round 3 removed it). When a unit's
+  replies do not reach the Conductor the TCP handshake never completes, so the
+  post cannot land in the very case the switch exists for (hardware check row 4:
+  `hold -> radxa-06 timed out`, applied by the beacon). It could only reach a
+  unit whose link is merely flaky - which supervision starts on its next good
+  poll anyway - and with a 3 s connect plus 3 s read timeout such a post could
+  arrive after the operator's STOP carrying the old T0, which a unit that has
+  not heard this Conductor's beacon would execute. The beacon (on) and
+  supervision's "started late" (off) cover the unit.
+- While the unit is left out its entry is not dropped from the datagram, and when
+  its HTTP returns the left-out line disappears without any correction (it was
+  already in step - row 32).
+
+Reviews: friendly x2, adversarial Claude x5, Codex x6. Final verdicts: merge with
+the switch OFF by default - yes (all); the operator ticks it on 2026-11-22 - yes
+as a fallback (Codex), ship (Claude). The operator's rule stands: make every unit
+online before START; the switch is the backup.
+
+## 10. Hardware check, 2026-11-20 (summary)
+
+Raw record, with 36 rows, findings and observations:
+`docs/BEACON_HWCHECK_20261120.md` (raw logs in `docs/hwcheck-20261120-logs/`).
+Unit radxa-06 with board 3; radxa-08 with board 20 for the two-unit rows; test
+Conductors on the PC at 192.168.51.40; commit 1aa943d on the units.
+
+**Proven on hardware.** The 0:00 picture is shown once with both paths;
+START / HOLD / RESUME / SEEK / NEXT / STOP by broadcast alone (unicast off); the
+full 60 s STOP tail; STOP then START at once; SEEK while holding; a real reboot
+(the beacon refuses the rebooted unit - `beacon skip: clock off` - until HTTP
+polls have relearned its clock; with a correct wall clock the unit restores its
+run itself at the right position and is back in step 7 s after HTTP returns); a
+Conductor restart mid-show; the switch toggled mid-run; two Conductors (the unit
+stays with the first, `beacon skip: other PC`; takeover 5 s after the first falls
+silent); a wrong show id is refused; Loop with a unit that is not heard (no lap
+is started on it); START without a silent unit (section 9) with the beacon on and
+off, final build included.
+
+**Observations.**
+- **O1** When a run reaches a unit whose serial port is not open yet (just
+  rebooted), the current picture is triggered twice about 0.4 s apart (the
+  player's late-board heal; not beacon-specific). On any rejoin the current picture
+  is shown and the next cue may follow 2-3 s later (a repaint takes about 7.3 s).
+- **O2** The unit restores its run from disk using its wall clock. Units have an
+  RTC but there is no NTP on the show Wi-Fi: on the morning of 2026-11-20 every
+  boot came up at the same stale time and a rebooted unit stayed `loaded`; after
+  the units reached NTP once (about 12:34 JST) a warm reboot restored the right
+  position. Operating rule: battery swaps between shows, not during; a garment that
+  lost power mid-show goes back on stage only after its picture is confirmed.
+
+**Still open.** LCD: filmed by the operator on 2026-11-20 14:29, reading pending.
+A COLD power cycle (battery pulled; the RTC may not keep time) is untested. More
+than one deaf unit, a weak link and a full-length run with the beacon on are
+untested. Not exercised on hardware: `beacon skip: no show` / `own demo`,
+`beacon NG`, `beacon: STOP wins`.
+
+**Decision for 2026-11-22 (Codex as test overseer).** Keep "Backup broadcast
+(beacon)" OFF unless the open items are closed and a rehearsal shows a real need.
+If it is ticked: one Conductor only; change it only while stopped; no Conductor
+restart or battery swap mid-show; after any unit reboot verify the picture before
+the garment goes back on stage.

@@ -197,10 +197,11 @@ Start・End・ショーの長さなど「いつ」を表す欄は、すべて **
 Show length の横に `music continues 0.54 past the end of the show` と出る。
 再生は音源が終わってもショーの終わりまで(無音で)進み、ショーの終わりで音も止まる。
 
-**国立駅のショー用(2026-11-22)。** 音源 `kunitachi100_music_mix_1119.mp3`(35:27.6)入りの
-`dist/az27ss-simulator-kunitachi-with-music.html`(91.5 MB、git 管理外)を使う。開いたら
-**Fit to music** を押して Show length を 35.28 にする。91 MB のファイルは開くのに数秒かかり、
-メモリを数百 MB 使う。Timeline にズームは無く、35.28 では 7 秒のキュー 1 つが数ピクセルの幅になる
+**国立駅のショー用(2026-11-22)。** 音源 `kunitachi100_music_1120g.mp3`(36:33.96、64 kbps、
+2026-11-20 に差し替え)入りの
+`dist/az27ss-simulator-kunitachi-with-music.html`(24.1 MB、git 管理外)を使う。開いたら
+**Fit to music** を押して Show length を 36.34 にする。24 MB のファイルは開くのに数秒かかり、
+メモリを数百 MB 使う。Timeline にズームは無く、36.34 では 7 秒のキュー 1 つが数ピクセルの幅になる
 (目盛りは 30.00 を過ぎると 2.00 ごと)。
 
 ## 5. プロジェクトの保存と再開

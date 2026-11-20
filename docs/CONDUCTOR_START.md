@@ -70,17 +70,21 @@ JR 国立駅の 2026-11-22 のショー用に、もう 1 つ別のアプリが�
 | バックアップ | `Backup kunitachi-data.bat` |
 
 - 中身: PC の本番ショーの 7 着(同じ機体 radxa-01〜04・07・09・10、同じ絵・DIP 上書き・ラベル。
-  2026-11-19 に `showdata/` からコピー)、音源 `kunitachi100_music_mix_1119.mp3`(35:27.6、
-  68,081,989 バイト、MP3 256 kbps CBR)、ショーの長さ 35:28。Timeline は空で、各着に
+  2026-11-19 に `showdata/` からコピー)、音源 `kunitachi100_music_1120g.mp3`(36:33.96 = 2193.96 秒、
+  17.6 MB、MP3 64 kbps。**2026-11-20 に 2 回差し替えて、これが現在の音源**)、ショーの長さ 36:34(2194 秒)。Timeline は空で、各着に
   0:00 の白のプリセット(新ファイル `<ITEM>_white_HW.csv`)だけがある
 - `fleet.json` は `showdata/` のコピー(radxa-09 は `10.42.0.109:8787` = AZ-Epaper ホットスポットの
   アドレス)。**会場のネットワークで機体に届くか確かめる**
 - 設計者用シミュレーター(音源入り)は Timeline の **Simulator for designers…** ボタン
   (この Conductor が動いている間)か
   `python tools/build_designer.py --music auto --workspace kunitachi-data --out dist/az27ss-simulator-kunitachi-with-music.html`
-- ショーは最長 40:00・音源 128 MB まで。Timeline にズームは無く、35:28 では 7 秒のキュー 1 つが
+  (24.1 MB。**Fit to music** でショーの長さが 36:34 になる)
+- ショーは最長 40:00・音源 128 MB まで(変更なし)。Timeline にズームは無く、36:34 では 7 秒のキュー 1 つが
   数ピクセル幅。目盛りは 30:00 を過ぎると 2:00 ごと。1 機体 18 送信までの上限は変わらない
-- **11-22 の前に**: 音源つきで 35:28 を最初から最後まで 1 回通して流す(長時間のずれの再シーク)。
+- **会場のネットワーク**は 4b 節。会場では機体の LCD の GIT PULL が使えない(更新は PC から送る)
+- **START の前に全機が online であることを確かめる**(これが基本)。万一 1 台が答えないときの予備が
+  4d 節のスイッチ。ビーコン(4c 節)とあわせて、ON にするかは 11-22 の前に決める(既定はどちらも OFF)
+- **11-22 の前に**: 音源つきで 36:34 を最初から最後まで 1 回通して流す(長時間のずれの再シーク)。
   機体のスピーカー(radxa-05 の mpg123)で音源の遠い位置へシークするのは**未試験**
 
 ## 2. 停止する
@@ -126,12 +130,30 @@ python -m conductor serve --open
 - PC が別の Wi-Fi に切り替わっていたら、Wi-Fi 一覧からルータの SSID を選び直す
 - Units タブが全部 offline のときは、まず PC のアドレスが `192.168.51.x` かを確認(`ipconfig`)
 
+**会場(国立駅)のネットワーク(2026-11-20)**
+
+- 会場のルーターは **Wavlink、SSID `R2.net`**(管理画面 192.168.30.1、LAN 192.168.30.x は DHCP、5 GHz チャンネル 40)。
+  **ルーターモード(「メッシュルータモード」、WAN = DHCP)** に切り替えてある。以前の Repeater / WISP では、上流の
+  スマホのホットスポットが切れると `R2.net` そのものが消え、PC は 35〜50 秒で落ち、機体は ssid-not-found になった。
+  ルーターモードでは WAN のケーブルを抜いて 130 秒、9 台すべてが 3 秒ごとに答え続けた。**ショーに WAN の接続は要らない**
+- 無線の上流(スマホのホットスポットなど)が使えるのは Repeater モードだけ。インターネットが要るときは、
+  ASUS のトラベルルーターの LAN ポートを Wavlink の **WAN ポート**につなぐ
+- 機体は固定 `192.168.51.1NN`、プロファイル `R2.net`(優先度 20、既定ルートなし)。そのため **R2.net では GitHub に
+  届かず、機体の LCD の `GIT PULL` は会場では使えない**。更新は PC から git bundle で送る(PM が行う)
+- PC は第 2 アドレス `192.168.51.40` で機体に届く。PC の `R2.net` プロファイルは「手動で接続」(勝手に
+  つながない)。PC の Wi-Fi が別のものに替わっていたら `R2.net` を選び直す
+- ASUS トラベルルーターの SSID は `yoshihirock.net_dev` / `yoshihirock.net_5G_dev` に改名された。機体に保存してある
+  プロファイル `yoshihirock.net_5G` は一致しなくなったので、**機体は会場で別のネットワークへ飛ばない**(ショーには好都合)。
+  代わりに予備のネットワークも無い(足すなら `tools/add_unit_wifi.sh`、または SSID を元の名前に戻す)
+- 国立駅で使う 9 台(radxa-01〜04、06〜10。radxa-05 は使わない)は 2026-11-20 から 1aa943d
+  (ビーコンの受信側と UPDATE FW の scan-wait 修正)
+
 ## 4c. ビーコン(予備の一方向ブロードキャスト、2026-11-20)
 
 機体の Wi-Fi は「ルーターから機体には届くが、機体の返信がルーターに届かない」ことがある。HTTP の命令は返信も
 要るので、そういう会場では START しても機体が応えない。ビーコンは返信を要らない**予備の経路**。
 
-**いつ ON にするか**: 返信がルーターに届かない会場だけ。**普段は OFF**。Units タブの
+**いつ ON にするか**: 返信がルーターに届かない会場だけ。**普段は OFF**。Units タブの **THE SHOW** の欄、③ START の行の下の「If a unit's Wi-Fi is weak:」の行にある
 **`Backup broadcast (beacon)`** にチェックを入れる。
 
 - **やること**: START / HOLD / RESUME / SEEK / NEXT / STOP を、HTTP のほかに **UDP でも毎秒数回** 送る。
@@ -156,10 +178,60 @@ python -m conductor serve --open
   - ON は fleet.json の `"beacon"` に保存され、**再起動しても ON のまま**
   - **ショーの途中で Conductor を再起動しない**: 再起動のあとは、次の Upload までビーコンは機体を飛ばす
     (STOP のあとに Upload し直す)
-  - 再起動した機体は、**`/status` の応答が 1 回通る**まで操縦できない(時計が合うまでビーコンを見送る)
-  - バッテリー交換はショーの合間に(途中で電源を切ると上のとおり)
-- 本番で ON にする前に、予備機でハードウェア確認を通す([ROLLOUT_20261120.md](ROLLOUT_20261120.md) §7 の 7 番)。
-  仕様は [BEACON.md](BEACON.md) 8 章
+  - 再起動した機体は、HTTP の `/status` の応答が通って **Conductor が機体の時計を 2 回続けて同じ値に測れる**まで
+    ビーコンでは操縦できない(`beacon skip: clock off`)。機体は壁時計が正しければ**自分でラン(ショー)を
+    ディスクから戻し**、正しい位置で再開する。HTTP が戻れば約 7 秒で同期する(実機 2026-11-20)
+  - バッテリー交換はショーの合間に(途中で電源を切ると上のとおり)。**電源が落ちた衣装は、絵を確かめてから**ステージへ戻す
+  - 機体の壁時計: 機体には RTC があるが、ショーの Wi-Fi には NTP が無い。2026-11-20 の朝は全機が同じ古い時刻で起動し、
+    再起動した機体は `loaded` のままだった。機体が一度 NTP に届いた(約 12:34 JST)あとは、再起動しても正しい位置に戻った
+  - 機体にランが届いた(再起動して戻った・途中参加)とき、**現在の絵がもう一度出て、2〜3 秒後に次のキューが続く**ことがある
+    (描き直しは約 7.3 秒)。シリアルポートがまだ開いていない機体には、現在の絵が約 0.4 秒おきに **2 回**出ることがある
+    (プレーヤーの遅れ基板の救済で、ビーコン固有ではない)
+- **ハードウェア確認(2026-11-20、radxa-06 + 基板 3、2 台の行は radxa-08 + 基板 20)は済んだ**。通ったもの: 0:00 の絵が
+  1 回だけ、ビーコンだけでの START / HOLD / RESUME / SEEK / NEXT / STOP、STOP の 60 秒の尾、STOP → すぐ START、
+  HOLD 中の SEEK、実際の再起動、ショーの途中の Conductor 再起動、途中のスイッチ切り替え、Conductor が 2 つ
+  (機体は先に聞いたほうに従い `beacon skip: other PC`、先のものが黙って 5 秒で乗り換え)、別のショー ID は断る、
+  聞こえない機体のいる Loop(その機体に周回は始まらない)。**未了**: LCD を人が読むこと(運用者が 11-20 14:29 に
+  撮影、読み取りは待ち)/ 電源を完全に落とす(バッテリーを抜く)再起動 / 聞こえない機体が複数・弱い電波・フルの長さの
+  ラン(ビーコン ON)。記録は [BEACON_HWCHECK_20261120.md](BEACON_HWCHECK_20261120.md)
+- **11-22 はビーコンを OFF のまま**にする(上の未了が閉じ、リハーサルで本当に要ると分かった場合だけ ON)。
+  ON にするなら: Conductor は 1 つだけ / 止まっているときだけ切り替える / ショーの途中で Conductor の再起動もバッテリー交換もしない /
+  機体を再起動したら絵を確かめてから衣装をステージへ戻す。仕様は [BEACON.md](BEACON.md) 8〜9 章
+
+## 4d. 答えない機体を外して START(予備のスイッチ、2026-11-20)
+
+**基本は「START の前に全機が online であることを確かめる」**。それでも 1 台が「not answering」のままだと、PC の
+Conductor は(force を付けても)**全着の START を断る**。このスイッチは、そのときの予備。
+
+**いつ ON にするか**: 普段は **OFF**。ビーコン(4c 節)を ON にする場合と**あわせて決める**(外した機体はビーコンの
+放送で動くため、ビーコンが OFF だと、その機体は答えが戻るまで止まったまま)。Units タブの **THE SHOW** の欄、③ START の行の下の「If a unit's Wi-Fi is weak:」の行にある
+**`START without units that do not answer`** にチェックを入れる。fleet.json の `"start_without_silent": true` に
+保存され、再起動しても保つ(true / false 以外の値は警告を出して OFF のまま)。
+
+- **外される条件**(ON のとき、素の START だけ): その機体の問題が **「not answering」だけ** で、**最後に聞いたときは
+  完全に準備できていた**(同じショー ID、絵の焼き込み済み、force の免除なし)。**少なくとも 1 着は答えていること**
+- **従来どおり断る**: ほかの不具合(Upload が要る・別のショーを持っている・書き込み中・クリア済み・基板の失敗)/
+  この Conductor が起動してから一度も聞いていない機体 / 誰も答えない
+- **使わない場面**: `Preset before START`(0:00 からの START)/ Loop の再開(Loop は自前の 60 秒の猶予)/
+  展示の Conductor(ON にできず断られる。そちらは元から答える機体だけで始める)
+- **START の前に見える表示**(THE SHOW の下): `Not answering: radxa-03 - if it is still not answering and its other
+  checks pass, START can go without it; it may follow the backup broadcast, and joins fully when it answers again, if it
+  is still ready.`(ビーコン OFF のときの後半は `... it stays as it is until it answers again, and joins then if it
+  is still ready (the backup broadcast is off).`)。チェックを入れても使えないときは理由の行:
+  `START will refuse on radxa-03: not heard from since this Conductor started - it must answer once first.` /
+  `... was not ready when it was last heard.` / `START will refuse: another garment is not ready.` /
+  `START will refuse: no garment is answering.` / Preset の文
+- **START のあとの表示**: START のログ `Started without radxa-03 (not answering).`、corrections の
+  `START without radxa-03 (not answering)`、ランの間(HOLD 中も)`Without radxa-03 in this run (not answering) - ...`。
+  その機体が戻れば行は消える
+- **外された機体はどうなるか**: ビーコン ON = 放送で始まる(実機で 0.08 秒以内に同期)。ビーコン OFF = そのまま止まり、
+  答えが戻って約 1 秒後に supervision が「started late」で入れる。**ランの「start anyway」(force)は引き継がない**:
+  基板の失敗を持って戻った機体は、force をつけた再 START か救済の Upload まで外れたまま。その機体への HTTP の START は送らない
+- **切り替えは、ランが生きていないときだけ**(ENDED の後は可)。HOLD 中・プリセットのカウントダウン中は不可:
+  `Stop the show first (or let it reach its end) - this can't be changed during a show, a HOLD or the preset countdown.`。
+  START を判断している瞬間も不可: `START is being decided - try again in a moment.`
+- 外した機体が START の判断中に 2 回戻ると `A garment came back while START was deciding - press START again.`
+  と出る。もう一度 START を押す
 
 ## 5. データの場所
 

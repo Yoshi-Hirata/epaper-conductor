@@ -556,14 +556,15 @@ USB が抜けたあとは 0x17 を送る手段が無いので、**衣装を抜�
 
 **国立駅のショー(2026-11-22)と長いショー(2026-11-19)**
 
-- JR 国立駅の 2026-11-22 のショーは 1 本の音源 `kunitachi100_music_mix_1119.mp3`
-  (35:27.6 = 2127.6 秒、68,081,989 バイト、MP3 256 kbps CBR)を鳴らす。これが入るよう、
+- JR 国立駅の 2026-11-22 のショーは 1 本の音源 `kunitachi100_music_1120g.mp3`
+  (36:33.96 = 2193.96 秒、17.6 MB、MP3 64 kbps。2026-11-20 に 2 回差し替え、ショーの長さは 2194 秒 = 36:34。
+  最初の 11-19 版は `kunitachi100_music_mix_1119.mp3` 35:27.6、68 MB)を鳴らす。これが入るよう、
   ショーの長さの上限を **15:00 → 40:00**、音源の上限(`conductor/server.py` の `MAX_MUSIC`)を
   **64 MB → 128 MB** にした。Conductor(Python とページ)と設計者用シミュレーターで共通。
   **機体側に上限は無い**。1 機体あたり 18 送信までの上限は変わらない(35 分のショーでも
   1 機体の絵は最大 18 枚)
 - Timeline の目盛りは 30:00 を過ぎると **2:00 ごと**。Timeline に**ズームは無い**ので、
-  35:28 では 7 秒のキュー 1 つが数ピクセル幅になる
+  36:34 では 7 秒のキュー 1 つが数ピクセル幅になる
 - ワークスペース `kunitachi-data/`(`showdata/`・`exhibition-data/` と同じく git 管理外)は
   `Start Kunitachi Conductor.bat`(ポート 8767、ラベル `KUNITACHI`)で動かす。
   手順は CONDUCTOR_START.md 1b 節
@@ -1305,7 +1306,8 @@ SSID がスキャンに見えている間は最長 10 分待ってから ― `nm
   含まない。理由は `not answering` / `needs Upload` / `holds another show` / `still writing`。
   `pictures failed` は PC の Conductor でだけ出る)。`preset_left_out`(0:00 の絵なしで始まった機体のトースト)はそのまま。
   ページは展示 Conductor でだけ ③ START の下に琥珀色の 1 行で欠けている機体を出す(START は止めない)。
-  PC の Conductor の START は従来どおり厳格(1 台でも準備できていなければ断る)。
+  PC の Conductor の START は従来どおり厳格(1 台でも準備できていなければ断る。例外は下の
+  `start_without_silent`)。
   終わったラン(位置 ≥ 長さ)への **③ START は `force` 無しで通る**(`fleet.run_is_over()`。
   「もう走っている」ではない)。ページも待ち時間中・ENDED 後は「走っていない」として扱う ―
   **「やり直す?」の確認なし・`force` なしで次のランが始まる**(意図した変更。焼き込みの関門は
@@ -1316,6 +1318,28 @@ SSID がスキャンに見えている間は最長 10 分待ってから ― `nm
   ページ: 大時計 `ENDED · NEXT RUN IN 0:45 (run 2)`、NOW → NEXT ボード(ステージ
   モニターも)は見出し `NEXT RUN in 45 s` と `0:45`(10 秒で琥珀、3 秒で赤)、注記に
   理由。STOP の確認文に「Loop も止まる」
+- **答えない機体を外して START(2026-11-20、c2b08f1、`start_without_silent`。PC の Conductor だけ、Conductor 側のみで機体は変更なし)**:
+  PC のモードでは、1 台が `not answering` だと force を付けても全着の START が断られ(`Fleet._burn_problems`)、
+  一方向ビーコン(docs/BEACON.md)がその START を運べなかった(実機の発見 F1)。
+  - **スイッチ**: Units タブの THE SHOW の欄(③ START の行の下「If a unit's Wi-Fi is weak:」の行、ビーコンのチェックの隣)`START without units that do not answer`、**既定 OFF**。fleet.json
+    `"start_without_silent": true|false`(厳密な bool。不正値は警告を出して OFF)。API
+    `POST /api/fleet/start_without_silent {"on": bool}`。`/api/fleet` に `start_without_silent`、`start_without`(いま START が
+    外す機体のリスト)、`start_without_why`(使えないときの理由の行)。変更は**生きたランが無いときだけ**(ENDED は可。HOLD 中・
+    プリセットのカウントダウン中は `Stop the show first (or let it reach its end) - this can't be changed during a show, a HOLD or
+    the preset countdown.`、START の判断中は `START is being decided - try again in a moment.`)。展示の Conductor では断る
+  - **START の関門(ON のとき)**: 素の START は、問題が `not answering` **だけ**で、**最後に聞いた状態が完全に準備済み**
+    (同じショー ID、絵の焼き込み済み、force の免除なし)の機体を外す。**少なくとも 1 着が答えること**。ほかの不具合
+    (Upload が要る・別のショー・書き込み中・クリア済み・基板の失敗)、この Conductor の起動後に一度も聞いていない機体、
+    誰も答えない場合は従来どおり断る。**使わない**: `Preset before START`(0:00 からの START)、Loop の再開(Loop は自前の
+    60 秒猶予)、展示の Conductor。START の判断中に外した機体が 2 回戻ったら
+    `A garment came back while START was deciding - press START again.`
+  - **外した機体**: `run.left_out` / `run.silent` に載り、START のログ `Started without radxa-03 (not answering).`、corrections の
+    `START without radxa-03 (not answering)`、ランの間(HOLD 中も)`Without radxa-03 in this run (not answering) - ...`。
+    START の前には THE SHOW の下に `Not answering: ...`(使えないときは `START will refuse ...` の理由行)。
+    ビーコン ON ならビーコンで始まり、OFF なら止まったまま、答えが戻って約 1 秒後に supervision が `started late`。
+    **ランの force は引き継がない**(`flags` の bit0 も立てない。基板の失敗を持って戻れば、force 付きの再 START か救済 Upload まで外れたまま)。
+    HTTP の START は送らない
+  - 既定 OFF。運用は「START の前に全機 online」が基本で、これは予備(CONDUCTOR_START.md 4d 節)
 - **Preset before START**(2026-10-01、展示の実機テスト: カウントダウン 3 秒では 0:00 の絵が曲の
   前に描き終わらなかった): `show.json` の `preset_before_start`(**既定 off = キーなし**、on は
   `true` だけを保存 ― `set_preset_before_start` も `import_show` も同じ規則で、`false` の
