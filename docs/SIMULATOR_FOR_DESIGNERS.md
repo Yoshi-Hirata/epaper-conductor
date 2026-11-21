@@ -197,11 +197,11 @@ Start・End・ショーの長さなど「いつ」を表す欄は、すべて **
 Show length の横に `music continues 0.54 past the end of the show` と出る。
 再生は音源が終わってもショーの終わりまで(無音で)進み、ショーの終わりで音も止まる。
 
-**国立駅のショー用(2026-11-22)。** 音源 `kunitachi100_music_1120g.mp3`(36:33.96、64 kbps、
-2026-11-20 に差し替え)入りの
-`dist/az27ss-simulator-kunitachi-with-music.html`(24.1 MB、git 管理外)を使う。開いたら
-**Fit to music** を押して Show length を 36.34 にする。24 MB のファイルは開くのに数秒かかり、
-メモリを数百 MB 使う。Timeline にズームは無く、36.34 では 7 秒のキュー 1 つが数ピクセルの幅になる
+**国立駅のショー用(2026-11-22)。** 音源 `1121_kunitachi_all_BGM.mp3`(39:55.92、192 kbps、57.9 MB、2026-11-21 に差し替え。前は `kunitachi100_music_1120g.mp3` 36:33.94)入りの
+Conductor の `GET /api/simulator?music=1` から作り直した(音源だけを持ち、国立駅のショー = キューは入っていない)。
+`dist/az27ss-simulator-kunitachi-with-music.html`(77.9 MB、git 管理外。前の 24 MB から増えたのは音源が 64 kbps でなく 192 kbps になったため ― メールの容量制限に注意。前のものは `dist/az27ss-simulator-kunitachi-1120g-with-music.html`)を使う。開いたら
+**Fit to music** を押して Show length を 39.56 にする。ファイルが大きいので開くのに時間がかかり、
+メモリを数百 MB 使う。Timeline はショーの一部の窓へズームしてパンできる(All / 10 / 5 / 2 / 1 min、概観バー、Ctrl/⌘+ホイール)ので、長いショーはそれで見る
 (目盛りは 30.00 を過ぎると 2.00 ごと)。
 
 ## 5. プロジェクトの保存と再開

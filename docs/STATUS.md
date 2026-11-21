@@ -1,6 +1,6 @@
 # 現在地と再開手順
 
-最終更新: 2026-11-20(夕方: 朝に Upload・会場では START だけ、機体の Wi-Fi 見張り、2.4 GHz の電波実測。昼: ビーコンの実機確認、START スイッチ、会場ネットワーク、国立駅の音源差し替え)
+最終更新: 2026-11-21(国立駅の音源を 39:55.92 の新しいものに差し替えて 77 キューを +55.2 秒ずらした、設計者用シミュレーターの作り直し、PC の USB Wi-Fi アダプター、keep_uploads_on_restart の実機確認、通しリハーサル。2026-11-20: 朝に Upload・会場では START だけ、機体の Wi-Fi 見張り、ビーコンの実機確認、会場ネットワーク)
 
 **この文書は「次に何をするか」だけを書く。** 経緯は
 [DEVELOPMENT.md](DEVELOPMENT.md)、20 枚構成の検討は [SCALING.md](SCALING.md)、
@@ -20,7 +20,44 @@
 
 ## 2. 直近で完成したもの
 
-**国立駅(11-22)に向けた 2026-11-20 の到達点と、次にやること**
+**国立駅(11-22)に向けた 2026-11-21 の到達点と、次にやること**
+
+- **音源を差し替えた(11-21)**: 現在の音源は `kunitachi-data/music/1121_kunitachi_all_BGM.mp3`(39:55.92 = 2395.92 秒、
+  57,856,227 B、MP3 192 kbps CBR 48 kHz)。前の `kunitachi100_music_1120g.mp3`(36:33.94)の**前に 55 秒 5 フレームが足され**、
+  終わりも約 147 秒長い(そこにキューは無い)。**77 キューすべてを +55.2 秒ずらした**(Timeline は 0.1 秒刻み。24/25/30 fps の
+  5 フレームはどれも 0.2 秒に丸まる)。Conductor 自身の API で行ったので元に戻せる。ショーの長さ 2194 → **2396 秒**
+  (40:00 の上限の内、音源 128 MB の上限も内)。そのあと運用者が全着のプリセット(q00)を 0:00 へ動かしたので、
+  「0:00 にプリセットが無い」警告は消えた。最初の変化は LOOK 23 8:57、24 9:12、28 9:27、27 9:42、26 9:57、25 10:12(以前は 8:02〜9:17)。
+  バックアップ: `kunitachi-data/music_prev/kunitachi100_music_1120g.mp3`、`kunitachi-data/show.json` / `history.json` の
+  `*.bak-20261121-before-1121music`。**Timeline をもう 1 つでも編集したら、全着の Upload をやり直す**
+- **設計者用シミュレーターを作り直した**: `dist/az27ss-simulator-kunitachi-with-music.html`(77.9 MB。**前は 24 MB** ― 新しい音源が
+  64 kbps でなく 192 kbps なので。メールの容量制限に注意)。Conductor の `GET /api/simulator?music=1` から作った。前のものは
+  `dist/az27ss-simulator-kunitachi-1120g-with-music.html` に改名。シミュレーターは音源だけを持ち、国立駅のショー(キュー)は入っていない
+- **ショー PC のネットワーク**: TP-Link の Wi-Fi 7 USB アダプター(Windows 上の名前 `Wi-Fi 2`)が `R2.net` への PC の経路になった
+  (電波 100 %、内蔵 Intel AX200 は 93〜97 %。2.4 GHz ch 3)。第 2 アドレス `192.168.51.40/24` は Intel の `Wi-Fi` から `Wi-Fi 2` へ移した
+  (**順序が要る**: Windows は同じアドレスを 2 つのアダプターに付けさせない ― 管理者 PowerShell で先に `Wi-Fi` を `Remove-NetIPAddress`、
+  次に `Wi-Fi 2` を `New-NetIPAddress`)。`Wi-Fi 2` の `R2.net` は「手動で接続」・自動切り替えなし。副作用: `New-NetIPAddress` で
+  `Wi-Fi 2` の DHCP が切れ、192.168.30.x が無い ― **ルーターの管理ページ 192.168.30.1 は `Wi-Fi 2` から開けない**(開くときは Intel の
+  アダプターを短く使う)。機体は 192.168.51.40 だけ要る。Intel の `Wi-Fi` は `R2.net` につながない(同じ SSID に 2 枚だと経路が曖昧になる)。
+  PC のインターネットはスマホの USB テザリング(`イーサネット 3`)
+- **keep_uploads_on_restart を実機で確認した**: PC を 12:46 に再起動、Kunitachi の Conductor を 15:33 に新コードで起動し直し、
+  radxa-02(15:33:50)と radxa-01(16:49:50)が `holds this show already (adopted after a restart of the conductor)` で引き継がれ、Upload なし
+- **通しリハーサル(本番の Conductor、8767)**: 約 12:34 は 7 台とも q00〜q10、遅れ 2 ms 以下、止まりなし。LOOK 23/24 の最初の変化も時刻どおり
+  (先の「LOOK 23/24 の最初の変化が出ない」は再現せず)。そのとき見つかった radxa-02 の基板 1〜8 と radxa-09 の基板 1〜11 の不在
+  (前半の 485 チェーン/電源)は直った(その後の Upload は 176/176 と 242/242、不在 0)。radxa-04 の USB 列挙エラー(kernel error -71)は
+  ケーブル/コネクター ― 挿し直しと再起動で直った。約 18:20〜18:45(新音源・ずらした Timeline)は 7 台とも q00〜q10、最大の遅れ 2 ms
+  (radxa-10 6 ms、radxa-09 3 ms)、全 precheck が `bus ok`、途中の stall/resend/lost port なし。発火時刻はずらしたキュー時刻と 0.01 秒以内で一致。
+  radxa-09 が STOP を 1 回取りこぼし、Conductor のポーリングが止めた(`stopped (missed STOP)`)。ショー後は最後のキューの 10 分以上あとに
+  全機が `port gone / Input/output error`(衣装の電源断 = 想定どおり)。**Conductor の API は Upload 中に 3〜50 秒止まる**(ページが固まって戻る。ランの間は止まらない)
+- **fff7cc3(push 済み)**: Units タブの LOOK カードが、ショーが止まっている間に機体が戻っても `unit offline` を持ち続けないようにした
+- **radxa-01 の衣装(要観察・直ったとは言わない)**: 基板 12 に 11-20 19:44 に FW_261119F を OTA したところ色がおかしく、基板 1 は mura。
+  運用者がさらに基板 0x09、0x0A、0x0B、0x0C に OTA(どれも `did not answer within 25 s` のあと回復)― 運用者自身の操作。
+  radxa-01 の ID01/ID12 を目で確かめる
+- **次(11-22 の朝)**: ① 今日の Upload の電源を完全に落とす確認(朝に Upload → 機体と基板の電源を入れ直す → START は会場でだけ)
+  ② radxa-01 の ID01/ID12 の目視 ③ Conductor の Timeline のズーム(ワークツリー、まだ main に未マージ)
+  ④ Timeline を編集したら全着を Upload し直す
+
+**国立駅(11-22)に向けた 2026-11-20 の到達点**
 
 - **夕方の追加(main)**:
   - **7a31749 機体の Wi-Fi 見張り**(`ui/wifi.py`)。国立駅の 9 台に 17:25 ごろから。ネットワークが 30 秒なくなると前のプロファイル
@@ -45,7 +82,7 @@
   別のショー ID、聞こえない機体のいる Loop、**LCD の読み取り(行 37〜40。4 本の `beacon ...` が全文で出る)**、
   **電源を完全に落とす再起動(行 41〜42。時計は保たれず機体は `loaded` のまま何も再生しない=誤った絵は出ない。
   HTTP があれば電源が戻って約 40 秒で正しい位置、ビーコンだけでは戻れない)**。
-  **未了**: 聞こえない機体が複数 / 弱い電波(きれいな切断でなく)/ フルの長さ(36:34)のラン(ビーコン ON)/ LCD の
+  **未了**: 聞こえない機体が複数 / 弱い電波(きれいな切断でなく)/ フルの長さのラン(ビーコン ON。11-21 の通しはビーコン OFF)/ LCD の
   `beacon skip: ...`・`beacon NG: ...` の行。**11-22 はビーコン OFF**
   (Codex の検証監督: 「LCD を人が読む」「電源を入れ直して正しい絵まで見る」の 2 条件は行 37〜42 で満たした。助言は変わらず
   ― リハーサルで本当に要ると分かったときだけ ON、Conductor は 1 つ、止まっているときだけ切り替え、ショーの途中で Conductor を再起動しない)。
@@ -55,10 +92,10 @@
   あわせて決める。基本は「START の前に全機 online」。手順 [CONDUCTOR_START.md](CONDUCTOR_START.md) 4d 節、
   仕様 [SPECIFICATION.md](SPECIFICATION.md) 4.7、[BEACON.md](BEACON.md) 9 章
 - **会場のネットワーク**: Wavlink `R2.net` をルーターモードにした(WAN を抜いても 9 台が答え続けた)。機体は R2.net で
-  GitHub に届かず、**会場では LCD の GIT PULL は使えない**(更新は PC から git bundle)。PC は `192.168.51.40`、`R2.net` は手動接続。
+  GitHub に届かず、**会場では LCD の GIT PULL は使えない**(更新は PC から git bundle)。PC は `192.168.51.40`(11-21 から USB の `Wi-Fi 2` 上)、`R2.net` は手動接続。
   ASUS の SSID が改名され機体の `yoshihirock.net_5G` は一致しない(予備のネットワークなし)。[CONDUCTOR_START.md](CONDUCTOR_START.md) 4b 節
-- **国立駅の音源は 2 回差し替えて `kunitachi100_music_1120g.mp3`(36:33.96、64 kbps、17.6 MB)、ショーの長さ 36:34**
-- **11-22 の前に残る**: ① 音源つきで 36:34 を 1 回通しで ② 基板 3 と 20 は試験の絵が載っている ― 国立駅の Upload で上書き
+- **国立駅の音源は 11-21 に `1121_kunitachi_all_BGM.mp3`(39:55.92、192 kbps、57.9 MB)へ差し替え、ショーの長さ 2396 秒(上の 11-21 の項)**
+- **11-22 の前に残る**: ① ~~音源つきの通し~~ ― 11-21 に新音源で実施(上) ② 基板 3 と 20 は試験の絵が載っている ― 国立駅の Upload で上書き
   ③ ビーコン / START スイッチを ON にするかの決定(既定はどちらも OFF) ④ 国立駅の絵づくり。
   観察(ビーコン実機確認): 機体が再起動して戻ると現在の絵がもう一度出て 2〜3 秒後に次のキューが続くことがある、機体は RTC を持つが
   ショーの Wi-Fi に NTP が無い(電池交換はショーの合間に。電源が落ちた衣装は絵を確かめてからステージへ)
@@ -89,15 +126,14 @@
 
 - ショーは最長 **40:00**(15:00 から)、音源は **128 MB**(64 MB から)。Conductor(Python とページ)と
   設計者用シミュレーターで共通。機体に上限は無く、1 機体 18 送信の上限は変わらない。Timeline の目盛りは
-  30:00 以降 2:00 ごと。ズームは無い(36:34 では 7 秒のキューが数ピクセル)
+  30:00 以降 2:00 ごと。Conductor の Timeline のズームは無い(ワークツリーに作業中、未マージ。設計者用シミュレーターにはある)
 - 第 3 のワークスペース `kunitachi-data/`(git 管理外): `Start Kunitachi Conductor.bat`(8767、
   KUNITACHI)、`Backup kunitachi-data.bat`。本番ショーの 7 着(radxa-01〜04・07・09・10)、
-  音源 `kunitachi100_music_1120g.mp3`(36:33.96、17.6 MB。11-19 の初版 `..._mix_1119.mp3` 35:27.6 から 11-20 に 2 回差し替え)、
-  ショーの長さ 36:34、Timeline は各着 0:00 の
-  白のプリセットだけ。手順は [CONDUCTOR_START.md](CONDUCTOR_START.md) 1c 節
-- 音源入りシミュレーター `dist/az27ss-simulator-kunitachi-with-music.html`(24.1 MB、git 管理外)。
-  開いたら Fit to music で 36.34(36:34)にする
-- **未了(11-22 の前)**: ① 音源つきで 36:34 を 1 回通しで流す(長時間のずれの再シーク)。
+  音源 `1121_kunitachi_all_BGM.mp3`(39:55.92、57.9 MB。11-19 の初版 35:27.6 → 11-20 に 2 回 → 11-21 に差し替え)、
+  ショーの長さ 2396 秒(11-21 に Timeline の 77 キューを +55.2 秒ずらした)。手順は [CONDUCTOR_START.md](CONDUCTOR_START.md) 1c 節
+- 音源入りシミュレーター `dist/az27ss-simulator-kunitachi-with-music.html`(77.9 MB、git 管理外、11-21 に作り直し)。
+  開いたら Fit to music で 39.56(39:56)にする
+- **未了(11-22 の前)**: ① ~~音源つきの通し~~(11-21 に新音源で済み)。
   ② 機体のスピーカー(radxa-05 の mpg123)で遠くへシークするのは未試験。
   ③ `kunitachi-data/fleet.json` は `showdata/` のコピー(radxa-09 = `10.42.0.109:8787`)なので、
   会場のネットワークで機体に届くか確かめる。④ 国立駅の絵はこれから作る(いまは白のプリセットだけ)
